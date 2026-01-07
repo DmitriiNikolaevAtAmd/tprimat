@@ -23,7 +23,7 @@ echo ""
 
 # Detect platform
 if python3 -c "import torch; exit(0 if torch.cuda.is_available() and 'cuda' in torch.version.cuda else 1)" 2>/dev/null; then
-    PLATFORM="NVIDIA (CUDA)"
+    PLATFORM="NVD (CUDA)"
     COLOR=$GREEN
 elif python3 -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
     PLATFORM="AMD (ROCm)"
@@ -125,7 +125,7 @@ fi
 
 echo ""
 echo -e "${BLUE}Next Steps:${NC}"
-echo "1. Run this script on the other platform (AMD/NVIDIA)"
+echo "1. Run this script on the other platform (AMD/NVD)"
 echo "2. Compare results with: python3 compare_results.py"
 echo ""
 
