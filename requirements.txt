@@ -1,0 +1,11 @@
+# Core requirements (should already be installed with NeMo)
+torch>=2.0.0
+lightning>=2.0.0
+
+# Benchmarking and visualization
+matplotlib>=3.5.0
+numpy>=1.21.0
+
+# Optional for advanced profiling
+tensorboard>=2.10.0
+
