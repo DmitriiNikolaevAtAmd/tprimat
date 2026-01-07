@@ -22,16 +22,19 @@ echo -e "Runs:  ${GREEN}${RUNS}${NC}"
 echo ""
 
 # Detect platform
-if python3 -c "import torch; exit(0 if torch.cuda.is_available() and 'cuda' in torch.version.cuda else 1)" 2>/dev/null; then
-    PLATFORM="NVD (CUDA)"
-    COLOR=$GREEN
-elif python3 -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
-    PLATFORM="AMD (ROCm)"
-    COLOR=$RED
-else
+if ! python3 -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
     echo -e "${RED}❌ No GPU detected!${NC}"
     echo "Please ensure CUDA or ROCm is properly installed."
     exit 1
+fi
+
+# Check if it's ROCm or CUDA
+if python3 -c "import torch; exit(0 if hasattr(torch.version, 'hip') and torch.version.hip else 1)" 2>/dev/null; then
+    PLATFORM="AMD (ROCm)"
+    COLOR=$RED
+else
+    PLATFORM="NVD (CUDA)"
+    COLOR=$GREEN
 fi
 
 echo -e "Platform: ${COLOR}${PLATFORM}${NC}"
