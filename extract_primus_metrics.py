@@ -16,6 +16,79 @@ import re
 import torch
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+
+def round_floats(obj: Any, precision: int = 3) -> Any:
+    """
+    Recursively round all float values in a nested structure to specified precision.
+    
+    Args:
+        obj: Dictionary, list, or value to process
+        precision: Number of decimal places (default: 3)
+    
+    Returns:
+        Object with all floats rounded
+    """
+    if isinstance(obj, float):
+        return round(obj, precision)
+    elif isinstance(obj, dict):
+        return {key: round_floats(value, precision) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [round_floats(item, precision) for item in obj]
+    else:
+        return obj
+
+
+def get_gpu_core_count(device_name: str, device_props) -> int:
+    """
+    Get approximate GPU core count based on device name.
+    
+    NVIDIA GPUs use CUDA cores, AMD GPUs use Stream Processors.
+    """
+    device_name_lower = device_name.lower()
+    
+    # NVIDIA GPUs (CUDA cores)
+    nvidia_cores = {
+        "h100": 16896,
+        "h100 sxm5": 16896,
+        "h100 pcie": 14592,
+        "a100": 6912,
+        "v100": 5120,
+        "a40": 10752,
+        "a30": 10752,
+        "a10": 9216,
+        "rtx 4090": 16384,
+        "rtx 3090": 10496,
+    }
+    
+    # AMD GPUs (Stream Processors)
+    amd_cores = {
+        "mi300x": 19456,
+        "mi300a": 19456,
+        "mi250x": 14080 * 2,  # 2 GCDs
+        "mi250": 13312 * 2,
+        "mi210": 13312,
+        "mi100": 7680,
+        "instinct mi300x": 19456,
+        "instinct mi250x": 14080 * 2,
+        "instinct mi210": 13312,
+    }
+    
+    # Try to match device name
+    for gpu_name, cores in nvidia_cores.items():
+        if gpu_name in device_name_lower:
+            return cores
+    
+    for gpu_name, cores in amd_cores.items():
+        if gpu_name in device_name_lower:
+            return cores
+    
+    # Try to get from device properties
+    if hasattr(device_props, 'multi_processor_count'):
+        return device_props.multi_processor_count * 128
+    
+    return 0
 
 
 def detect_gpu_info():
@@ -23,14 +96,27 @@ def detect_gpu_info():
     gpu_info = {}
     
     if torch.cuda.is_available():
+        device_props = torch.cuda.get_device_properties(0)
+        device_name = torch.cuda.get_device_name(0)
+        
+        # Detect GPU cores (approximate based on known models)
+        gpu_cores = get_gpu_core_count(device_name, device_props)
+        
+        # Detect platform
+        is_rocm = "rocm" in str(torch.version.hip).lower() if hasattr(torch.version, 'hip') else False
+        platform = "rocm" if is_rocm else "cuda"
+        
         gpu_info = {
             "device_count": torch.cuda.device_count(),
-            "device_name": torch.cuda.get_device_name(0),
-            "total_memory_gb": torch.cuda.get_device_properties(0).total_memory / 1e9,
-            "platform": "rocm" if "rocm" in torch.version.hip else "cuda",
+            "device_name": device_name,
+            "total_memory_gb": device_props.total_memory / 1e9,
+            "gpu_cores": gpu_cores,
+            "pytorch_version": torch.__version__,
+            "software_stack": platform,
         }
         
-        if "rocm" in str(torch.version.hip).lower():
+        # Add version-specific info
+        if is_rocm:
             gpu_info["rocm_version"] = torch.version.hip
         else:
             gpu_info["cuda_version"] = torch.version.cuda
@@ -134,7 +220,9 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
         gpu_info = {
             "device_count": num_gpus,
             "device_name": "AMD GPU (from log)",
-            "platform": "rocm",
+            "gpu_cores": 0,
+            "pytorch_version": torch.__version__,
+            "software_stack": "rocm",
         }
     
     # Calculate metrics (skip first step as warmup)
@@ -266,12 +354,15 @@ Examples:
     )
     
     if results:
-        # Save results
+        # Save results (round all floats to 3 decimal places)
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
+        # Round all float values to 3 decimal places
+        results_rounded = round_floats(results, precision=3)
+        
         with open(output_path, 'w') as f:
-            json.dump(results, f, indent=2)
+            json.dump(results_rounded, f, indent=2)
         
         print(f"✅ Metrics saved to: {output_path}")
         

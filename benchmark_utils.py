@@ -7,9 +7,30 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import torch
 from lightning.pytorch.callbacks import Callback
+
+
+def round_floats(obj: Any, precision: int = 3) -> Any:
+    """
+    Recursively round all float values in a nested structure to specified precision.
+    
+    Args:
+        obj: Dictionary, list, or value to process
+        precision: Number of decimal places (default: 3)
+    
+    Returns:
+        Object with all floats rounded
+    """
+    if isinstance(obj, float):
+        return round(obj, precision)
+    elif isinstance(obj, dict):
+        return {key: round_floats(value, precision) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [round_floats(item, precision) for item in obj]
+    else:
+        return obj
 
 
 class BenchmarkCallback(Callback):
@@ -262,13 +283,16 @@ class BenchmarkCallback(Callback):
                     "peak_memory_reserved_gb": max(self.memory_reserved[1:]),
                 }
             
-            # Save results
+            # Save results (round all floats to 3 decimal places)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"benchmark_{self.platform}_{timestamp}.json"
             filepath = self.output_dir / filename
             
+            # Round all float values to 3 decimal places
+            results_rounded = round_floats(results, precision=3)
+            
             with open(filepath, 'w') as f:
-                json.dump(results, f, indent=2)
+                json.dump(results_rounded, f, indent=2)
             
             print(f"\n{'='*60}")
             print(f"BENCHMARK COMPLETE - Platform: {self.platform.upper()}")
@@ -319,13 +343,13 @@ def compare_benchmarks(results_dir: str = "./outs") -> Dict:
         
         # Support both old and new platform naming
         platform = data.get('platform', '').lower()
-        hardware_type = data.get('gpu_info', {}).get('hardware_type', '').lower()
+        software_stack = data.get('gpu_info', {}).get('software_stack', '').lower()
         
         # NVIDIA: cuda, nvd, nvidia
-        if platform in ['cuda', 'nvd', 'nvidia'] or hardware_type == 'nvidia':
+        if platform in ['cuda', 'nvd', 'nvidia'] or software_stack == 'cuda':
             nvidia_results.append(data)
         # AMD: rocm, amd
-        elif platform in ['rocm', 'amd'] or hardware_type == 'amd':
+        elif platform in ['rocm', 'amd'] or software_stack == 'rocm':
             amd_results.append(data)
     
     if not nvidia_results or not amd_results:

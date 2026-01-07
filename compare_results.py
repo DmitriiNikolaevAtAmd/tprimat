@@ -25,13 +25,13 @@ def load_benchmark_results(results_dir: str) -> Tuple[List[Dict], List[Dict]]:
             
             # Support both old and new platform naming
             platform = data.get('platform', '').lower()
-            hardware_type = data.get('gpu_info', {}).get('hardware_type', '').lower()
+            software_stack = data.get('gpu_info', {}).get('software_stack', '').lower()
             
             # NVIDIA: cuda, nvd, nvidia
-            if platform in ['cuda', 'nvd', 'nvidia'] or hardware_type == 'nvidia':
+            if platform in ['cuda', 'nvd', 'nvidia'] or software_stack == 'cuda':
                 nvidia_results.append(data)
             # AMD: rocm, amd
-            elif platform in ['rocm', 'amd'] or hardware_type == 'amd':
+            elif platform in ['rocm', 'amd'] or software_stack == 'rocm':
                 amd_results.append(data)
         except Exception as e:
             print(f"⚠️  Error loading {json_file}: {e}")

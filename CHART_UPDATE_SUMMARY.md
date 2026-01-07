@@ -181,7 +181,7 @@ tokens_per_second_per_gpu = (128 * 2048 / 9.763) / 8
   "gpu_info": {
     "device_name": "AMD Instinct MI300X",
     "device_count": 8,
-    "hardware_type": "amd"
+    "software_stack": "rocm"
   },
   "performance_metrics": {
     "tokens_per_second_per_gpu": 13425.09,
@@ -195,7 +195,7 @@ tokens_per_second_per_gpu = (128 * 2048 / 9.763) / 8
 The code now supports both naming conventions:
 - Legacy: `"cuda"` / `"rocm"`
 - New: `"nvd"` / `"amd"`
-- Hardware type: `"nvidia"` / `"amd"`
+- Software stack: `"cuda"` / `"rocm"`
 
 ## Why This Matters
 
