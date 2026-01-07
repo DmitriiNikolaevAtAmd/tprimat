@@ -242,7 +242,8 @@ The `comparison_plot.png` contains 4 charts:
 tensor_model_parallel_size = 4
 pipeline_model_parallel_size = 1
 micro_batch_size = 1
-global_batch_size = 8
+global_batch_size = 128  # Matches Primus
+sequence_length = 2048   # Matches Primus
 max_steps = 10
 fp8 = "hybrid"
 ```
@@ -252,7 +253,8 @@ fp8 = "hybrid"
 tensor_model_parallel_size = 4
 pipeline_model_parallel_size = 2
 micro_batch_size = 1
-global_batch_size = 8
+global_batch_size = 128  # Matches Primus
+sequence_length = 2048   # Matches Primus
 max_steps = 10
 fp8 = "hybrid"
 ```
@@ -262,7 +264,8 @@ fp8 = "hybrid"
 tensor_model_parallel_size = 4
 pipeline_model_parallel_size = 1
 micro_batch_size = 1
-global_batch_size = 8
+global_batch_size = 128  # Matches Primus
+sequence_length = 2048   # Matches Primus
 max_steps = 10
 fp8 = "hybrid"
 ```

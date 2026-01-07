@@ -18,10 +18,12 @@ def run_pretrain():
     recipe.trainer.strategy.pipeline_model_parallel_size = 2
     
     # 3. DATA CONFIGURATION
-    # Global Batch Size (8) / Data Parallel (1) = 8 samples per DP group.
-    # With Micro Batch Size = 1, this means 8 accumulation steps.
+    # Global Batch Size (128) / Data Parallel (1) = 128 samples per DP group.
+    # With Micro Batch Size = 1, this means 128 accumulation steps.
+    # ⚠️  IMPORTANT: Must match Primus config for fair comparison
     recipe.data.micro_batch_size = 1
-    recipe.data.global_batch_size = 8
+    recipe.data.global_batch_size = 128  # Matches Primus configuration
+    recipe.data.seq_length = 2048  # Matches Primus sequence length
     
     # 4. OPTIMIZATIONS & DURATION
     recipe.trainer.max_steps = 10

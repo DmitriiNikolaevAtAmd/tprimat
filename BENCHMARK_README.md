@@ -58,7 +58,8 @@ The training scripts are already configured identically:
 recipe.trainer.strategy.tensor_model_parallel_size = 4
 recipe.trainer.strategy.pipeline_model_parallel_size = 1
 recipe.data.micro_batch_size = 1
-recipe.data.global_batch_size = 8
+recipe.data.global_batch_size = 128  # Matches Primus config
+recipe.data.seq_length = 2048  # Matches Primus config
 recipe.trainer.max_steps = 10
 recipe.model.config.fp8 = "hybrid"
 recipe.model.config.fp8_param = True
