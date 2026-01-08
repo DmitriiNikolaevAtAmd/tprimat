@@ -113,24 +113,46 @@ scp training-server:~/logs/*.log .
 ./benchmark.py --help
 ```
 
+### AMD/Primus Training Scripts
+
+**Easy-to-use scripts for running Primus training:**
+
+```bash
+# Run single model
+./run_primus_llama.sh     # Llama 3.1 8B
+./run_primus_mistral.sh   # Mistral 7B
+./run_primus_qwen.sh      # Qwen 2.5 7B
+
+# Run all models
+./run_primus_all.sh
+```
+
+**Features:**
+- ✅ Automatic log capture
+- ✅ Automatic metric extraction
+- ✅ Generates benchmark JSON files
+- ✅ Shows next steps
+
+See **[PRIMUS_GUIDE.md](PRIMUS_GUIDE.md)** for complete documentation.
+
 ### AMD/Primus Automatic Log Detection
 
-The script **automatically searches for Primus training logs** in multiple locations:
+Alternatively, if you already have logs, just run:
+
+```bash
+./benchmark.py  # Automatically finds and extracts from logs
+```
+
+The script searches for Primus training logs in:
 - Current directory
 - `output/` directory
 - `/workspace/Primus/`
 - `/workspace/tprimat/`
 
-Just run `./benchmark.py` and it will find your logs automatically!
-
-**Optional: Specify log paths explicitly**
+**Or specify log paths explicitly:**
 
 ```bash
-# If needed, you can provide specific log file paths
-LLAMA_LOG=/path/to/llama.log \
-MISTRAL_LOG=/path/to/mistral.log \
-QWEN_LOG=/path/to/qwen.log \
-./benchmark.py
+LLAMA_LOG=/path/to/llama.log ./benchmark.py
 ```
 
 ### Complete AMD vs NVIDIA Workflow
