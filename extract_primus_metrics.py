@@ -92,10 +92,17 @@ def get_gpu_core_count(device_name: str, device_props) -> int:
 
 
 def detect_gpu_info():
-    """Auto-detect GPU information from PyTorch."""
+    """
+    Auto-detect GPU information from PyTorch.
+    
+    Works for both NVIDIA (CUDA) and AMD (ROCm) GPUs.
+    torch.cuda.* APIs are compatible with both platforms.
+    
+    If no GPU is available, returns placeholder info for log analysis.
+    """
     gpu_info = {}
     
-    if torch.cuda.is_available():
+    if torch.cuda.is_available():  # Works for both CUDA and ROCm
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
         
@@ -103,6 +110,7 @@ def detect_gpu_info():
         gpu_cores = get_gpu_core_count(device_name, device_props)
         
         # Detect software stack and version
+        # ROCm sets torch.version.hip, CUDA sets torch.version.cuda
         is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
         software_stack = "rocm" if is_rocm else "cuda"
         software_version = torch.version.hip if is_rocm else torch.version.cuda
@@ -115,6 +123,18 @@ def detect_gpu_info():
             "pytorch_version": torch.__version__,
             "software_stack": software_stack,
             "software_version": software_version,
+        }
+    else:
+        # No GPU available - use placeholder info for log analysis
+        print("ℹ️  No GPU detected - using log data only")
+        gpu_info = {
+            "device_count": "N/A",
+            "device_name": "Unknown (from logs)",
+            "total_memory_gb": "N/A",
+            "gpu_cores": 0,
+            "pytorch_version": torch.__version__,
+            "software_stack": "rocm",  # Default to rocm for log analysis
+            "software_version": "N/A",
         }
     
     return gpu_info
@@ -164,14 +184,18 @@ def extract_memory_from_log(log_file):
     """
     Extract GPU memory usage from log.
     
-    Primus format:
+    Primus (ROCm) format:
     hip mem usage/free/total/usage_ratio: 117.99GB/74.00GB/191.98GB/61.46%
+    
+    Note: "hip" refers to AMD's HIP (Heterogeneous Interface for Portability),
+    which provides CUDA compatibility on ROCm.
     """
     memory_values = []
     
     with open(log_file, 'r') as f:
         for line in f:
             # Primus format: hip mem usage/free/total/usage_ratio: 117.99GB/...
+            # "hip" = AMD's Heterogeneous Interface for Portability (ROCm)
             match = re.search(r'hip mem usage[^:]*:\s*([0-9.]+)GB', line)
             if match:
                 try:
@@ -223,8 +247,26 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
         }
     
     # Detect platform from GPU info
-    is_amd = "amd" in gpu_info.get("device_name", "").lower() or "mi" in gpu_info.get("device_name", "").lower()
-    platform = "amd" if is_amd else "nvd"
+    # Use software_stack as the primary indicator
+    software_stack = gpu_info.get("software_stack", "rocm")
+    
+    # Also check device name for additional validation
+    device_name_lower = gpu_info.get("device_name", "").lower()
+    is_amd = "amd" in device_name_lower or "mi" in device_name_lower or software_stack == "rocm"
+    is_nvidia = "nvidia" in device_name_lower or "h100" in device_name_lower or "a100" in device_name_lower or software_stack == "cuda"
+    
+    # Set platform based on software stack (more reliable than device name)
+    if software_stack == "rocm":
+        platform = "amd"
+    elif software_stack == "cuda":
+        platform = "nvd"
+    elif is_amd:
+        platform = "amd"
+    elif is_nvidia:
+        platform = "nvd"
+    else:
+        # Default to amd for Primus logs (Primus is AMD-focused)
+        platform = "amd"
     
     # Calculate metrics (skip first step as warmup)
     step_times_no_warmup = step_times[1:] if len(step_times) > 1 else step_times

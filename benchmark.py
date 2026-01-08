@@ -38,19 +38,28 @@ def detect_platform() -> Tuple[str, str, str]:
     """
     Detect GPU platform and software stack.
     
+    Works for both NVIDIA (CUDA) and AMD (ROCm) GPUs.
+    Note: torch.cuda.is_available() returns True for both CUDA and ROCm
+    thanks to HIP compatibility layer.
+    
+    If no GPU is detected, defaults to log analysis mode.
+    
     Returns:
         (platform_name, software_stack, color)
-        e.g., ("AMD (ROCm)", "rocm", Colors.RED)
+        e.g., ("AMD (ROCm)", "rocm", Colors.RED) or ("NVD (CUDA)", "cuda", Colors.GREEN)
     """
     try:
         import torch
         
+        # torch.cuda.is_available() works for both CUDA and ROCm
         if not torch.cuda.is_available():
-            print(f"{Colors.RED}❌ No GPU detected!{Colors.NC}")
-            print("Please ensure CUDA or ROCm is properly installed.")
-            sys.exit(1)
+            # No GPU detected - will use log analysis mode
+            print(f"{Colors.YELLOW}⚠️  No GPU detected - Log analysis mode only{Colors.NC}")
+            # Try to infer platform from existing logs or default to rocm
+            return "Unknown", "rocm", Colors.YELLOW
         
         # Check if ROCm or CUDA
+        # ROCm sets torch.version.hip, CUDA sets torch.version.cuda
         is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
         
         if is_rocm:
@@ -59,9 +68,9 @@ def detect_platform() -> Tuple[str, str, str]:
             return "NVD (CUDA)", "cuda", Colors.GREEN
             
     except ImportError:
-        print(f"{Colors.RED}❌ PyTorch not found!{Colors.NC}")
-        print("Please install PyTorch.")
-        sys.exit(1)
+        print(f"{Colors.YELLOW}⚠️  PyTorch not found - Log analysis mode only{Colors.NC}")
+        # Default to rocm for log analysis
+        return "Unknown", "rocm", Colors.YELLOW
 
 
 def check_nemo() -> bool:
@@ -418,6 +427,9 @@ Examples:
     # Detect platform
     platform_name, software_stack, color = detect_platform()
     
+    # Check if GPU is available
+    gpu_available = platform_name != "Unknown"
+    
     # Print header
     if len(models) > 1:
         print(f"{Colors.CYAN}╔{'='*60}╗{Colors.NC}")
@@ -438,20 +450,27 @@ Examples:
         print(f"Platform: {color}{platform_name}{Colors.NC}")
         print()
     
-    # Check for NeMo
-    has_nemo = check_nemo()
-    
-    if has_nemo:
-        print(f"{Colors.GREEN}✓ NeMo detected - Running training mode{Colors.NC}")
+    # If no GPU, skip training and go straight to log analysis
+    if not gpu_available:
+        print(f"{Colors.BLUE}→ Log analysis mode (no GPU required){Colors.NC}")
         print()
-        
-        successful, failed = run_nemo_benchmarks(models, args.runs, software_stack)
-    else:
-        print(f"{Colors.YELLOW}⚠️  NeMo not detected{Colors.NC}")
-        print(f"{Colors.BLUE}→ Using Primus log extraction mode{Colors.NC}")
-        print()
-        
         successful, failed = run_primus_extraction(models, software_stack)
+        has_nemo = False  # No GPU means no NeMo training possible
+    else:
+        # Check for NeMo (only if GPU is available)
+        has_nemo = check_nemo()
+        
+        if has_nemo:
+            print(f"{Colors.GREEN}✓ NeMo detected - Running training mode{Colors.NC}")
+            print()
+            
+            successful, failed = run_nemo_benchmarks(models, args.runs, software_stack)
+        else:
+            print(f"{Colors.YELLOW}⚠️  NeMo not detected{Colors.NC}")
+            print(f"{Colors.BLUE}→ Using Primus log extraction mode{Colors.NC}")
+            print()
+            
+            successful, failed = run_primus_extraction(models, software_stack)
     
     # Print summary
     print_summary(successful, failed, software_stack, not has_nemo)

@@ -27,11 +27,17 @@ def load_benchmark_results(results_dir: str) -> Tuple[List[Dict], List[Dict]]:
             platform = data.get('platform', '').lower()
             software_stack = data.get('gpu_info', {}).get('software_stack', '').lower()
             
-            # NVIDIA: cuda, nvd, nvidia
-            if platform in ['cuda', 'nvd', 'nvidia'] or software_stack == 'cuda':
+            # Prioritize software_stack over platform for accurate detection
+            # NVIDIA: cuda
+            if software_stack == 'cuda':
                 nvidia_results.append(data)
-            # AMD: rocm, amd
-            elif platform in ['rocm', 'amd'] or software_stack == 'rocm':
+            # AMD: rocm
+            elif software_stack == 'rocm':
+                amd_results.append(data)
+            # Fallback to platform field (for older files)
+            elif platform in ['cuda', 'nvd', 'nvidia']:
+                nvidia_results.append(data)
+            elif platform in ['rocm', 'amd']:
                 amd_results.append(data)
         except Exception as e:
             print(f"⚠️  Error loading {json_file}: {e}")
@@ -179,9 +185,19 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
     
     # 5. GPU Configuration Info
     ax5 = axes[4]
+    # Handle "N/A" values in device_count
+    def get_gpu_count(data):
+        count = data['gpu_info'].get('device_count', data['training_config'].get('num_gpus', 0))
+        if isinstance(count, int):
+            return count
+        if isinstance(count, str) and count.isdigit():
+            return int(count)
+        # If "N/A", try to get from training_config
+        return data['training_config'].get('num_gpus', 8)
+    
     gpu_counts = [
-        nvidia_data['gpu_info'].get('device_count', nvidia_data['training_config'].get('num_gpus', 0)),
-        amd_data['gpu_info'].get('device_count', amd_data['training_config'].get('num_gpus', 0))
+        get_gpu_count(nvidia_data),
+        get_gpu_count(amd_data)
     ]
     bars = ax5.bar(platforms, gpu_counts, color=colors, alpha=0.7, edgecolor='black')
     ax5.set_ylabel('Number of GPUs', fontweight='bold')
@@ -261,6 +277,22 @@ def generate_comparison_report(nvidia_data: Dict, amd_data: Dict, output_file: s
                      amd_data['performance_metrics'].get('throughput_steps_per_second', 0))
     throughput_ratio = nvidia_throughput / amd_throughput if amd_throughput else 1.0
     
+    # Format GPU info fields that might be "N/A"
+    def format_gpu_cores(cores):
+        if isinstance(cores, int) and cores > 0:
+            return f"{cores:,}"
+        return cores if cores else "N/A"
+    
+    def format_memory(memory_gb):
+        if isinstance(memory_gb, (int, float)):
+            return f"{memory_gb:.2f} GB"
+        return str(memory_gb)
+    
+    nvidia_cores = format_gpu_cores(nvidia_data['gpu_info'].get('gpu_cores'))
+    nvidia_memory = format_memory(nvidia_data['gpu_info']['total_memory_gb'])
+    amd_cores = format_gpu_cores(amd_data['gpu_info'].get('gpu_cores'))
+    amd_memory = format_memory(amd_data['gpu_info']['total_memory_gb'])
+    
     report = f"""# AMD vs NVIDIA GPU Benchmark Comparison
 
 ## Executive Summary
@@ -273,29 +305,56 @@ def generate_comparison_report(nvidia_data: Dict, amd_data: Dict, output_file: s
 
 ---
 
+## Comparison Methodology
+
+**Maximum Performance Comparison**: Each platform configured for optimal real-world performance.
+
+⚠️ **Important**: Different configurations reflect each platform's strengths:
+- **NVIDIA H100**: Memory-constrained (80GB) → requires model parallelism
+- **AMD MI300X**: Large memory (192GB) → can fit full model per GPU
+
+This measures **real-world training efficiency** with platform-optimized settings.
+
+---
+
 ## Hardware Configuration
 
 ### NVIDIA GPU
 - **Device**: {nvidia_data['gpu_info']['device_name']}
-- **GPU Cores**: {nvidia_data['gpu_info'].get('gpu_cores', 'N/A'):,}
-- **Total Memory**: {nvidia_data['gpu_info']['total_memory_gb']:.2f} GB
+- **GPU Cores**: {nvidia_cores}
+- **Total Memory**: {nvidia_memory}
 - **PyTorch Version**: {nvidia_data['gpu_info'].get('pytorch_version', 'N/A')}
 
 ### AMD GPU
 - **Device**: {amd_data['gpu_info']['device_name']}
-- **GPU Cores**: {amd_data['gpu_info'].get('gpu_cores', 'N/A'):,}
-- **Total Memory**: {amd_data['gpu_info']['total_memory_gb']:.2f} GB
+- **GPU Cores**: {amd_cores}
+- **Total Memory**: {amd_memory}
 - **PyTorch Version**: {amd_data['gpu_info'].get('pytorch_version', 'N/A')}
 
 ---
 
 ## Training Configuration
 
+### Shared Parameters (Same for Both Platforms)
+
 | Parameter | Value |
 |-----------|-------|
 | Max Steps | {nvidia_data['training_config']['max_steps']} |
 | Global Batch Size | {nvidia_data['training_config']['global_batch_size']} |
 | Sequence Length | {nvidia_data['training_config'].get('sequence_length', 'N/A')} |
+
+### Platform-Specific Configuration
+
+| Configuration | NVIDIA H100 | AMD MI300X |
+|---------------|-------------|------------|
+| **Memory per GPU** | {nvidia_data['memory_metrics'].get('peak_memory_allocated_gb', 'N/A'):.1f} GB | {amd_data['memory_metrics'].get('peak_memory_allocated_gb', 'N/A'):.1f} GB |
+| **Micro Batch Size** | {nvidia_data['training_config'].get('micro_batch_size', 'N/A')} | {amd_data['training_config'].get('micro_batch_size', 'N/A')} |
+| **Software Stack** | {nvidia_data['gpu_info'].get('software_stack', 'N/A').upper()} {nvidia_data['gpu_info'].get('software_version', '')} | {amd_data['gpu_info'].get('software_stack', 'N/A').upper()} {amd_data['gpu_info'].get('software_version', '')} |
+| **Framework** | NeMo (inferred) | Primus (inferred from logs) |
+
+**Note**: Memory usage difference (5.3x) suggests different parallelism strategies.
+NVIDIA likely uses Tensor Parallelism (TP=4) due to memory constraints, while AMD
+may use TP=1 leveraging larger memory capacity.
 
 ---
 

@@ -1,6 +1,9 @@
 """
 Unified benchmarking utilities for AMD vs NVIDIA GPU comparison.
 Works on both ROCm and CUDA platforms.
+
+Note: torch.cuda.* APIs work for both CUDA and ROCm thanks to HIP compatibility layer.
+ROCm provides CUDA API compatibility, so code written for CUDA works on ROCm GPUs.
 """
 import time
 import json
@@ -147,10 +150,14 @@ class BenchmarkCallback(Callback):
         return 0
         
     def on_train_start(self, trainer, pl_module):
-        """Collect GPU information at training start."""
+        """
+        Collect GPU information at training start.
+        
+        Note: torch.cuda APIs work for both NVIDIA (CUDA) and AMD (ROCm) GPUs.
+        """
         self.train_start_time = time.time()
         
-        # Get training configuration
+        # Get training configuration (works for both CUDA and ROCm)
         self.num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 1
         
         # Try to get batch size and sequence length from datamodule
@@ -159,7 +166,7 @@ class BenchmarkCallback(Callback):
             self.sequence_length = getattr(trainer.datamodule, 'seq_length', 
                                           getattr(trainer.datamodule, 'sequence_length', 2048))  # Default 2048
         
-        if torch.cuda.is_available():
+        if torch.cuda.is_available():  # Works for both CUDA and ROCm
             device_props = torch.cuda.get_device_properties(0)
             device_name = torch.cuda.get_device_name(0)
             
@@ -167,6 +174,7 @@ class BenchmarkCallback(Callback):
             gpu_cores = self._get_gpu_core_count(device_name, device_props)
             
             # Detect software stack and version
+            # ROCm sets torch.version.hip, CUDA sets torch.version.cuda
             is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
             software_stack = "rocm" if is_rocm else "cuda"
             software_version = torch.version.hip if is_rocm else torch.version.cuda
@@ -195,19 +203,19 @@ class BenchmarkCallback(Callback):
         """Mark start of training step."""
         self.step_start_time = time.time()
         
-        # Clear cache for consistent measurements
+        # Clear cache for consistent measurements (works for both CUDA and ROCm)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
     
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         """Collect metrics after each training step."""
-        if torch.cuda.is_available():
+        if torch.cuda.is_available():  # Works for both CUDA and ROCm
             torch.cuda.synchronize()
         
         step_time = time.time() - self.step_start_time
         self.step_times.append(step_time)
         
-        # Collect memory stats
+        # Collect memory stats (works for both CUDA and ROCm)
         if torch.cuda.is_available():
             mem_allocated = torch.cuda.memory_allocated() / 1e9  # GB
             mem_reserved = torch.cuda.memory_reserved() / 1e9    # GB
@@ -366,11 +374,17 @@ def compare_benchmarks(results_dir: str = "./output") -> Dict:
         platform = data.get('platform', '').lower()
         software_stack = data.get('gpu_info', {}).get('software_stack', '').lower()
         
-        # NVIDIA: cuda, nvd, nvidia
-        if platform in ['cuda', 'nvd', 'nvidia'] or software_stack == 'cuda':
+        # Prioritize software_stack over platform for accurate detection
+        # NVIDIA: cuda
+        if software_stack == 'cuda':
             nvidia_results.append(data)
-        # AMD: rocm, amd
-        elif platform in ['rocm', 'amd'] or software_stack == 'rocm':
+        # AMD: rocm
+        elif software_stack == 'rocm':
+            amd_results.append(data)
+        # Fallback to platform field (for older files)
+        elif platform in ['cuda', 'nvd', 'nvidia']:
+            nvidia_results.append(data)
+        elif platform in ['rocm', 'amd']:
             amd_results.append(data)
     
     if not nvidia_results or not amd_results:

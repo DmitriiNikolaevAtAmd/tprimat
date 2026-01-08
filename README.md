@@ -59,6 +59,38 @@ Or use the included requirements:
 pip install -r requirements.txt
 ```
 
+### 🔧 ROCm Compatibility Note
+
+**TensorPrimat works seamlessly with both NVIDIA and AMD GPUs.**
+
+- **CUDA (NVIDIA)**: Uses native CUDA APIs
+- **ROCm (AMD)**: Uses HIP (Heterogeneous Interface for Portability)
+
+**Key Point**: `torch.cuda.*` APIs work for both platforms! AMD's ROCm provides CUDA API compatibility through HIP, so code written for CUDA automatically works on ROCm GPUs without modification.
+
+The benchmark suite automatically detects your platform:
+- Checks `torch.version.hip` for ROCm
+- Checks `torch.version.cuda` for CUDA
+- Uses appropriate device names and metrics
+
+### 📊 Log Analysis Mode (No GPU Required)
+
+**You can analyze logs without a GPU present!**
+
+If no GPU is detected, the script automatically enters **log analysis mode**:
+- ✅ Works on any machine (laptop, build server, etc.)
+- ✅ Extracts metrics from existing training logs
+- ✅ No CUDA/ROCm installation required
+- ✅ Perfect for analyzing logs from remote training runs
+
+```bash
+# Copy logs from training server to local machine
+scp training-server:~/logs/*.log .
+
+# Analyze logs locally (no GPU needed)
+./benchmark.py
+```
+
 ---
 
 ## 🎯 Usage
@@ -164,6 +196,29 @@ cat comparison_report.md
 | `pretrain_qwen.py` | Qwen 2.5 7B |
 
 All include automatic benchmarking via `BenchmarkCallback`.
+
+---
+
+## 📚 Comparison Methodology
+
+TensorPrimat supports two comparison approaches:
+
+1. **Maximum Performance** (default): Each platform optimally configured
+2. **Identical Configuration** (optional): Hardware-only comparison
+
+See **[COMPARISON_METHODOLOGY.md](COMPARISON_METHODOLOGY.md)** for detailed explanation.
+
+### AMD-Specific Resources
+
+- **[AMD_COMPARISON_GUIDE.md](AMD_COMPARISON_GUIDE.md)**: Complete guide for running both comparison types
+- **`./check_primus_config.sh`**: Verify your Primus configuration
+- **`./run_amd_dual_comparison.sh`**: Run both max performance and fair comparison
+
+```bash
+# Quick start for AMD users:
+./check_primus_config.sh  # Verify your config
+./benchmark.py             # Run max performance comparison
+```
 
 ---
 
