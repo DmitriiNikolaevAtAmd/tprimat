@@ -60,6 +60,12 @@ if [ "$MODEL" = "all" ]; then
         echo -e "${BLUE}→ Using Primus log extraction mode${NC}"
         echo ""
         
+        # Check for environment variables pointing to log files
+        # Usage: LLAMA_LOG=/path/to/llama.log MISTRAL_LOG=/path/to/mistral.log ./run_benchmark.sh all
+        LLAMA_LOG="${LLAMA_LOG:-}"
+        MISTRAL_LOG="${MISTRAL_LOG:-}"
+        QWEN_LOG="${QWEN_LOG:-}"
+        
         # Auto-extract from logs
         ALL_MODELS=("llama" "mistral" "qwen")
         SUCCESSFUL=()
@@ -67,12 +73,23 @@ if [ "$MODEL" = "all" ]; then
         
         for m in "${ALL_MODELS[@]}"; do
             echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo -e "${BLUE}Extracting: ${GREEN}${m}${NC}"
+            echo -e "${BLUE}Searching for ${GREEN}${m}${NC} logs..."
             echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             
-            # Look for log file patterns
+            # Check if log path is provided via environment variable
             LOG_FILE=""
-            for pattern in "training_${m}.log" "*${m}*.log" "primus_${m}.log" "${m}_training.log"; do
+            case $m in
+                llama)   [ -n "$LLAMA_LOG" ] && LOG_FILE="$LLAMA_LOG" ;;
+                mistral) [ -n "$MISTRAL_LOG" ] && LOG_FILE="$MISTRAL_LOG" ;;
+                qwen)    [ -n "$QWEN_LOG" ] && LOG_FILE="$QWEN_LOG" ;;
+            esac
+            
+            if [ -n "$LOG_FILE" ]; then
+                echo -e "${GREEN}→${NC} Using provided log path: $LOG_FILE"
+            fi
+            
+            # Try specific patterns first
+            for pattern in "training_${m}.log" "${m}_training.log" "primus_${m}.log" "*${m}*.log"; do
                 FOUND=$(ls -t $pattern 2>/dev/null | head -1)
                 if [ -n "$FOUND" ]; then
                     LOG_FILE="$FOUND"
@@ -80,9 +97,26 @@ if [ "$MODEL" = "all" ]; then
                 fi
             done
             
+            # If not found, search ALL .log and .txt files and grep for model indicators
+            if [ -z "$LOG_FILE" ]; then
+                echo -e "${YELLOW}→${NC} Searching all log files for ${m} training..."
+                for logfile in *.log *.txt 2>/dev/null; do
+                    if [ -f "$logfile" ]; then
+                        # Check if file contains model-specific strings
+                        if grep -qi "${m}" "$logfile" 2>/dev/null || \
+                           grep -qi "llama.*3.1.*8b" "$logfile" 2>/dev/null && [ "$m" = "llama" ] || \
+                           grep -qi "mistral.*7b" "$logfile" 2>/dev/null && [ "$m" = "mistral" ] || \
+                           grep -qi "qwen.*2.5.*7b" "$logfile" 2>/dev/null && [ "$m" = "qwen" ]; then
+                            LOG_FILE="$logfile"
+                            echo -e "${GREEN}→${NC} Found potential match: $logfile"
+                            break
+                        fi
+                    fi
+                done
+            fi
+            
             if [ -z "$LOG_FILE" ]; then
                 echo -e "${YELLOW}⚠️  No log file found for ${m}${NC}"
-                echo "   Searched for: training_${m}.log, *${m}*.log, primus_${m}.log"
                 echo ""
                 FAILED+=("${m}")
                 continue
@@ -132,23 +166,33 @@ if [ "$MODEL" = "all" ]; then
                 echo -e "${YELLOW}No Primus training logs found!${NC}"
                 echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
                 echo ""
-                echo -e "${BLUE}You need to run Primus training first.${NC}"
+                echo -e "${BLUE}Choose one of the following options:${NC}"
                 echo ""
-                echo -e "${GREEN}Option 1: Run Primus training and capture logs${NC}"
+                echo -e "${GREEN}Option 1: Provide log paths via environment variables${NC}"
                 echo ""
-                echo "  cd /path/to/primus"
+                echo "  LLAMA_LOG=/path/to/llama.log \\"
+                echo "  MISTRAL_LOG=/path/to/mistral.log \\"
+                echo "  QWEN_LOG=/path/to/qwen.log \\"
+                echo "  ./run_benchmark.sh all"
+                echo ""
+                echo "  This will automatically extract all metrics!"
+                echo ""
+                echo -e "${GREEN}Option 2: Copy logs to current directory${NC}"
+                echo ""
+                echo "  cp /path/to/your/logs/*.log ."
+                echo "  # Name them: training_llama.log, training_mistral.log, training_qwen.log"
+                echo "  ./run_benchmark.sh all"
+                echo ""
+                echo -e "${GREEN}Option 3: Run Primus training and capture logs${NC}"
+                echo ""
+                echo "  cd /workspace/Primus"
                 echo "  export EXP=examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml"
                 echo "  bash ./examples/run_pretrain.sh --train_iters 10 2>&1 | tee /workspace/tprimat/training_llama.log"
                 echo ""
-                echo "  Then run this script again:"
+                echo "  # Repeat for mistral and qwen, then:"
                 echo "  cd /workspace/tprimat && ./run_benchmark.sh all"
                 echo ""
-                echo -e "${GREEN}Option 2: If you have existing logs, copy them here${NC}"
-                echo ""
-                echo "  cp /path/to/your/logs/*.log /workspace/tprimat/"
-                echo "  # Name them: training_llama.log, training_mistral.log, training_qwen.log"
-                echo ""
-                echo -e "${GREEN}Option 3: Extract manually with custom paths${NC}"
+                echo -e "${GREEN}Option 4: Extract manually${NC}"
                 echo ""
                 for m in "${FAILED[@]}"; do
                     echo "  python3 extract_primus_metrics.py \\"
