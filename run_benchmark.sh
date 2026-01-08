@@ -28,7 +28,7 @@ RUNS=${2:-1}         # Number of runs (default: 1)
 # Handle "all" option - run all models
 if [ "$MODEL" = "all" ]; then
     echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}        ${BLUE}NeMo Benchmark Suite - All Models${NC}              ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}           ${BLUE}TensorPrimat - All Models${NC}                   ${CYAN}║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
@@ -104,7 +104,7 @@ fi
 
 # Single model run
 echo -e "${BLUE}=================================${NC}"
-echo -e "${BLUE}NeMo Benchmark Runner${NC}"
+echo -e "${BLUE}TensorPrimat${NC}"
 echo -e "${BLUE}=================================${NC}"
 echo -e "Model: ${GREEN}${MODEL}${NC}"
 echo -e "Runs:  ${GREEN}${RUNS}${NC}"

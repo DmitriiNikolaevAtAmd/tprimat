@@ -1,4 +1,4 @@
-# NeMo GPU Benchmarking Suite
+# TensorPrimat
 
 **Complete toolkit for profiling and comparing AMD vs NVIDIA GPU performance with NeMo**
 
