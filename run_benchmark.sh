@@ -56,28 +56,88 @@ if [ "$MODEL" = "all" ]; then
     
     # Check if NeMo is available
     if ! python3 -c "import nemo" 2>/dev/null; then
-        echo -e "${YELLOW}⚠️  NeMo not detected - cannot run training scripts${NC}"
+        echo -e "${YELLOW}⚠️  NeMo not detected${NC}"
+        echo -e "${BLUE}→ Using Primus log extraction mode${NC}"
         echo ""
-        echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-        echo -e "${BLUE}Primus Log Extraction Workflow${NC}"
-        echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo "Since NeMo is not available on this platform, use log extraction:"
-        echo ""
-        echo -e "${GREEN}Option 1: Extract from existing logs${NC}"
-        echo ""
+        
+        # Auto-extract from logs
         ALL_MODELS=("llama" "mistral" "qwen")
+        SUCCESSFUL=()
+        FAILED=()
+        
         for m in "${ALL_MODELS[@]}"; do
-            echo -e "${CYAN}python3 extract_primus_metrics.py \\${NC}"
-            echo -e "  --log-file training_${m}.log \\${NC}"
-            echo -e "  --model-name ${m} \\${NC}"
-            echo -e "  --num-gpus 8 \\${NC}"
-            echo -e "  --global-batch-size 128 \\${NC}"
-            echo -e "  --sequence-length 2048${NC}"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${BLUE}Extracting: ${GREEN}${m}${NC}"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            
+            # Look for log file patterns
+            LOG_FILE=""
+            for pattern in "training_${m}.log" "*${m}*.log" "primus_${m}.log" "${m}_training.log"; do
+                FOUND=$(ls -t $pattern 2>/dev/null | head -1)
+                if [ -n "$FOUND" ]; then
+                    LOG_FILE="$FOUND"
+                    break
+                fi
+            done
+            
+            if [ -z "$LOG_FILE" ]; then
+                echo -e "${YELLOW}⚠️  No log file found for ${m}${NC}"
+                echo "   Searched for: training_${m}.log, *${m}*.log, primus_${m}.log"
+                echo ""
+                FAILED+=("${m}")
+                continue
+            fi
+            
+            echo -e "${GREEN}✓${NC} Found log: ${LOG_FILE}"
+            echo -e "${BLUE}→${NC} Extracting metrics..."
+            echo ""
+            
+            # Extract metrics
+            if python3 extract_primus_metrics.py \
+                --log-file "$LOG_FILE" \
+                --model-name "$m" \
+                --num-gpus 8 \
+                --global-batch-size 128 \
+                --sequence-length 2048; then
+                SUCCESSFUL+=("${m}")
+                echo -e "${GREEN}✅ ${m} extracted successfully${NC}"
+            else
+                FAILED+=("${m}")
+                echo -e "${RED}❌ ${m} extraction failed${NC}"
+            fi
             echo ""
         done
+        
+        # Summary
+        echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║${NC}                  ${BLUE}Extraction Summary${NC}                      ${CYAN}║${NC}"
+        echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
         echo ""
-        exit 0
+        
+        if [ ${#SUCCESSFUL[@]} -gt 0 ]; then
+            echo -e "${GREEN}✅ Successful (${#SUCCESSFUL[@]}): ${SUCCESSFUL[@]}${NC}"
+            for m in "${SUCCESSFUL[@]}"; do
+                echo "   📄 output/benchmark_${SOFTWARE_STACK}_${m}.json"
+            done
+            echo ""
+        fi
+        
+        if [ ${#FAILED[@]} -gt 0 ]; then
+            echo -e "${RED}❌ Failed (${#FAILED[@]}): ${FAILED[@]}${NC}"
+            echo ""
+            echo -e "${YELLOW}To extract manually:${NC}"
+            for m in "${FAILED[@]}"; do
+                echo "  python3 extract_primus_metrics.py --log-file training_${m}.log --model-name ${m} --num-gpus 8 --global-batch-size 128 --sequence-length 2048"
+            done
+            echo ""
+        fi
+        
+        echo -e "${BLUE}Next Steps:${NC}"
+        echo "  1. Run on the other platform (AMD/NVD)"
+        echo "  2. Compare: ${GREEN}python3 compare_results.py${NC}"
+        echo ""
+        
+        [ ${#FAILED[@]} -eq 0 ] && exit 0 || exit 1
     fi
     
     echo -e "${GREEN}✓ NeMo detected${NC}"
@@ -162,37 +222,72 @@ echo -e "Platform: ${COLOR}${PLATFORM}${NC}"
 # Check if NeMo is available
 if ! python3 -c "import nemo" 2>/dev/null; then
     echo -e "${YELLOW}⚠️  NeMo not detected${NC}"
+    echo -e "${BLUE}→ Using Primus log extraction mode${NC}"
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}Running on ${PLATFORM} without NeMo (Primus mode)${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo "To benchmark with Primus, use the log extraction workflow:"
-    echo ""
-    echo -e "${GREEN}Step 1:${NC} Run your Primus training and save logs"
-    echo "  Example:"
-    echo "    primus train ... 2>&1 | tee training_${MODEL}.log"
-    echo ""
-    echo -e "${GREEN}Step 2:${NC} Extract metrics from logs"
-    echo "  Command:"
-    echo -e "    ${CYAN}python3 extract_primus_metrics.py \\${NC}"
-    echo -e "      ${CYAN}--log-file training_${MODEL}.log \\${NC}"
-    echo -e "      ${CYAN}--model-name ${MODEL} \\${NC}"
-    echo -e "      ${CYAN}--num-gpus 8 \\${NC}"
-    echo -e "      ${CYAN}--global-batch-size 128 \\${NC}"
-    echo -e "      ${CYAN}--sequence-length 2048${NC}"
-    echo ""
-    echo "This will create: output/benchmark_${SOFTWARE_STACK}_${MODEL}.json"
-    echo ""
-    echo -e "${BLUE}For all models:${NC}"
-    for m in llama mistral qwen; do
-        echo "  python3 extract_primus_metrics.py --log-file training_${m}.log --model-name ${m} --num-gpus 8 --global-batch-size 128 --sequence-length 2048"
+    
+    # Look for log file
+    LOG_FILE=""
+    for pattern in "training_${MODEL}.log" "*${MODEL}*.log" "primus_${MODEL}.log" "${MODEL}_training.log"; do
+        FOUND=$(ls -t $pattern 2>/dev/null | head -1)
+        if [ -n "$FOUND" ]; then
+            LOG_FILE="$FOUND"
+            break
+        fi
     done
+    
+    if [ -z "$LOG_FILE" ]; then
+        echo -e "${RED}❌ No log file found for ${MODEL}${NC}"
+        echo ""
+        echo "Searched for:"
+        echo "  - training_${MODEL}.log"
+        echo "  - *${MODEL}*.log"
+        echo "  - primus_${MODEL}.log"
+        echo "  - ${MODEL}_training.log"
+        echo ""
+        echo -e "${YELLOW}To extract metrics:${NC}"
+        echo ""
+        echo "  1. Run your Primus training and save logs:"
+        echo "     primus train ... 2>&1 | tee training_${MODEL}.log"
+        echo ""
+        echo "  2. Extract metrics:"
+        echo "     python3 extract_primus_metrics.py \\"
+        echo "       --log-file training_${MODEL}.log \\"
+        echo "       --model-name ${MODEL} \\"
+        echo "       --num-gpus 8 \\"
+        echo "       --global-batch-size 128 \\"
+        echo "       --sequence-length 2048"
+        echo ""
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✓${NC} Found log: ${LOG_FILE}"
+    echo -e "${BLUE}→${NC} Extracting metrics..."
     echo ""
-    exit 0
+    
+    # Extract metrics
+    if python3 extract_primus_metrics.py \
+        --log-file "$LOG_FILE" \
+        --model-name "$MODEL" \
+        --num-gpus 8 \
+        --global-batch-size 128 \
+        --sequence-length 2048; then
+        echo ""
+        echo -e "${GREEN}✅ Metrics extracted successfully${NC}"
+        echo "📄 output/benchmark_${SOFTWARE_STACK}_${MODEL}.json"
+        echo ""
+        echo -e "${BLUE}Next Steps:${NC}"
+        echo "  1. Run on the other platform"
+        echo "  2. Compare: ${GREEN}python3 compare_results.py${NC}"
+        echo ""
+        exit 0
+    else
+        echo ""
+        echo -e "${RED}❌ Extraction failed${NC}"
+        exit 1
+    fi
 fi
 
-echo -e "${GREEN}✓ NeMo detected${NC}"
+echo -e "${GREEN}✓ NeMo detected - Running training mode${NC}"
 echo ""
 
 # Select training script
