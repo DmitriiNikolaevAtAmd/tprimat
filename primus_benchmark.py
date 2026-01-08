@@ -100,11 +100,13 @@ Then the callback will auto-detect and save results.
 Output
 ------
 Results will be saved to:
-  ./outs/benchmark_rocm_TIMESTAMP.json
+  ./outs/benchmark_rocm_TIMESTAMP.json  (on AMD/ROCm)
+  ./outs/benchmark_cuda_TIMESTAMP.json  (on NVIDIA/CUDA)
 
 With metrics:
-  - Platform: ROCm
-  - GPU info: MI300X details
+  - Platform: amd or nvd
+  - GPU info: Device details
+  - Software stack: rocm or cuda
   - Throughput: tokens/sec and tokens/sec/GPU
   - Memory usage
   - Step timings

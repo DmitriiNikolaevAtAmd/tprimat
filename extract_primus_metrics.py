@@ -102,9 +102,10 @@ def detect_gpu_info():
         # Detect GPU cores (approximate based on known models)
         gpu_cores = get_gpu_core_count(device_name, device_props)
         
-        # Detect platform
-        is_rocm = "rocm" in str(torch.version.hip).lower() if hasattr(torch.version, 'hip') else False
-        platform = "rocm" if is_rocm else "cuda"
+        # Detect software stack and version
+        is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+        software_stack = "rocm" if is_rocm else "cuda"
+        software_version = torch.version.hip if is_rocm else torch.version.cuda
         
         gpu_info = {
             "device_count": torch.cuda.device_count(),
@@ -112,14 +113,9 @@ def detect_gpu_info():
             "total_memory_gb": device_props.total_memory / 1e9,
             "gpu_cores": gpu_cores,
             "pytorch_version": torch.__version__,
-            "software_stack": platform,
+            "software_stack": software_stack,
+            "software_version": software_version,
         }
-        
-        # Add version-specific info
-        if is_rocm:
-            gpu_info["rocm_version"] = torch.version.hip
-        else:
-            gpu_info["cuda_version"] = torch.version.cuda
     
     return gpu_info
 
@@ -223,7 +219,12 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
             "gpu_cores": 0,
             "pytorch_version": torch.__version__,
             "software_stack": "rocm",
+            "software_version": "unknown",
         }
+    
+    # Detect platform from GPU info
+    is_amd = "amd" in gpu_info.get("device_name", "").lower() or "mi" in gpu_info.get("device_name", "").lower()
+    platform = "amd" if is_amd else "nvd"
     
     # Calculate metrics (skip first step as warmup)
     step_times_no_warmup = step_times[1:] if len(step_times) > 1 else step_times
@@ -249,7 +250,7 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
     steps_per_second = 1.0 / avg_step_time
     
     results = {
-        "platform": gpu_info.get("platform", "rocm"),
+        "platform": platform,
         "gpu_info": gpu_info,
         "timestamp": datetime.now().isoformat(),
         "training_config": {

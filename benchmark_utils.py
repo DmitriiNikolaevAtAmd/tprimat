@@ -48,7 +48,9 @@ class BenchmarkCallback(Callback):
         # Detect platform
         if platform == "auto":
             if torch.cuda.is_available():
-                self.platform = "cuda" if "cuda" in torch.version.cuda else "rocm"
+                # Check if ROCm (has torch.version.hip) or CUDA
+                is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+                self.platform = "amd" if is_rocm else "nvd"
             else:
                 self.platform = "cpu"
         else:
@@ -162,23 +164,24 @@ class BenchmarkCallback(Callback):
             # Get GPU core count (approximate based on known models)
             gpu_cores = self._get_gpu_core_count(device_name, device_props)
             
+            # Detect software stack and version
+            is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+            software_stack = "rocm" if is_rocm else "cuda"
+            software_version = torch.version.hip if is_rocm else torch.version.cuda
+            
             self.gpu_info = {
-                "platform": self.platform,
                 "device_count": self.num_gpus,
                 "device_name": device_name,
                 "total_memory_gb": device_props.total_memory / 1e9,
                 "gpu_cores": gpu_cores,
                 "pytorch_version": torch.__version__,
+                "software_stack": software_stack,
+                "software_version": software_version,
             }
-            
-            # AMD-specific info
-            if self.platform == "rocm":
-                self.gpu_info["rocm_version"] = torch.version.hip
-            else:
-                self.gpu_info["cuda_version"] = torch.version.cuda
         
+        software_stack = self.gpu_info.get("software_stack", "unknown")
         print(f"\n{'='*60}")
-        print(f"BENCHMARK START - Platform: {self.platform.upper()}")
+        print(f"BENCHMARK START - Platform: {self.platform.upper()} ({software_stack.upper()})")
         print(f"{'='*60}")
         for key, value in self.gpu_info.items():
             print(f"{key}: {value}")
@@ -285,7 +288,9 @@ class BenchmarkCallback(Callback):
             
             # Save results (round all floats to 3 decimal places)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"benchmark_{self.platform}_{timestamp}.json"
+            # Use software stack (cuda/rocm) for filename
+            software_stack = self.gpu_info.get("software_stack", self.platform)
+            filename = f"benchmark_{software_stack}_{timestamp}.json"
             filepath = self.output_dir / filename
             
             # Round all float values to 3 decimal places
@@ -294,8 +299,9 @@ class BenchmarkCallback(Callback):
             with open(filepath, 'w') as f:
                 json.dump(results_rounded, f, indent=2)
             
+            software_stack = self.gpu_info.get("software_stack", self.platform)
             print(f"\n{'='*60}")
-            print(f"BENCHMARK COMPLETE - Platform: {self.platform.upper()}")
+            print(f"BENCHMARK COMPLETE - Platform: {self.platform.upper()} ({software_stack.upper()})")
             print(f"{'='*60}")
             print(f"GPUs: {self.num_gpus}")
             print(f"Total Steps: {results['performance_metrics']['total_steps']}")
