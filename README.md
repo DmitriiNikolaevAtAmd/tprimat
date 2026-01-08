@@ -81,10 +81,20 @@ pip install -r requirements.txt
 ./benchmark.py --help
 ```
 
-### On AMD/Primus with Specific Log Files
+### AMD/Primus Automatic Log Detection
+
+The script **automatically searches for Primus training logs** in multiple locations:
+- Current directory
+- `output/` directory
+- `/workspace/Primus/`
+- `/workspace/tprimat/`
+
+Just run `./benchmark.py` and it will find your logs automatically!
+
+**Optional: Specify log paths explicitly**
 
 ```bash
-# Provide log file paths via environment variables
+# If needed, you can provide specific log file paths
 LLAMA_LOG=/path/to/llama.log \
 MISTRAL_LOG=/path/to/mistral.log \
 QWEN_LOG=/path/to/qwen.log \
@@ -158,6 +168,23 @@ All include automatic benchmarking via `BenchmarkCallback`.
 ---
 
 ## 🔧 Advanced Usage
+
+### How Automatic Log Detection Works
+
+On AMD platforms without NeMo, the benchmark script automatically searches for Primus training logs:
+
+**Search Strategy:**
+1. **Environment Variables**: Checks `LLAMA_LOG`, `MISTRAL_LOG`, `QWEN_LOG`
+2. **Standard Filenames**: Looks for `training_llama.log`, `training_mistral.log`, etc.
+3. **Pattern Matching**: Searches for files like `*llama*.log`, `primus_*llama*.log`
+4. **Multiple Directories**: 
+   - Current directory (`.`)
+   - Output directory (`output/`)
+   - Primus workspace (`/workspace/Primus/`)
+   - TensorPrimat workspace (`/workspace/tprimat/`)
+5. **Content-Based Search**: As a fallback, scans `.log` and `.txt` files for model-specific keywords
+
+**Result**: You don't need to manually specify log paths in most cases—just run `./benchmark.py`!
 
 ### Running Primus Training
 

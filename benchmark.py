@@ -80,8 +80,10 @@ def find_log_file(model: str) -> Optional[str]:
     Searches for:
     1. Environment variable (LLAMA_LOG, MISTRAL_LOG, QWEN_LOG)
     2. Standard filenames (training_llama.log, etc.)
-    3. Pattern matching (*llama*.log)
-    4. Content-based search in all .log/.txt files
+    3. Pattern matching in current directory (*llama*.log)
+    4. Pattern matching in output directory
+    5. Pattern matching in /workspace/Primus (if exists)
+    6. Content-based search in all .log/.txt files
     
     Args:
         model: Model name (llama, mistral, qwen)
@@ -94,25 +96,51 @@ def find_log_file(model: str) -> Optional[str]:
     if env_var in os.environ:
         log_path = os.environ[env_var]
         if os.path.isfile(log_path):
+            print(f"{Colors.GREEN}✓{Colors.NC} Using log from ${env_var}: {log_path}")
             return log_path
     
-    # Try standard filenames
+    # Define search directories
+    search_dirs = [
+        ".",                                    # Current directory
+        "output",                               # Output directory
+        "/workspace/Primus",                    # Primus workspace
+        "/workspace/Primus/logs",               # Primus logs directory
+        "/workspace/tprimat",                   # TensorPrimat workspace
+        "/workspace/tprimat/output",            # TensorPrimat output directory
+    ]
+    
+    # Filter to existing directories
+    search_dirs = [d for d in search_dirs if os.path.isdir(d)]
+    
+    # Try standard filenames in all search directories
     patterns = [
         f"training_{model}.log",
         f"{model}_training.log",
         f"primus_{model}.log",
+        f"primus_training_*{model}*.log",
         f"*{model}*.log",
     ]
     
-    for pattern in patterns:
-        matches = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
-        if matches:
-            return matches[0]
+    for search_dir in search_dirs:
+        for pattern in patterns:
+            full_pattern = os.path.join(search_dir, pattern)
+            matches = sorted(glob.glob(full_pattern), key=os.path.getmtime, reverse=True)
+            if matches:
+                print(f"{Colors.GREEN}✓{Colors.NC} Found log by pattern: {matches[0]}")
+                return matches[0]
     
     # Search all .log and .txt files by content
-    print(f"{Colors.YELLOW}→{Colors.NC} Searching all log files for {model} training...")
+    print(f"{Colors.YELLOW}→{Colors.NC} Searching log files by content for {model} training...")
     
-    for log_file in glob.glob("*.log") + glob.glob("*.txt"):
+    all_log_files = []
+    for search_dir in search_dirs:
+        all_log_files.extend(glob.glob(os.path.join(search_dir, "*.log")))
+        all_log_files.extend(glob.glob(os.path.join(search_dir, "*.txt")))
+    
+    # Remove duplicates and sort by modification time (newest first)
+    all_log_files = sorted(set(all_log_files), key=os.path.getmtime, reverse=True)
+    
+    for log_file in all_log_files:
         if not os.path.isfile(log_file):
             continue
             
@@ -121,19 +149,17 @@ def find_log_file(model: str) -> Optional[str]:
                 content = f.read(10000)  # Read first 10KB
                 
                 # Check for model-specific strings
-                if model in content.lower():
-                    print(f"{Colors.GREEN}→{Colors.NC} Found potential match: {log_file}")
-                    return log_file
-                    
+                content_lower = content.lower()
+                
                 # More specific checks
-                if model == "llama" and "llama" in content.lower() and "8b" in content.lower():
-                    print(f"{Colors.GREEN}→{Colors.NC} Found potential match: {log_file}")
+                if model == "llama" and "llama" in content_lower and ("8b" in content_lower or "pretrain" in content_lower):
+                    print(f"{Colors.GREEN}✓{Colors.NC} Found by content: {log_file}")
                     return log_file
-                elif model == "mistral" and "mistral" in content.lower() and "7b" in content.lower():
-                    print(f"{Colors.GREEN}→{Colors.NC} Found potential match: {log_file}")
+                elif model == "mistral" and "mistral" in content_lower and ("7b" in content_lower or "pretrain" in content_lower):
+                    print(f"{Colors.GREEN}✓{Colors.NC} Found by content: {log_file}")
                     return log_file
-                elif model == "qwen" and "qwen" in content.lower():
-                    print(f"{Colors.GREEN}→{Colors.NC} Found potential match: {log_file}")
+                elif model == "qwen" and "qwen" in content_lower and ("pretrain" in content_lower or "2.5" in content_lower):
+                    print(f"{Colors.GREEN}✓{Colors.NC} Found by content: {log_file}")
                     return log_file
         except Exception:
             continue
@@ -212,10 +238,16 @@ def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[
     successful = []
     failed = []
     
+    print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+    print(f"{Colors.BLUE}Primus Log Extraction Mode{Colors.NC}")
+    print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+    print(f"{Colors.YELLOW}→{Colors.NC} Automatically searching for training logs...")
+    print()
+    
     for model in models:
-        print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
-        print(f"{Colors.BLUE}Searching for {Colors.GREEN}{model}{Colors.NC} logs...")
-        print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+        print(f"{Colors.CYAN}{'─'*60}{Colors.NC}")
+        print(f"{Colors.BLUE}Model: {Colors.GREEN}{model}{Colors.NC}")
+        print(f"{Colors.CYAN}{'─'*60}{Colors.NC}")
         
         log_file = find_log_file(model)
         
@@ -225,13 +257,12 @@ def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[
             failed.append(model)
             continue
         
-        print(f"{Colors.GREEN}✓{Colors.NC} Found log: {log_file}")
-        print(f"{Colors.BLUE}→{Colors.NC} Extracting metrics...")
+        print(f"{Colors.BLUE}→{Colors.NC} Extracting metrics from: {log_file}")
         print()
         
         if extract_metrics(log_file, model):
             successful.append(model)
-            print(f"{Colors.GREEN}✅ {model} extracted successfully{Colors.NC}")
+            print(f"{Colors.GREEN}✅ {model} metrics extracted successfully{Colors.NC}")
         else:
             failed.append(model)
             print(f"{Colors.RED}❌ {model} extraction failed{Colors.NC}")
@@ -292,48 +323,59 @@ def print_summary(successful: List[str], failed: List[str], software_stack: str,
     
     if successful:
         print(f"{Colors.GREEN}✅ Successful ({len(successful)}): {', '.join(successful)}{Colors.NC}")
+        print()
         for model in successful:
             print(f"   📄 output/benchmark_{software_stack}_{model}.json")
         print()
     
     if failed:
         print(f"{Colors.RED}❌ Failed ({len(failed)}): {', '.join(failed)}{Colors.NC}")
-        print()
         
-        if is_primus and len(successful) == 0:
-            # No logs found - provide guidance
-            print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
-            print(f"{Colors.YELLOW}No Primus training logs found!{Colors.NC}")
-            print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+        if is_primus:
             print()
-            print(f"{Colors.BLUE}Choose one of the following options:{Colors.NC}")
-            print()
-            print(f"{Colors.GREEN}Option 1: Provide log paths via environment variables{Colors.NC}")
-            print()
-            print("  LLAMA_LOG=/path/to/llama.log \\")
-            print("  MISTRAL_LOG=/path/to/mistral.log \\")
-            print("  QWEN_LOG=/path/to/qwen.log \\")
-            print("  ./benchmark.py")
-            print()
-            print(f"{Colors.GREEN}Option 2: Copy logs to current directory{Colors.NC}")
-            print()
-            print("  cp /path/to/logs/*.log .")
-            print("  # Name them: training_llama.log, training_mistral.log, training_qwen.log")
-            print("  ./benchmark.py")
-            print()
-            print(f"{Colors.GREEN}Option 3: Run Primus training and capture logs{Colors.NC}")
-            print()
-            print("  cd /workspace/Primus")
-            print("  export EXP=examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml")
-            print("  bash ./examples/run_pretrain.sh --train_iters 10 2>&1 | tee /workspace/tprimat/training_llama.log")
-            print()
-            print("  Then: cd /workspace/tprimat && ./benchmark.py")
-            print()
+            if len(successful) == 0:
+                # No logs found at all - provide full guidance
+                print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+                print(f"{Colors.YELLOW}No Primus training logs found!{Colors.NC}")
+                print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+                print()
+                print(f"{Colors.BLUE}To generate benchmark results, choose one of:{Colors.NC}")
+                print()
+                print(f"{Colors.GREEN}Option 1: Provide log paths via environment variables{Colors.NC}")
+                print()
+                print("  LLAMA_LOG=/path/to/llama.log \\")
+                print("  MISTRAL_LOG=/path/to/mistral.log \\")
+                print("  QWEN_LOG=/path/to/qwen.log \\")
+                print("  ./benchmark.py")
+                print()
+                print(f"{Colors.GREEN}Option 2: Copy logs to current directory{Colors.NC}")
+                print()
+                print("  cp /path/to/logs/*.log .")
+                print("  # Name them: training_llama.log, training_mistral.log, training_qwen.log")
+                print("  ./benchmark.py")
+                print()
+                print(f"{Colors.GREEN}Option 3: Run Primus training and capture logs{Colors.NC}")
+                print()
+                print("  cd /workspace/Primus")
+                print("  export EXP=examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml")
+                print("  bash ./examples/run_pretrain.sh --train_iters 10 2>&1 | tee /workspace/tprimat/training_llama.log")
+                print()
+                print("  Then: cd /workspace/tprimat && ./benchmark.py")
+                print()
+            else:
+                # Some logs found, some missing
+                print()
+                print(f"{Colors.YELLOW}→{Colors.NC} Missing logs for: {', '.join(failed)}")
+                print(f"{Colors.BLUE}Tip:{Colors.NC} Place logs in current directory or output/ directory")
+                print(f"      Or use environment variables: {', '.join([f'{m.upper()}_LOG' for m in failed])}")
+                print()
     
-    print(f"{Colors.BLUE}Next Steps:{Colors.NC}")
-    print("  1. Run on the other platform (AMD/NVD)")
-    print(f"  2. Compare: {Colors.GREEN}python3 compare_results.py{Colors.NC}")
-    print()
+    if successful or (is_primus and len(successful) > 0):
+        print(f"{Colors.BLUE}Next Steps:{Colors.NC}")
+        if successful:
+            print("  1. Run on the other platform (AMD/NVD)")
+            print(f"  2. Compare results: {Colors.GREEN}python3 compare_results.py{Colors.NC}")
+        print()
 
 
 def main():
