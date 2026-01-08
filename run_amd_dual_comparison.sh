@@ -17,7 +17,7 @@ TRAIN_ITERS="${TRAIN_ITERS:-10}"
 # Model configurations
 declare -A MODEL_CONFIGS
 MODEL_CONFIGS[llama]="examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml"
-MODEL_CONFIGS[mistral]="examples/megatron/configs/MI300X/mistral_7B-pretrain.yaml"
+MODEL_CONFIGS[mixtral]="examples/megatron/configs/MI300X/mixtral_8x7B-pretrain.yaml"
 MODEL_CONFIGS[qwen]="examples/megatron/configs/MI300X/qwen2.5_7B-pretrain.yaml"
 
 # Check if Primus exists
@@ -96,7 +96,7 @@ echo "  • Minimal inter-GPU communication"
 echo ""
 
 # Run max performance benchmarks
-for model in llama mistral qwen; do
+for model in llama mixtral qwen; do
     config="${MODEL_CONFIGS[$model]}"
     
     if [ -z "$config" ]; then

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run all Primus models (Llama, Mistral, Qwen) in sequence
+# Run all Primus models (Llama, Mixtral, Qwen) in sequence
 
 set -e
 
@@ -10,13 +10,13 @@ echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-MODELS=("llama" "mistral" "qwen")
+MODELS=("llama" "mixtral" "qwen")
 SUCCESS=()
 FAILED=()
 
 echo "📋 Training Plan:"
 echo "  1. Llama 3.1 8B"
-echo "  2. Mistral 7B"
+echo "  2. Mixtral 8x7B"
 echo "  3. Qwen 2.5 7B"
 echo ""
 echo "Press Enter to continue or Ctrl+C to cancel..."

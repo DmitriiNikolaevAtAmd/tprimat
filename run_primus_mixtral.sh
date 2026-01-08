@@ -1,18 +1,18 @@
 #!/bin/bash
-# Run Primus training for Mistral 7B and capture logs for benchmarking
+# Run Primus training for Mixtral 8x7B and capture logs for benchmarking
 
 set -e
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║        Primus Training: Mistral 7B                        ║"
+echo "║        Primus Training: Mixtral 8x7B                      ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
 # Configuration
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
 TPRIMAT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MODEL="mistral"
-CONFIG_FILE="examples/megatron/configs/MI300X/mistral_7B-pretrain.yaml"
+MODEL="mixtral"
+CONFIG_FILE="examples/megatron/configs/MI300X/mixtral_8x7B-pretrain.yaml"
 TRAIN_ITERS="${TRAIN_ITERS:-10}"
 OUTPUT_DIR="$TPRIMAT_PATH/output"
 
@@ -31,10 +31,17 @@ fi
 
 # Check if config exists
 if [ ! -f "$PRIMUS_PATH/$CONFIG_FILE" ]; then
-    echo "❌ Config file not found: $PRIMUS_PATH/$CONFIG_FILE"
+    echo "⚠️  Config file not found: $PRIMUS_PATH/$CONFIG_FILE"
+    echo ""
+    echo "Note: Mixtral 8x7B config may not be available in standard Primus."
+    echo "You may need to create it based on the Mistral 7B config."
     echo ""
     echo "Available configs:"
-    ls -1 "$PRIMUS_PATH/examples/megatron/configs/MI300X/" 2>/dev/null | grep -i mistral || echo "  (none found)"
+    ls -1 "$PRIMUS_PATH/examples/megatron/configs/MI300X/" 2>/dev/null | grep -i mixtral || echo "  (none found)"
+    echo ""
+    echo "To create Mixtral 8x7B config:"
+    echo "  1. Copy mistral_7B-pretrain.yaml"
+    echo "  2. Adjust model size and MoE parameters"
     echo ""
     exit 1
 fi
@@ -110,7 +117,7 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
         echo "1. Run on NVIDIA system (if not done):"
-        echo "   ./benchmark.py --model $MODEL"
+        echo "   python3 pretrain_mixtral.py"
         echo ""
         echo "2. Compare results:"
         echo "   python3 compare_results.py"

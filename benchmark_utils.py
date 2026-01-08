@@ -44,7 +44,7 @@ class BenchmarkCallback(Callback):
         Args:
             output_dir: Directory to save benchmark results
             platform: 'cuda', 'rocm', or 'auto' for auto-detection
-            model_name: Name of the model (e.g., 'llama', 'mistral', 'qwen')
+            model_name: Name of the model (e.g., 'llama', 'mixtral', 'qwen')
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
