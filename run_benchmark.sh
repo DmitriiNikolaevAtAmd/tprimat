@@ -125,11 +125,48 @@ if [ "$MODEL" = "all" ]; then
         if [ ${#FAILED[@]} -gt 0 ]; then
             echo -e "${RED}❌ Failed (${#FAILED[@]}): ${FAILED[@]}${NC}"
             echo ""
-            echo -e "${YELLOW}To extract manually:${NC}"
-            for m in "${FAILED[@]}"; do
-                echo "  python3 extract_primus_metrics.py --log-file training_${m}.log --model-name ${m} --num-gpus 8 --global-batch-size 128 --sequence-length 2048"
-            done
-            echo ""
+            
+            if [ ${#SUCCESSFUL[@]} -eq 0 ]; then
+                # No logs found at all - provide setup instructions
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo -e "${YELLOW}No Primus training logs found!${NC}"
+                echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+                echo ""
+                echo -e "${BLUE}You need to run Primus training first.${NC}"
+                echo ""
+                echo -e "${GREEN}Option 1: Run Primus training and capture logs${NC}"
+                echo ""
+                echo "  cd /path/to/primus"
+                echo "  export EXP=examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml"
+                echo "  bash ./examples/run_pretrain.sh --train_iters 10 2>&1 | tee /workspace/tprimat/training_llama.log"
+                echo ""
+                echo "  Then run this script again:"
+                echo "  cd /workspace/tprimat && ./run_benchmark.sh all"
+                echo ""
+                echo -e "${GREEN}Option 2: If you have existing logs, copy them here${NC}"
+                echo ""
+                echo "  cp /path/to/your/logs/*.log /workspace/tprimat/"
+                echo "  # Name them: training_llama.log, training_mistral.log, training_qwen.log"
+                echo ""
+                echo -e "${GREEN}Option 3: Extract manually with custom paths${NC}"
+                echo ""
+                for m in "${FAILED[@]}"; do
+                    echo "  python3 extract_primus_metrics.py \\"
+                    echo "    --log-file /path/to/your/${m}_log.txt \\"
+                    echo "    --model-name ${m} \\"
+                    echo "    --num-gpus 8 \\"
+                    echo "    --global-batch-size 128 \\"
+                    echo "    --sequence-length 2048"
+                    echo ""
+                done
+            else
+                # Some logs found, some missing
+                echo -e "${YELLOW}To extract missing models manually:${NC}"
+                for m in "${FAILED[@]}"; do
+                    echo "  python3 extract_primus_metrics.py --log-file training_${m}.log --model-name ${m} --num-gpus 8 --global-batch-size 128 --sequence-length 2048"
+                done
+                echo ""
+            fi
         fi
         
         echo -e "${BLUE}Next Steps:${NC}"
