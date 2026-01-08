@@ -199,6 +199,16 @@ All include automatic benchmarking via `BenchmarkCallback`.
 
 ---
 
+## 🔧 Troubleshooting
+
+Having issues? Check **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** for solutions to:
+- ❌ CUDA Out of Memory errors → `./fix_gpu_memory.sh`
+- ❌ No logs found → Log detection guide
+- ❌ Platform detection issues → Already fixed
+- ❓ Performance questions → Best practices
+
+---
+
 ## 📚 Comparison Methodology
 
 TensorPrimat supports two comparison approaches:

@@ -1,8 +1,11 @@
 from nemo.collections import llm
 import nemo_run as run
 from benchmark_utils import BenchmarkCallback
+import os
 
 def run_pretrain():
+    # Set PyTorch memory allocator for better fragmentation handling
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     # 1. Initialize the recipe
     recipe = llm.qwen25_7b.pretrain_recipe(
         name="qwen25_7b_test_fp8",

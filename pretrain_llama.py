@@ -1,8 +1,11 @@
 from nemo.collections import llm
 import nemo_run as run
 from benchmark_utils import BenchmarkCallback
+import os
 
 def run_pretrain():
+    # Set PyTorch memory allocator for better fragmentation handling
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     # 1. Initialize the recipe
     recipe = llm.llama31_8b.pretrain_recipe(
         name="llama3_1_8b_pretrain_fp8",
