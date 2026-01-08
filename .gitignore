@@ -84,7 +84,7 @@ htmlcov/
 .settings/
 
 # Benchmarking outputs
-output/
+*output*
 benchmark_results/
 comparison_plot.png
 comparison_report.md

@@ -54,6 +54,35 @@ if [ "$MODEL" = "all" ]; then
     echo -e "Runs each: ${GREEN}${RUNS}${NC}"
     echo ""
     
+    # Check if NeMo is available
+    if ! python3 -c "import nemo" 2>/dev/null; then
+        echo -e "${YELLOW}⚠️  NeMo not detected - cannot run training scripts${NC}"
+        echo ""
+        echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+        echo -e "${BLUE}Primus Log Extraction Workflow${NC}"
+        echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+        echo ""
+        echo "Since NeMo is not available on this platform, use log extraction:"
+        echo ""
+        echo -e "${GREEN}Option 1: Extract from existing logs${NC}"
+        echo ""
+        ALL_MODELS=("llama" "mistral" "qwen")
+        for m in "${ALL_MODELS[@]}"; do
+            echo -e "${CYAN}python3 extract_primus_metrics.py \\${NC}"
+            echo -e "  --log-file training_${m}.log \\${NC}"
+            echo -e "  --model-name ${m} \\${NC}"
+            echo -e "  --num-gpus 8 \\${NC}"
+            echo -e "  --global-batch-size 128 \\${NC}"
+            echo -e "  --sequence-length 2048${NC}"
+            echo ""
+        done
+        echo ""
+        exit 0
+    fi
+    
+    echo -e "${GREEN}✓ NeMo detected${NC}"
+    echo ""
+    
     # Run each model
     ALL_MODELS=("llama" "mistral" "qwen")
     SUCCESSFUL=()
@@ -120,13 +149,50 @@ fi
 # Check if it's ROCm or CUDA
 if python3 -c "import torch; exit(0 if hasattr(torch.version, 'hip') and torch.version.hip else 1)" 2>/dev/null; then
     PLATFORM="AMD (ROCm)"
+    SOFTWARE_STACK="rocm"
     COLOR=$RED
 else
     PLATFORM="NVD (CUDA)"
+    SOFTWARE_STACK="cuda"
     COLOR=$GREEN
 fi
 
 echo -e "Platform: ${COLOR}${PLATFORM}${NC}"
+
+# Check if NeMo is available
+if ! python3 -c "import nemo" 2>/dev/null; then
+    echo -e "${YELLOW}⚠️  NeMo not detected${NC}"
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}Running on ${PLATFORM} without NeMo (Primus mode)${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "To benchmark with Primus, use the log extraction workflow:"
+    echo ""
+    echo -e "${GREEN}Step 1:${NC} Run your Primus training and save logs"
+    echo "  Example:"
+    echo "    primus train ... 2>&1 | tee training_${MODEL}.log"
+    echo ""
+    echo -e "${GREEN}Step 2:${NC} Extract metrics from logs"
+    echo "  Command:"
+    echo -e "    ${CYAN}python3 extract_primus_metrics.py \\${NC}"
+    echo -e "      ${CYAN}--log-file training_${MODEL}.log \\${NC}"
+    echo -e "      ${CYAN}--model-name ${MODEL} \\${NC}"
+    echo -e "      ${CYAN}--num-gpus 8 \\${NC}"
+    echo -e "      ${CYAN}--global-batch-size 128 \\${NC}"
+    echo -e "      ${CYAN}--sequence-length 2048${NC}"
+    echo ""
+    echo "This will create: output/benchmark_${SOFTWARE_STACK}_${MODEL}.json"
+    echo ""
+    echo -e "${BLUE}For all models:${NC}"
+    for m in llama mistral qwen; do
+        echo "  python3 extract_primus_metrics.py --log-file training_${m}.log --model-name ${m} --num-gpus 8 --global-batch-size 128 --sequence-length 2048"
+    done
+    echo ""
+    exit 0
+fi
+
+echo -e "${GREEN}✓ NeMo detected${NC}"
 echo ""
 
 # Select training script

@@ -8,14 +8,27 @@ Provides a **unified, fair, and automated** way to benchmark NeMo training on AM
 
 ## 🚀 Quickest Start (30 seconds)
 
+### On NVIDIA (NeMo):
 ```bash
-# Run all models (llama, mistral, qwen)
+./run_benchmark.sh all  # Run all models
+```
+
+### On AMD (Primus):
+```bash
+# Run the benchmark script - it will show extraction instructions
 ./run_benchmark.sh all
 
-# Or run a single model
-./run_benchmark.sh llama
+# Or extract directly from existing logs
+python3 extract_primus_metrics.py \
+    --log-file training.log \
+    --model-name llama \
+    --num-gpus 8 \
+    --global-batch-size 128 \
+    --sequence-length 2048
+```
 
-# Compare results (after running on both platforms)
+### Compare Results:
+```bash
 python3 compare_results.py
 ```
 
@@ -144,11 +157,16 @@ pip install tensorboard
 
 ## 🎯 Usage Examples
 
-### Run All Models at Once
+### On NVIDIA Platform (NeMo)
 
 ```bash
-# Run all models (llama, mistral, qwen) in one command
+# Run all models at once
 ./run_benchmark.sh all
+
+# Or run individual models
+./run_benchmark.sh llama
+./run_benchmark.sh mistral
+./run_benchmark.sh qwen
 
 # This creates:
 # - output/benchmark_cuda_llama.json
@@ -156,23 +174,46 @@ pip install tensorboard
 # - output/benchmark_cuda_qwen.json
 ```
 
-### Run Single Model
+### On AMD Platform (Primus)
 
+**Option A: Extract from existing logs**
 ```bash
-# Run specific model
-./run_benchmark.sh llama
-./run_benchmark.sh mistral
-./run_benchmark.sh qwen
+# After your Primus training run
+python3 extract_primus_metrics.py \
+    --log-file primus_llama_training.log \
+    --model-name llama \
+    --num-gpus 8 \
+    --global-batch-size 128 \
+    --sequence-length 2048
+
+# Repeat for each model
+python3 extract_primus_metrics.py \
+    --log-file primus_mistral_training.log \
+    --model-name mistral \
+    --num-gpus 8 \
+    --global-batch-size 128 \
+    --sequence-length 2048
+
+# Creates:
+# - output/benchmark_rocm_llama.json
+# - output/benchmark_rocm_mistral.json
+# - output/benchmark_rocm_qwen.json
 ```
+
 
 ### Complete AMD vs NVIDIA Workflow
 
 ```bash
-# 1. Run on NVIDIA system
-./run_benchmark.sh all  # or specific model
+# 1. Run on NVIDIA system (NeMo)
+./run_benchmark.sh all
 
-# 2. Run on AMD system
-./run_benchmark.sh all  # or specific model
+# 2. Run on AMD system (Primus) - extract from logs
+python3 extract_primus_metrics.py \
+    --log-file primus_training.log \
+    --model-name llama \
+    --num-gpus 8 \
+    --global-batch-size 128 \
+    --sequence-length 2048
 
 # 3. Compare results
 python3 compare_results.py
@@ -224,6 +265,20 @@ Lower is better (more efficient). Measured in GB.
 ```
 
 ## 🐛 Common Issues
+
+### "ModuleNotFoundError: No module named 'nemo'" (AMD/Primus)
+
+This is **expected** - NeMo is not typically installed on AMD/Primus systems.
+
+**Solution**: Use the Primus log extraction method instead:
+```bash
+python3 extract_primus_metrics.py \
+    --log-file your_training.log \
+    --model-name llama \
+    --num-gpus 8 \
+    --global-batch-size 128 \
+    --sequence-length 2048
+```
 
 ### "No GPU detected"
 
@@ -361,13 +416,16 @@ This creates `output/benchmark_rocm_llama.json` from existing logs.
 ## 🎯 Workflow Summary
 
 ```
-./run_benchmark.sh all on NVIDIA ──> benchmark_cuda_llama.json    ─┐
+NVIDIA (NeMo):
+./run_benchmark.sh all           ──> benchmark_cuda_llama.json    ─┐
                                  ──> benchmark_cuda_mistral.json  ─┤
                                  ──> benchmark_cuda_qwen.json     ─┤
-                                                                   ├──> Compare
-./run_benchmark.sh all on AMD    ──> benchmark_rocm_llama.json    ─┤
-                                 ──> benchmark_rocm_mistral.json  ─┤
-                                 ──> benchmark_rocm_qwen.json     ─┘
+                                                                   │
+AMD (Primus):                                                      ├──> Compare
+Primus training.log             ──┐                               │
+  + extract_primus_metrics.py   ──┼──> benchmark_rocm_llama.json  ─┤
+                                  └──> benchmark_rocm_mistral.json─┤
+                                  └──> benchmark_rocm_qwen.json    ─┘
                                                                    │
                                                                    ▼
                                                          comparison_plot.png
@@ -378,15 +436,14 @@ This creates `output/benchmark_rocm_llama.json` from existing logs.
 
 | Question | Answer |
 |----------|--------|
-| How do I run it? | `./run_benchmark.sh all` or `./run_benchmark.sh llama` |
-| Run all models? | `./run_benchmark.sh all` |
-| Where are results? | `output/benchmark_cuda_llama.json`, etc. |
+| How on NVIDIA? | `./run_benchmark.sh all` |
+| How on AMD/Primus? | `python3 extract_primus_metrics.py --log-file training.log --model-name llama ...` |
+| Run all models? | NVIDIA: `./run_benchmark.sh all` |
+| Where are results? | `output/benchmark_cuda_llama.json`, `output/benchmark_rocm_llama.json` |
 | How do I compare? | `python3 compare_results.py` |
+| No NeMo on AMD? | **Expected** - use log extraction instead |
 | Which doc to read? | Start with `QUICK_START.md` |
-| Need more steps? | Increase in training script |
 | Different model? | Use `llama`, `mistral`, `qwen`, or `all` |
-| Multiple runs? | `./run_benchmark.sh all 5` |
-| Out of memory? | Reduce `global_batch_size` |
 | Extract from logs? | `python3 extract_primus_metrics.py --help` |
 
 ## 🚀 Next Steps
