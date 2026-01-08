@@ -5,11 +5,12 @@
 #   ./run_benchmark.sh [model] [runs]
 #
 # Examples:
+#   ./run_benchmark.sh              # Run all models (default)
 #   ./run_benchmark.sh all          # Run all models (llama, mistral, qwen)
 #   ./run_benchmark.sh llama        # Run only llama
 #   ./run_benchmark.sh mistral 3    # Run mistral 3 times
 #
-# Available models: llama, mistral, qwen, all
+# Available models: llama, mistral, qwen, all (default: all)
 
 set -e
 
@@ -22,7 +23,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-MODEL=${1:-"llama"}  # Default to llama if not specified
+MODEL=${1:-"all"}    # Default to all models if not specified
 RUNS=${2:-1}         # Number of runs (default: 1)
 
 # Handle "all" option - run all models

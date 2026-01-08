@@ -10,13 +10,13 @@ Provides a **unified, fair, and automated** way to benchmark NeMo training on AM
 
 ### On NVIDIA (NeMo):
 ```bash
-./run_benchmark.sh all  # Run all models
+./run_benchmark.sh  # Run all models (default)
 ```
 
 ### On AMD (Primus):
 ```bash
 # Run the benchmark script - it will show extraction instructions
-./run_benchmark.sh all
+./run_benchmark.sh
 
 # Or extract directly from existing logs
 python3 extract_primus_metrics.py \
@@ -436,9 +436,9 @@ Primus training.log             ──┐                               │
 
 | Question | Answer |
 |----------|--------|
-| How on NVIDIA? | `./run_benchmark.sh all` |
-| How on AMD/Primus? | `python3 extract_primus_metrics.py --log-file training.log --model-name llama ...` |
-| Run all models? | NVIDIA: `./run_benchmark.sh all` |
+| How on NVIDIA? | `./run_benchmark.sh` (runs all models by default) |
+| How on AMD/Primus? | `./run_benchmark.sh` or provide log paths via env vars |
+| Run all models? | `./run_benchmark.sh` (default behavior) |
 | Where are results? | `output/benchmark_cuda_llama.json`, `output/benchmark_rocm_llama.json` |
 | How do I compare? | `python3 compare_results.py` |
 | No NeMo on AMD? | **Expected** - use log extraction instead |
