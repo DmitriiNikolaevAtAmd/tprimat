@@ -71,7 +71,7 @@ echo -e "Script:   ${SCRIPT}"
 echo ""
 
 # Create results directory
-mkdir -p benchmark_results
+mkdir -p output
 
 # Run benchmarks
 for ((i=1; i<=$RUNS; i++)); do
@@ -104,26 +104,36 @@ echo ""
 
 # Show latest results
 echo -e "${BLUE}Latest Results:${NC}"
-LATEST=$(ls -t benchmark_results/benchmark_*.json 2>/dev/null | head -1)
-if [ -n "$LATEST" ]; then
-    echo "📄 $LATEST"
+
+# Determine the expected output file based on platform and model
+if python3 -c "import torch; exit(0 if hasattr(torch.version, 'hip') and torch.version.hip else 1)" 2>/dev/null; then
+    SOFTWARE_STACK="rocm"
+else
+    SOFTWARE_STACK="cuda"
+fi
+
+RESULT_FILE="output/benchmark_${SOFTWARE_STACK}_${MODEL}.json"
+
+if [ -f "$RESULT_FILE" ]; then
+    echo "📄 $RESULT_FILE"
     
     # Extract and display key metrics
     if command -v python3 &> /dev/null; then
         python3 -c "
 import json
-with open('$LATEST', 'r') as f:
+with open('$RESULT_FILE', 'r') as f:
     data = json.load(f)
 print(f\"Platform:        {data['platform'].upper()}\")
 print(f\"Device:          {data['gpu_info']['device_name']}\")
 print(f\"Avg Step Time:   {data['performance_metrics']['avg_step_time_seconds']:.4f}s\")
-print(f\"Throughput:      {data['performance_metrics']['throughput_steps_per_second']:.3f} steps/s\")
+if 'tokens_per_second_per_gpu' in data['performance_metrics']:
+    print(f\"Tokens/sec/GPU:  {data['performance_metrics']['tokens_per_second_per_gpu']:,.0f}\")
 if 'memory_metrics' in data:
     print(f\"Peak Memory:     {data['memory_metrics']['peak_memory_allocated_gb']:.2f} GB\")
 " 2>/dev/null
     fi
 else
-    echo -e "${YELLOW}⚠️  No benchmark results found${NC}"
+    echo -e "${YELLOW}⚠️  No benchmark results found at ${RESULT_FILE}${NC}"
 fi
 
 echo ""
