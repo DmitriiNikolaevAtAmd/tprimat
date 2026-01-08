@@ -87,7 +87,7 @@ Tokens per step = global_batch_size × sequence_length
 python pretrain_llama.py  # or pretrain_mistral.py, pretrain_qwen.py
 
 # Results will be saved to:
-# ./outs/benchmark_nvd_TIMESTAMP.json
+# ./output/benchmark_nvd_TIMESTAMP.json
 ```
 
 ### On AMD (Primus)
@@ -105,7 +105,7 @@ bash ./examples/run_pretrain.sh \
 # Or use the extraction script:
 python extract_primus_metrics.py \
     --log-file primus_training.log \
-    --output ./outs/benchmark_amd.json \
+    --output ./output/benchmark_amd.json \
     --num-gpus 8 \
     --global-batch-size 128 \
     --sequence-length 2048
@@ -118,7 +118,7 @@ python extract_primus_metrics.py \
 python compare_results.py
 
 # Verify configurations match:
-grep -E "global_batch_size|sequence_length" ./outs/benchmark_*.json
+grep -E "global_batch_size|sequence_length" ./output/benchmark_*.json
 ```
 
 ## Verification Checklist

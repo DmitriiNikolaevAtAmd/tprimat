@@ -36,11 +36,12 @@ def round_floats(obj: Any, precision: int = 3) -> Any:
 class BenchmarkCallback(Callback):
     """Callback to collect platform-agnostic performance metrics."""
     
-    def __init__(self, output_dir: str = "./outs", platform: str = "auto"):
+    def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None):
         """
         Args:
             output_dir: Directory to save benchmark results
             platform: 'cuda', 'rocm', or 'auto' for auto-detection
+            model_name: Name of the model (e.g., 'llama', 'mistral', 'qwen')
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -66,6 +67,7 @@ class BenchmarkCallback(Callback):
         self.global_batch_size = None
         self.sequence_length = None
         self.num_gpus = None
+        self.model_name = model_name
     
     def _get_gpu_core_count(self, device_name: str, device_props) -> int:
         """
@@ -287,10 +289,17 @@ class BenchmarkCallback(Callback):
                 }
             
             # Save results (round all floats to 3 decimal places)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # Use software stack (cuda/rocm) for filename
             software_stack = self.gpu_info.get("software_stack", self.platform)
-            filename = f"benchmark_{software_stack}_{timestamp}.json"
+            
+            # Create filename with model name if provided
+            if self.model_name:
+                filename = f"benchmark_{software_stack}_{self.model_name}.json"
+            else:
+                # Fallback to timestamp if no model name
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"benchmark_{software_stack}_{timestamp}.json"
+            
             filepath = self.output_dir / filename
             
             # Round all float values to 3 decimal places
@@ -327,7 +336,7 @@ class BenchmarkCallback(Callback):
             print(f"{'='*60}\n")
 
 
-def compare_benchmarks(results_dir: str = "./outs") -> Dict:
+def compare_benchmarks(results_dir: str = "./output") -> Dict:
     """
     Compare benchmark results from AMD and NVIDIA runs.
     

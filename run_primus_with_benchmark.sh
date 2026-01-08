@@ -3,12 +3,18 @@
 # Wrapper script to run Primus training with benchmarking
 #
 # Usage:
-#   ./run_primus_with_benchmark.sh
+#   ./run_primus_with_benchmark.sh [model_name]
+#
+# Example:
+#   ./run_primus_with_benchmark.sh llama
 #
 # Or customize parameters:
-#   TRAIN_ITERS=20 GLOBAL_BATCH_SIZE=256 ./run_primus_with_benchmark.sh
+#   TRAIN_ITERS=20 GLOBAL_BATCH_SIZE=256 ./run_primus_with_benchmark.sh mistral
 
 set -e
+
+# Get model name from first argument or default to llama
+MODEL_NAME="${1:-llama}"
 
 # Configuration (edit these to match your setup)
 PRIMUS_DIR="${PRIMUS_DIR:-/workspace/primus}"
@@ -21,7 +27,7 @@ SEQUENCE_LENGTH="${SEQUENCE_LENGTH:-2048}"
 NUM_GPUS="${NUM_GPUS:-8}"
 
 # Output locations
-BENCHMARK_DIR="./outs"
+BENCHMARK_DIR="./output"
 LOG_FILE="${BENCHMARK_DIR}/primus_training_$(date +%Y%m%d_%H%M%S).log"
 
 # Colors for output
@@ -35,6 +41,7 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}Primus Training with Benchmarking${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
+echo -e "Model:            ${GREEN}${MODEL_NAME}${NC}"
 echo -e "Config:           ${GREEN}${CONFIG}${NC}"
 echo -e "Train Iters:      ${GREEN}${TRAIN_ITERS}${NC}"
 echo -e "FP8:              ${GREEN}${FP8}${NC}"
@@ -80,14 +87,14 @@ echo ""
 # Extract metrics from log
 echo -e "${BLUE}→ Extracting benchmark metrics...${NC}"
 
-BENCHMARK_JSON="${BENCHMARK_DIR}/benchmark_rocm_$(date +%Y%m%d_%H%M%S).json"
-
 python3 /workspace/support/week-02/code/extract_primus_metrics.py \
     --log-file "${LOG_FILE}" \
-    --output "${BENCHMARK_JSON}" \
+    --model-name "${MODEL_NAME}" \
     --num-gpus "${NUM_GPUS}" \
     --global-batch-size "${GLOBAL_BATCH_SIZE}" \
     --sequence-length "${SEQUENCE_LENGTH}"
+
+BENCHMARK_JSON="${BENCHMARK_DIR}/benchmark_rocm_${MODEL_NAME}.json"
 
 EXTRACT_EXIT_CODE=$?
 

@@ -1,0 +1,45 @@
+{
+  "platform": "amd",
+  "gpu_info": {
+    "device_count": 8,
+    "device_name": "AMD Instinct MI300X",
+    "total_memory_gb": 206.142,
+    "gpu_cores": 16896,
+    "pytorch_version": "",
+    "software_stack": "rocm"
+  },
+  "timestamp": "2026-01-05T11:33:57.573661",
+  "training_config": {
+    "max_steps": 10,
+    "global_batch_size": 128,
+    "sequence_length": 2048,
+    "num_gpus": 8
+  },
+  "performance_metrics": {
+    "total_steps": 10,
+    "total_time_seconds": 121.558,
+    "avg_step_time_seconds": 9.763,
+    "min_step_time_seconds": 9.699,
+    "max_step_time_seconds": 9.836,
+    "steps_per_second": 0.102,
+    "tokens_per_second": 107400.711,
+    "tokens_per_second_per_gpu": 13425.089
+  },
+  "raw_step_times": [
+    33.687,
+    9.836,
+    9.702,
+    9.699,
+    9.729,
+    9.765,
+    9.760,
+    9.795,
+    9.793,
+    9.792
+  ],
+  "source": "primus_log_extraction",
+  "memory_metrics": {
+    "avg_memory_allocated_gb": 117.990,
+    "peak_memory_allocated_gb": 117.990
+  }
+}

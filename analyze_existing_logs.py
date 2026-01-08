@@ -147,7 +147,7 @@ def analyze_nvidia_logs(nvi_logs_dir: str = "../nvi-logs"):
         print()
 
 
-def compare_with_new_benchmarks(benchmark_dir: str = "./outs"):
+def compare_with_new_benchmarks(benchmark_dir: str = "./output"):
     """
     Compare old profiling logs with new benchmark results.
     """
@@ -210,7 +210,7 @@ def main():
     print("   - NVIDIA: ../nvi-logs/    (TensorBoard event files)")
     print()
     print("🆕 New Benchmarks:")
-    print("   - Location: ./outs/")
+    print("   - Location: ./output/")
     print("   - Run training scripts to generate new benchmarks")
     print("   - Use compare_results.py to create visual comparisons")
     print()

@@ -45,10 +45,11 @@ def run_pretrain():
     recipe.trainer.check_val_every_n_epoch = None
     
     # 6. ADD BENCHMARK CALLBACK FOR AMD vs NVIDIA COMPARISON
-    # This only saves lightweight JSON logs to ./outs/
+    # This only saves lightweight JSON logs to ./output/
     benchmark_callback = BenchmarkCallback(
-        output_dir="./outs",
-        platform="auto"  # Auto-detects CUDA or ROCm
+        output_dir="./output",
+        platform="auto",  # Auto-detects CUDA or ROCm
+        model_name="llama"
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []

@@ -113,7 +113,7 @@ Tokens/sec/GPU is affected by:
 ```python
 from compare_results import load_benchmark_results
 
-cuda_data, rocm_data = load_benchmark_results('./outs')
+cuda_data, rocm_data = load_benchmark_results('./output')
 amd_efficiency = rocm_data['performance_metrics']['tokens_per_second_per_gpu']
 nvd_efficiency = cuda_data['performance_metrics']['tokens_per_second_per_gpu']
 

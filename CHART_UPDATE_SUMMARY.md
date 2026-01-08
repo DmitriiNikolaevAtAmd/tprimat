@@ -122,7 +122,7 @@ python3 compare_results.py
 
 ### Output Files
 ```
-outs/
+output/
 ├── benchmark_amd.json         # AMD benchmark data
 ├── benchmark_nvd.json         # NVIDIA benchmark data
 ├── comparison_plot.png        # Visual comparison (6 charts)
@@ -132,11 +132,11 @@ outs/
 ### View Results
 ```bash
 # View the chart
-open outs/comparison_plot.png    # macOS
-xdg-open outs/comparison_plot.png # Linux
+open output/comparison_plot.png    # macOS
+xdg-open output/comparison_plot.png # Linux
 
 # Read the report
-cat outs/comparison_report.md
+cat output/comparison_report.md
 ```
 
 ## Key Insights from Your Data

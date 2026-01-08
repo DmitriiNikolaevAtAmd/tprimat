@@ -313,28 +313,30 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic usage
+  # With model name (auto-generates filename)
   python3 extract_primus_metrics.py \\
       --log-file primus_training.log \\
-      --output outs/benchmark_rocm.json \\
+      --model-name llama \\
       --num-gpus 8 \\
       --global-batch-size 128 \\
       --sequence-length 2048
   
-  # With custom sequence length
+  # With explicit output path
   python3 extract_primus_metrics.py \\
       --log-file primus_training.log \\
-      --output outs/benchmark_rocm.json \\
+      --output output/benchmark_rocm_llama.json \\
       --num-gpus 8 \\
       --global-batch-size 128 \\
-      --sequence-length 4096
+      --sequence-length 2048
         """
     )
     
     parser.add_argument('--log-file', required=True, 
                        help='Primus/Megatron training log file')
-    parser.add_argument('--output', required=True,
-                       help='Output JSON file path')
+    parser.add_argument('--output', 
+                       help='Output JSON file path (if not specified, uses output/benchmark_<stack>_<model>.json)')
+    parser.add_argument('--model-name', 
+                       help='Model name (e.g., llama, mistral, qwen) - used in auto-generated filename')
     parser.add_argument('--num-gpus', type=int, required=True,
                        help='Number of GPUs used in training')
     parser.add_argument('--global-batch-size', type=int, required=True,
@@ -355,8 +357,16 @@ Examples:
     )
     
     if results:
+        # Determine output path
+        if args.output:
+            output_path = Path(args.output)
+        else:
+            # Auto-generate filename with model name
+            software_stack = results['gpu_info'].get('software_stack', 'unknown')
+            model_suffix = f"_{args.model_name}" if args.model_name else ""
+            output_path = Path(f"./output/benchmark_{software_stack}{model_suffix}.json")
+        
         # Save results (round all floats to 3 decimal places)
-        output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Round all float values to 3 decimal places

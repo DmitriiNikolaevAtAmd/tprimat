@@ -363,7 +363,7 @@ def generate_comparison_report(nvidia_data: Dict, amd_data: Dict, output_file: s
 
 def main():
     parser = argparse.ArgumentParser(description='Compare AMD and NVIDIA GPU benchmark results')
-    parser.add_argument('--results-dir', default='./outs',
+    parser.add_argument('--results-dir', default='./output',
                        help='Directory containing benchmark JSON files')
     parser.add_argument('--output-plot', default='comparison_plot.png',
                        help='Output file for comparison plot')

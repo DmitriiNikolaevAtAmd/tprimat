@@ -21,36 +21,39 @@ except ImportError:
         Callback = object
 
 
-def get_primus_benchmark_callback(output_dir: str = "./outs"):
+def get_primus_benchmark_callback(output_dir: str = "./output", model_name: str = None):
     """
     Get benchmark callback configured for Primus training.
     
     Args:
         output_dir: Directory to save benchmark results
+        model_name: Name of the model (e.g., 'llama', 'mistral', 'qwen')
         
     Returns:
         BenchmarkCallback instance
     """
     return BenchmarkCallback(
         output_dir=output_dir,
-        platform="auto"  # Auto-detects ROCm
+        platform="auto",  # Auto-detects ROCm
+        model_name=model_name
     )
 
 
-def add_benchmark_to_trainer(trainer, output_dir: str = "./outs"):
+def add_benchmark_to_trainer(trainer, output_dir: str = "./output", model_name: str = None):
     """
     Add benchmark callback to an existing trainer.
     
     Args:
         trainer: PyTorch Lightning Trainer instance
         output_dir: Directory to save benchmark results
+        model_name: Name of the model (e.g., 'llama', 'mistral', 'qwen')
         
     Example:
         >>> trainer = Trainer(...)
-        >>> add_benchmark_to_trainer(trainer)
+        >>> add_benchmark_to_trainer(trainer, model_name='llama')
         >>> trainer.fit(model, datamodule)
     """
-    benchmark_callback = get_primus_benchmark_callback(output_dir)
+    benchmark_callback = get_primus_benchmark_callback(output_dir, model_name)
     
     if not hasattr(trainer, 'callbacks'):
         trainer.callbacks = []
@@ -77,7 +80,7 @@ trainer:
   callbacks:
     - class_path: primus_benchmark.get_primus_benchmark_callback
       init_args:
-        output_dir: ./outs
+        output_dir: ./output
 
 Method 2: Modify Training Script
 ---------------------------------
@@ -86,22 +89,22 @@ In your training script, after creating the trainer:
 from primus_benchmark import add_benchmark_to_trainer
 
 trainer = Trainer(...)
-add_benchmark_to_trainer(trainer, output_dir="./outs")
+add_benchmark_to_trainer(trainer, output_dir="./output")
 trainer.fit(model, datamodule)
 
 Method 3: Environment Variable
 -------------------------------
 Set before running:
 
-export BENCHMARK_OUTPUT_DIR="./outs"
+export BENCHMARK_OUTPUT_DIR="./output"
 
 Then the callback will auto-detect and save results.
 
 Output
 ------
 Results will be saved to:
-  ./outs/benchmark_rocm_TIMESTAMP.json  (on AMD/ROCm)
-  ./outs/benchmark_cuda_TIMESTAMP.json  (on NVIDIA/CUDA)
+  ./output/benchmark_rocm_<model>.json  (on AMD/ROCm, e.g., benchmark_rocm_llama.json)
+  ./output/benchmark_cuda_<model>.json  (on NVIDIA/CUDA, e.g., benchmark_cuda_llama.json)
 
 With metrics:
   - Platform: amd or nvd
