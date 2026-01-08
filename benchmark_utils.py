@@ -181,13 +181,15 @@ class BenchmarkCallback(Callback):
                 "software_version": software_version,
             }
         
-        software_stack = self.gpu_info.get("software_stack", "unknown")
-        print(f"\n{'='*60}")
-        print(f"BENCHMARK START - Platform: {self.platform.upper()} ({software_stack.upper()})")
-        print(f"{'='*60}")
-        for key, value in self.gpu_info.items():
-            print(f"{key}: {value}")
-        print(f"{'='*60}\n")
+        # Only print on rank 0 to avoid duplicate output in distributed training
+        if trainer.is_global_zero:
+            software_stack = self.gpu_info.get("software_stack", "unknown")
+            print(f"\n{'='*60}")
+            print(f"BENCHMARK START - Platform: {self.platform.upper()} ({software_stack.upper()})")
+            print(f"{'='*60}")
+            for key, value in self.gpu_info.items():
+                print(f"{key}: {value}")
+            print(f"{'='*60}\n")
     
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
         """Mark start of training step."""
@@ -212,8 +214,8 @@ class BenchmarkCallback(Callback):
             self.memory_allocated.append(mem_allocated)
             self.memory_reserved.append(mem_reserved)
         
-        # Log every 10 steps
-        if batch_idx > 0 and batch_idx % 10 == 0:
+        # Log every 10 steps (only on rank 0)
+        if trainer.is_global_zero and batch_idx > 0 and batch_idx % 10 == 0:
             recent_times = self.step_times[-10:]
             avg_time = sum(recent_times) / len(recent_times)
             
@@ -228,6 +230,10 @@ class BenchmarkCallback(Callback):
     
     def on_train_end(self, trainer, pl_module):
         """Save benchmark results."""
+        # Only save results on rank 0 to avoid duplicate files in distributed training
+        if not trainer.is_global_zero:
+            return
+            
         total_time = time.time() - self.train_start_time
         
         # Calculate statistics

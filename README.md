@@ -9,13 +9,13 @@ Provides a **unified, fair, and automated** way to benchmark NeMo training on AM
 ## 🚀 Quickest Start (30 seconds)
 
 ```bash
-# On NVIDIA GPU
+# Run all models (llama, mistral, qwen)
+./run_benchmark.sh all
+
+# Or run a single model
 ./run_benchmark.sh llama
 
-# On AMD GPU  
-./run_benchmark.sh llama
-
-# Compare
+# Compare results (after running on both platforms)
 python3 compare_results.py
 ```
 
@@ -40,7 +40,8 @@ Choose your level of detail:
 benchmark_utils.py          Platform-agnostic benchmarking framework
 compare_results.py          Generate comparison reports and charts
 analyze_existing_logs.py    Analyze your existing profiling data
-run_benchmark.sh            Automated benchmark runner
+run_benchmark.sh            Automated benchmark runner (supports 'all' models)
+extract_primus_metrics.py  Extract metrics from Primus training logs
 ```
 
 ### Training Scripts (Updated)
@@ -80,13 +81,20 @@ JSON file with complete metrics:
 
 ```json
 {
-  "platform": "cuda",
+  "platform": "nvd",
+  "gpu_info": {
+    "device_name": "NVIDIA H100 80GB HBM3",
+    "software_stack": "cuda",
+    "software_version": "12.8",
+    "pytorch_version": "2.7.0a0+7c8ec84dab.nv25.03"
+  },
   "performance_metrics": {
-    "avg_step_time_seconds": 1.245,
-    "throughput_steps_per_second": 0.803
+    "avg_step_time_seconds": 1.602,
+    "tokens_per_second_per_gpu": 5114.792,
+    "steps_per_second": 0.624
   },
   "memory_metrics": {
-    "peak_memory_allocated_gb": 45.89
+    "peak_memory_allocated_gb": 22.295
   }
 }
 ```
@@ -136,36 +144,50 @@ pip install tensorboard
 
 ## 🎯 Usage Examples
 
-### Basic AMD vs NVIDIA Comparison
+### Run All Models at Once
+
+```bash
+# Run all models (llama, mistral, qwen) in one command
+./run_benchmark.sh all
+
+# This creates:
+# - output/benchmark_cuda_llama.json
+# - output/benchmark_cuda_mistral.json
+# - output/benchmark_cuda_qwen.json
+```
+
+### Run Single Model
+
+```bash
+# Run specific model
+./run_benchmark.sh llama
+./run_benchmark.sh mistral
+./run_benchmark.sh qwen
+```
+
+### Complete AMD vs NVIDIA Workflow
 
 ```bash
 # 1. Run on NVIDIA system
-./run_benchmark.sh llama
+./run_benchmark.sh all  # or specific model
 
-# 2. Transfer JSON to comparison machine (or run on AMD)
-# benchmark_results/benchmark_cuda_*.json
+# 2. Run on AMD system
+./run_benchmark.sh all  # or specific model
 
-# 3. Run on AMD system
-./run_benchmark.sh llama
-
-# 4. Compare (can run on either system)
+# 3. Compare results
 python3 compare_results.py
+
+# Results will show performance comparison for all models
 ```
 
 ### Multiple Runs for Statistical Significance
 
 ```bash
-# Run 5 times for more reliable results
+# Run each model 5 times
+./run_benchmark.sh all 5
+
+# Or single model multiple times
 ./run_benchmark.sh llama 5
-```
-
-### Compare All Models
-
-```bash
-# Run all three models on each platform
-for model in llama qwen mistral; do
-    ./run_benchmark.sh $model
-done
 ```
 
 ### Analyze Existing Logs
@@ -218,9 +240,11 @@ python3 -c "import torch; print(torch.cuda.is_available())"
 
 ### "Cannot compare - missing results"
 
-Need results from **both** platforms:
-- `benchmark_cuda_*.json` (from NVIDIA)
-- `benchmark_rocm_*.json` (from AMD)
+Need results from **both** platforms for the same model:
+- `output/benchmark_cuda_llama.json` (from NVIDIA)
+- `output/benchmark_rocm_llama.json` (from AMD)
+
+Each model creates a single file that gets overwritten on each run.
 
 ### "Module not found: matplotlib"
 
@@ -250,7 +274,8 @@ recipe.trainer.max_steps = 20  # Default is 10
 
 ```python
 benchmark_callback = BenchmarkCallback(
-    output_dir="./my_results"
+    output_dir="./my_results",
+    model_name="llama"  # Model name for filename
 )
 ```
 
@@ -265,20 +290,39 @@ benchmark_callback = BenchmarkCallback(
 ## 📁 Output Structure
 
 ```
-benchmark_results/
-├── benchmark_cuda_20260105_143022.json   # NVIDIA results
-├── benchmark_rocm_20260105_154533.json   # AMD results
-├── comparison_plot.png                   # Visual comparison
-└── comparison_report.md                  # Detailed analysis
+output/
+├── benchmark_cuda_llama.json      # NVIDIA Llama results
+├── benchmark_cuda_mistral.json    # NVIDIA Mistral results
+├── benchmark_cuda_qwen.json       # NVIDIA Qwen results
+├── benchmark_rocm_llama.json      # AMD Llama results
+├── benchmark_rocm_mistral.json    # AMD Mistral results
+├── benchmark_rocm_qwen.json       # AMD Qwen results
+├── comparison_plot.png            # Visual comparison
+└── comparison_report.md           # Detailed analysis
 ```
+
+**Note**: Each model creates a **single file per platform** that gets overwritten on each run. This ensures you always have the latest results for each model.
 
 ## 🔬 What's Measured
 
+### Performance Metrics
 - **Step Time**: Time per training step (forward + backward + optimizer)
-- **Throughput**: Steps completed per second
-- **Memory**: GPU memory allocation (average and peak)
-- **Stability**: Variance and consistency of timings
-- **System Info**: GPU model, CUDA/ROCm version, PyTorch version
+- **Tokens/sec/GPU**: Per-GPU throughput efficiency (primary metric)
+- **Total Throughput**: System-wide tokens processed per second
+- **Steps per Second**: Training iterations per second
+
+### Memory Metrics
+- **Average Memory**: Typical GPU memory usage during training
+- **Peak Memory**: Maximum GPU memory allocated
+- **Reserved Memory**: Total memory reserved by PyTorch
+
+### System Information
+- **Platform**: `nvd` (NVIDIA) or `amd` (AMD)
+- **Software Stack**: `cuda` or `rocm`
+- **Software Version**: CUDA/ROCm version
+- **PyTorch Version**: Full PyTorch version string
+- **GPU Model**: Exact device name (e.g., "NVIDIA H100 80GB HBM3")
+- **GPU Cores**: Number of CUDA cores or Stream Processors
 
 ## 🤝 Integration with Existing Workflow
 
@@ -286,9 +330,24 @@ This system **does not replace** your existing profiling:
 
 - **AMD logs** (`../amd-logs/`) - Keep for detailed kernel analysis
 - **NVIDIA logs** (`../nvi-logs/`) - Keep for TensorBoard visualization
-- **New benchmarks** (`benchmark_results/`) - For fair comparison
+- **New benchmarks** (`output/`) - For fair comparison
 
 Use `analyze_existing_logs.py` to see everything in one place.
+
+### Working with Primus Logs
+
+If you have Primus training logs, extract metrics with:
+
+```bash
+python3 extract_primus_metrics.py \
+    --log-file primus_training.log \
+    --model-name llama \
+    --num-gpus 8 \
+    --global-batch-size 128 \
+    --sequence-length 2048
+```
+
+This creates `output/benchmark_rocm_llama.json` from existing logs.
 
 ## 💡 Best Practices
 
@@ -302,34 +361,54 @@ Use `analyze_existing_logs.py` to see everything in one place.
 ## 🎯 Workflow Summary
 
 ```
-Run on NVIDIA ──> benchmark_cuda_*.json ─┐
-                                          ├──> Compare ──> Report + Charts
-Run on AMD ─────> benchmark_rocm_*.json ─┘
+./run_benchmark.sh all on NVIDIA ──> benchmark_cuda_llama.json    ─┐
+                                 ──> benchmark_cuda_mistral.json  ─┤
+                                 ──> benchmark_cuda_qwen.json     ─┤
+                                                                   ├──> Compare
+./run_benchmark.sh all on AMD    ──> benchmark_rocm_llama.json    ─┤
+                                 ──> benchmark_rocm_mistral.json  ─┤
+                                 ──> benchmark_rocm_qwen.json     ─┘
+                                                                   │
+                                                                   ▼
+                                                         comparison_plot.png
+                                                         comparison_report.md
 ```
 
 ## 📞 Quick Help
 
 | Question | Answer |
 |----------|--------|
-| How do I run it? | `./run_benchmark.sh llama` |
-| Where are results? | `benchmark_results/*.json` |
+| How do I run it? | `./run_benchmark.sh all` or `./run_benchmark.sh llama` |
+| Run all models? | `./run_benchmark.sh all` |
+| Where are results? | `output/benchmark_cuda_llama.json`, etc. |
 | How do I compare? | `python3 compare_results.py` |
 | Which doc to read? | Start with `QUICK_START.md` |
 | Need more steps? | Increase in training script |
-| Different model? | Use `qwen` or `mistral` |
-| Multiple runs? | `./run_benchmark.sh llama 5` |
+| Different model? | Use `llama`, `mistral`, `qwen`, or `all` |
+| Multiple runs? | `./run_benchmark.sh all 5` |
 | Out of memory? | Reduce `global_batch_size` |
+| Extract from logs? | `python3 extract_primus_metrics.py --help` |
 
 ## 🚀 Next Steps
 
 1. **First time?** → Read [QUICK_START.md](QUICK_START.md)
 2. **Want details?** → Read [BENCHMARK_README.md](BENCHMARK_README.md)
-3. **Ready to run?** → Execute `./run_benchmark.sh llama`
+3. **Ready to run?** → Execute `./run_benchmark.sh all`
 4. **Have questions?** → Check [WORKFLOW.md](WORKFLOW.md)
+
+## 🆕 Recent Updates
+
+- ✅ **Single file per model**: Each model creates one file (e.g., `benchmark_cuda_llama.json`)
+- ✅ **Run all models**: Use `./run_benchmark.sh all` to benchmark all models at once
+- ✅ **Model-based naming**: Filenames include model name for clarity
+- ✅ **Improved metrics**: Added `tokens_per_second_per_gpu` as primary efficiency metric
+- ✅ **Software stack info**: Track CUDA/ROCm versions explicitly
+- ✅ **Output directory**: Changed from `benchmark_results` to `output`
+- ✅ **Platform naming**: Use `nvd`/`amd` for clarity
 
 ---
 
-**Version**: 1.0  
+**Version**: 2.0  
 **Compatible with**: NeMo 24.x+, PyTorch 2.x+  
 **Platforms**: NVIDIA CUDA, AMD ROCm  
 

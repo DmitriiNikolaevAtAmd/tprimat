@@ -1,5 +1,15 @@
 #!/bin/bash
 # Automated benchmarking script for AMD vs NVIDIA comparison
+#
+# Usage:
+#   ./run_benchmark.sh [model] [runs]
+#
+# Examples:
+#   ./run_benchmark.sh all          # Run all models (llama, mistral, qwen)
+#   ./run_benchmark.sh llama        # Run only llama
+#   ./run_benchmark.sh mistral 3    # Run mistral 3 times
+#
+# Available models: llama, mistral, qwen, all
 
 set -e
 
@@ -8,12 +18,91 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
 MODEL=${1:-"llama"}  # Default to llama if not specified
 RUNS=${2:-1}         # Number of runs (default: 1)
 
+# Handle "all" option - run all models
+if [ "$MODEL" = "all" ]; then
+    echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}        ${BLUE}NeMo Benchmark Suite - All Models${NC}              ${CYAN}║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    # Detect platform
+    if ! python3 -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+        echo -e "${RED}❌ No GPU detected!${NC}"
+        echo "Please ensure CUDA or ROCm is properly installed."
+        exit 1
+    fi
+    
+    if python3 -c "import torch; exit(0 if hasattr(torch.version, 'hip') and torch.version.hip else 1)" 2>/dev/null; then
+        PLATFORM="AMD (ROCm)"
+        SOFTWARE_STACK="rocm"
+        COLOR=$RED
+    else
+        PLATFORM="NVD (CUDA)"
+        SOFTWARE_STACK="cuda"
+        COLOR=$GREEN
+    fi
+    
+    echo -e "Platform:  ${COLOR}${PLATFORM}${NC}"
+    echo -e "Models:    ${GREEN}llama, mistral, qwen${NC}"
+    echo -e "Runs each: ${GREEN}${RUNS}${NC}"
+    echo ""
+    
+    # Run each model
+    ALL_MODELS=("llama" "mistral" "qwen")
+    SUCCESSFUL=()
+    FAILED=()
+    
+    for MODEL_NAME in "${ALL_MODELS[@]}"; do
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BLUE}Starting: ${GREEN}${MODEL_NAME}${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        
+        if "$0" "$MODEL_NAME" "$RUNS"; then
+            SUCCESSFUL+=("$MODEL_NAME")
+            echo -e "${GREEN}✅ ${MODEL_NAME} completed successfully${NC}"
+        else
+            FAILED+=("$MODEL_NAME")
+            echo -e "${RED}❌ ${MODEL_NAME} failed${NC}"
+        fi
+        echo ""
+    done
+    
+    # Summary
+    echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}                  ${BLUE}Benchmark Summary${NC}                      ${CYAN}║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    if [ ${#SUCCESSFUL[@]} -gt 0 ]; then
+        echo -e "${GREEN}✅ Successful (${#SUCCESSFUL[@]}): ${SUCCESSFUL[@]}${NC}"
+        for M in "${SUCCESSFUL[@]}"; do
+            echo "   📄 output/benchmark_${SOFTWARE_STACK}_${M}.json"
+        done
+        echo ""
+    fi
+    
+    if [ ${#FAILED[@]} -gt 0 ]; then
+        echo -e "${RED}❌ Failed (${#FAILED[@]}): ${FAILED[@]}${NC}"
+        echo ""
+    fi
+    
+    echo -e "${BLUE}Next Steps:${NC}"
+    echo "  1. Run on the other platform (AMD/NVD)"
+    echo "  2. Compare: ${GREEN}python3 compare_results.py${NC}"
+    echo ""
+    
+    [ ${#FAILED[@]} -eq 0 ] && exit 0 || exit 1
+fi
+
+# Single model run
 echo -e "${BLUE}=================================${NC}"
 echo -e "${BLUE}NeMo Benchmark Runner${NC}"
 echo -e "${BLUE}=================================${NC}"
@@ -56,7 +145,7 @@ case $MODEL in
         ;;
     *)
         echo -e "${RED}❌ Unknown model: ${MODEL}${NC}"
-        echo "Available models: llama, qwen, mistral"
+        echo "Available models: llama, mistral, qwen, all"
         exit 1
         ;;
 esac
@@ -139,6 +228,9 @@ fi
 echo ""
 echo -e "${BLUE}Next Steps:${NC}"
 echo "1. Run this script on the other platform (AMD/NVD)"
-echo "2. Compare results with: python3 compare_results.py"
+echo "   ${CYAN}./run_benchmark.sh ${MODEL}${NC}"
+echo "2. Compare results with: ${GREEN}python3 compare_results.py${NC}"
+echo ""
+echo -e "${BLUE}Tip:${NC} Run ${CYAN}./run_benchmark.sh all${NC} to benchmark all models"
 echo ""
 
