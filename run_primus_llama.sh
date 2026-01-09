@@ -8,13 +8,28 @@ echo "║        Primus Training: Llama 3.1 8B                      ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Configuration
-PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
+# Get script directory
 TPRIMAT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load configuration from config.yaml
+echo "📋 Loading configuration from config.yaml..."
+if [ -f "$TPRIMAT_PATH/config_to_shell.py" ]; then
+    eval "$(python3 "$TPRIMAT_PATH/config_to_shell.py")"
+    echo "✓ Configuration loaded"
+else
+    echo "⚠️  config_to_shell.py not found, using defaults"
+fi
+echo ""
+
+# Configuration (with fallbacks to environment or defaults from config.yaml)
+PRIMUS_PATH="${PRIMUS_PATH:-${CONFIG_PRIMUS_PATH:-/workspace/Primus}}"
 MODEL="llama"
-CONFIG_FILE="examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml"
-TRAIN_ITERS="${TRAIN_ITERS:-10}"
-OUTPUT_DIR="$TPRIMAT_PATH/output"
+CONFIG_FILE="${CONFIG_LLAMA_PRIMUS_CONFIG:-examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml}"
+TRAIN_ITERS="${TRAIN_ITERS:-${CONFIG_TRAIN_ITERS:-10}}"
+OUTPUT_DIR="${CONFIG_OUTPUT_DIR:-$TPRIMAT_PATH/output}"
+NUM_GPUS="${CONFIG_AMD_NUM_GPUS:-8}"
+GLOBAL_BATCH_SIZE="${CONFIG_GLOBAL_BATCH_SIZE:-128}"
+SEQ_LENGTH="${CONFIG_SEQ_LENGTH:-2048}"
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
@@ -43,6 +58,9 @@ echo "📂 Primus Path: $PRIMUS_PATH"
 echo "📄 Config: $CONFIG_FILE"
 echo "📊 Training Iterations: $TRAIN_ITERS"
 echo "📁 Output: $OUTPUT_DIR"
+echo "🔧 Num GPUs: $NUM_GPUS"
+echo "📦 Global Batch Size: $GLOBAL_BATCH_SIZE"
+echo "📏 Sequence Length: $SEQ_LENGTH"
 echo ""
 
 # Log file
@@ -95,9 +113,9 @@ if [ $EXIT_CODE -eq 0 ]; then
     python3 extract_primus_metrics.py \
         --log-file "$LOG_FILE" \
         --model-name "$MODEL" \
-        --num-gpus 8 \
-        --global-batch-size 128 \
-        --sequence-length 2048
+        --num-gpus "$NUM_GPUS" \
+        --global-batch-size "$GLOBAL_BATCH_SIZE" \
+        --sequence-length "$SEQ_LENGTH"
     
     if [ $? -eq 0 ]; then
         echo ""

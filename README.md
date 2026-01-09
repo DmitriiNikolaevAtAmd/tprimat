@@ -2,56 +2,62 @@
 
 **Unified benchmarking toolkit for comparing AMD vs NVIDIA GPU performance with LLM training**
 
----
-
-## Table of Contents
-
-- [Quick Start](#-quick-start)
-- [Installation](#-installation)
-- [Usage](#-usage)
-  - [Basic Commands](#basic-commands)
-  - [Primus Training Scripts](#primus-training-scripts)
-  - [Complete Workflow](#complete-workflow)
-- [What Gets Measured](#-what-gets-measured)
-- [Comparison Methodology](#-comparison-methodology)
-- [Primus Training Guide](#-primus-training-guide)
-- [Troubleshooting](#-troubleshooting)
-- [Enhanced Metrics](#-enhanced-metrics)
-- [ROCm Compatibility](#-rocm-compatibility)
-- [Core Components](#-core-components)
-- [Advanced Usage](#-advanced-usage)
-- [Best Practices](#-best-practices)
-- [Reference](#-reference)
+Automatically benchmarks LLM training on NVIDIA (NeMo) or AMD (Primus) with a single shared configuration.
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-# Run on any platform (NVIDIA or AMD)
-./benchmark.py
+# 1. Install dependencies
+pip install pyyaml matplotlib numpy
 
-# Compare results after running on both platforms
+# 2. (Optional) Review/edit configuration
+python3 config_loader.py    # View config
+vim config.yaml             # Edit if needed
+
+# 3. Run on any platform (NVIDIA or AMD)
+./benchmark.py              # Python/NeMo (NVIDIA)
+./run_primus_llama.sh       # Shell/Primus (AMD)
+
+# 4. Compare results after running on both platforms
 python3 compare.py
 ```
 
 **That's it!** Automatically detects your platform and runs all models.
 
-### What You Get
+**All scripts use `config.yaml`** - Edit once, applies everywhere!
 
-- ✅ **Automatic Platform Detection**: NVIDIA (CUDA) or AMD (ROCm)
-- ✅ **Benchmark Results**: JSON files for each model on each platform
-- ✅ **Comparison Reports**: Visual charts and detailed analysis
-- ✅ **Smart Log Discovery**: Finds Primus logs automatically on AMD
+---
 
-**Benchmark Files:**
-- `output/benchmark_cuda_llama.json`
-- `output/benchmark_cuda_qwen.json`
-- `output/benchmark_rocm_llama.json`
-- `output/benchmark_rocm_qwen.json`
+## 📋 Table of Contents
 
-**Comparison Output:**
-- `comparison.png` - Visual charts with all metrics
+- [Quick Start](#-quick-start)
+- [Installation](#-installation)
+- [Unified Configuration](#-unified-configuration)
+  - [Quick Start](#configuration-quick-start)
+  - [File Structure](#configuration-file-structure)
+  - [Basic Usage](#basic-usage)
+  - [Access Methods](#access-methods)
+  - [Helper Methods](#helper-methods)
+  - [Integration Examples](#integration-examples)
+  - [Validation](#validation)
+- [Configuration Reference](#-configuration-reference)
+  - [Core Concepts](#core-concepts)
+  - [Comparison Methodologies](#comparison-methodologies)
+  - [Parallelism Explained](#parallelism-explained)
+  - [Platform Optimizations](#platform-optimizations)
+  - [All Parameters](#all-parameters)
+- [Usage](#-usage)
+  - [Basic Commands](#basic-commands)
+  - [Primus Training Scripts](#primus-training-scripts)
+  - [Complete Workflow](#complete-workflow)
+- [What Gets Measured](#-what-gets-measured)
+- [Enhanced Metrics](#-enhanced-metrics)
+- [Troubleshooting](#-troubleshooting)
+- [Best Practices](#-best-practices)
+- [Advanced Topics](#-advanced-topics)
+- [Reference](#-reference)
 
 ---
 
@@ -64,9 +70,9 @@ python3 compare.py
 - PyTorch 2.x+
 - CUDA or ROCm
 
-**For visualization (optional):**
+**Additional requirement:**
 ```bash
-pip install matplotlib numpy
+pip install pyyaml
 ```
 
 Or use the included requirements:
@@ -79,6 +85,600 @@ pip install -r requirements.txt
 - **NVIDIA (CUDA)**: Runs NeMo training scripts directly
 - **AMD (ROCm)**: Extracts metrics from Primus training logs
 - **No GPU**: Analyzes logs without GPU (perfect for remote analysis)
+
+---
+
+## ⚙️ Unified Configuration
+
+**Single YAML configuration for both AMD and NVIDIA hardware!**
+
+All experiment settings are now centralized in `config.yaml`.
+
+### Configuration Quick Start
+
+```bash
+# Install dependency
+pip install pyyaml
+
+# View configuration
+python3 config_loader.py
+
+# Run examples
+python3 example_config_usage.py
+```
+
+### Configuration File Structure
+
+`config.yaml` contains:
+
+```yaml
+# Single source of truth for all configurations
+experiment:
+  name: "tprimat_benchmark"
+  methodology: "maximum_performance"  # or "identical_config"
+
+hardware:
+  platforms:
+    nvidia:
+      gpu_model: "H100"
+      memory_per_gpu_gb: 80
+      num_gpus: 8
+    amd:
+      gpu_model: "MI300X"
+      memory_per_gpu_gb: 192
+      num_gpus: 8
+
+models:
+  llama:
+    name: "llama3.1_8b"
+    num_parameters: 8.0e9
+  qwen:
+    name: "qwen2.5_7b"
+    num_parameters: 7.6e9
+
+training:
+  data:
+    global_batch_size: 128
+    micro_batch_size: 1
+    seq_length: 2048
+  duration:
+    max_steps: 10
+
+parallelism:
+  maximum_performance:
+    llama:
+      nvidia: { TP: 4, PP: 1, DP: 2 }   # H100 optimized
+      amd:    { TP: 1, PP: 1, DP: 8 }   # MI300X optimized
+  
+  identical_config:
+    llama:
+      nvidia: { TP: 4, PP: 1, DP: 2 }   # Same for both
+      amd:    { TP: 4, PP: 1, DP: 2 }   # platforms
+```
+
+### Basic Usage
+
+```python
+from config_loader import load_config
+
+# Load configuration
+config = load_config()
+
+# Access settings (dot notation)
+batch_size = config.training.data.global_batch_size  # 128
+max_steps = config.training.duration.max_steps       # 10
+precision = config.training.precision.default        # "bf16"
+
+# Get parallelism for specific platform
+llama_nvidia = config.get_parallelism("llama", "nvidia")
+# Returns: {
+#   'tensor_model_parallel_size': 4,
+#   'pipeline_model_parallel_size': 1,
+#   'data_parallel_size': 2,
+#   'gradient_accumulation_steps': 64
+# }
+
+# Get platform optimizations
+opts = config.get_platform_optimizations("nvidia")
+# Returns: {'precision': 'fp8', 'fp8_hybrid': True, ...}
+
+# Print summary
+config.print_config_summary("llama", "nvidia")
+```
+
+### Access Methods
+
+```python
+config = load_config()
+
+# Dot notation
+config.experiment.name                    # "tprimat_benchmark"
+config.training.data.global_batch_size    # 128
+config.models.llama.num_parameters        # 8.0e9
+
+# Helper methods
+config.get_models_list()                  # ['llama', 'qwen']
+config.get_platforms_list()               # ['nvidia', 'amd']
+config.get_parallelism("llama", "nvidia") # Dict with TP/PP/DP
+config.get_platform_optimizations("amd")  # Dict with opts
+config.get_model_config("llama")          # Dict with model info
+config.get_hardware_config("nvidia")      # Dict with hw specs
+```
+
+### Helper Methods
+
+```python
+# Paths and filenames
+config.get_output_dir()                          # "./output"
+config.get_log_filename("llama")                 # "training_llama.log"
+config.get_benchmark_filename("cuda", "llama")   # "benchmark_cuda_llama.json"
+config.get_primus_path()                         # "/workspace/Primus"
+config.get_primus_config_path("llama")           # Full path to Primus config
+
+# Costs and specs
+config.get_cloud_cost("nvidia")                  # 32.0 ($/hour)
+config.get_hardware_specs("nvidia")              # Dict with TFLOPs, TDP, etc.
+
+# Training config
+config.get_training_config()                     # Dict with all training params
+config.get_benchmark_config()                    # Dict with benchmark settings
+```
+
+### Integration Examples
+
+#### Training Script
+
+```python
+from config_loader import load_config
+
+def run_pretrain():
+    config = load_config()
+    
+    # Get settings
+    parallelism = config.get_parallelism("llama", "nvidia")
+    optimizations = config.get_platform_optimizations("nvidia")
+    
+    # Create recipe
+    recipe = llm.llama31_8b.pretrain_recipe(
+        num_gpus_per_node=config.hardware.platforms.nvidia.num_gpus
+    )
+    
+    # Apply parallelism from config
+    recipe.trainer.strategy.tensor_model_parallel_size = \
+        parallelism['tensor_model_parallel_size']
+    recipe.trainer.strategy.pipeline_model_parallel_size = \
+        parallelism['pipeline_model_parallel_size']
+    
+    # Apply data config
+    recipe.data.micro_batch_size = config.training.data.micro_batch_size
+    recipe.data.global_batch_size = config.training.data.global_batch_size
+    recipe.data.seq_length = config.training.data.seq_length
+    
+    # Apply optimizations
+    if optimizations['fp8_hybrid']:
+        recipe.model.config.fp8 = "hybrid"
+        recipe.model.config.fp8_param = optimizations.get('fp8_param', False)
+    
+    # Run
+    run.run(recipe, direct=True)
+```
+
+#### Benchmark Script
+
+```python
+from config_loader import load_config
+
+def benchmark():
+    config = load_config()
+    
+    # Get output paths
+    output_dir = config.get_output_dir()
+    log_file = config.get_log_filename("llama")
+    
+    # Run training
+    # ...
+    
+    # Save with configured filename
+    filename = config.get_benchmark_filename("cuda", "llama")
+    save_results(os.path.join(output_dir, filename))
+```
+
+#### Comparison Script
+
+```python
+from config_loader import load_config
+
+def compare():
+    config = load_config()
+    
+    # Get costs
+    nvidia_cost = config.get_cloud_cost("nvidia")
+    amd_cost = config.get_cloud_cost("amd")
+    
+    # Get hardware specs for MFU
+    nvidia_specs = config.get_hardware_specs("nvidia")
+    peak_tflops = nvidia_specs['peak_tflops_fp8']
+    
+    # Calculate MFU
+    mfu = (achieved_flops / peak_tflops) * 100
+```
+
+### Validation
+
+```python
+config = load_config()
+
+# Validate parallelism (TP × PP × DP = num_gpus)
+is_valid = config.validate_parallelism(tp=4, pp=1, dp=2, num_gpus=8)
+# Returns: True (4 × 1 × 2 = 8 ✓)
+
+# Calculate gradient accumulation steps
+# Formula: GBS = MBS × DP × GA_steps
+ga_steps = config.calculate_gradient_accumulation_steps(
+    global_batch_size=128,
+    micro_batch_size=1,
+    data_parallel_size=2
+)
+# Returns: 64 (128 / (1 × 2) = 64)
+```
+
+### Configuration Benefits
+
+- ✅ **Single source of truth** - all settings in one place
+- ✅ **Two methodologies** - maximum performance or identical config
+- ✅ **Easy switching** - change methodology with one line
+- ✅ **Validation** - built-in consistency checks
+- ✅ **Documentation** - self-documenting configuration
+- ✅ **Reproducibility** - share exact experiment settings
+- ✅ **Fully integrated** - all training scripts use config automatically
+- ✅ **Works everywhere** - Python scripts and Shell scripts both use config.yaml
+
+### Integrated Scripts
+
+All scripts now automatically load settings from `config.yaml`:
+
+| Type | Script | Status | Loads |
+|------|--------|--------|-------|
+| **Python Training** | `pretrain_llama.py` | ✅ | Parallelism, batch size, steps, optimizations |
+| **Python Training** | `pretrain_qwen.py` | ✅ | Parallelism, batch size, steps, optimizations |
+| **Shell Training** | `run_primus_llama.sh` | ✅ | Batch size, steps, GPU count, paths |
+| **Shell Training** | `run_primus_qwen.sh` | ✅ | Batch size, steps, GPU count, paths |
+| **Shell Training** | `run_primus_all.sh` | ✅ | Calls other scripts (inherits config) |
+| **Python Metrics** | `enhanced_metrics.py` | ✅ | Hardware specs, costs, model params |
+
+**Result:** Edit `config.yaml` once → all scripts update automatically!
+
+### Shell Script Integration
+
+Shell scripts (`run_primus_*.sh`) also load configuration from `config.yaml`:
+
+```bash
+# Shell scripts load config automatically
+./run_primus_llama.sh
+
+# Output shows config values:
+# 📋 Loading configuration from config.yaml...
+# ✓ Configuration loaded
+# 📊 Training Iterations: 10      (from config)
+# 📦 Global Batch Size: 128       (from config)
+# 📏 Sequence Length: 2048        (from config)
+```
+
+**How it works:**
+1. Script calls `config_to_shell.py` to export config as environment variables
+2. Variables like `CONFIG_TRAIN_ITERS` are available
+3. Script uses config values with fallbacks (env var → config → default)
+4. Can still override with environment variables
+
+**Manual override:**
+```bash
+# Override config value temporarily
+TRAIN_ITERS=5 ./run_primus_llama.sh
+```
+
+**Testing:**
+```bash
+# View exported variables
+python3 config_to_shell.py
+
+# Test script integration
+./run_primus_llama.sh 2>&1 | head -20
+```
+
+---
+
+## 📖 Configuration Reference
+
+### Core Concepts
+
+#### 1. Single Source of Truth
+
+**One file (`config.yaml`) contains:**
+- Model definitions (Llama, Qwen)
+- Hardware specs (H100, MI300X)
+- Training parameters (batch sizes, steps)
+- Parallelism strategies (TP, PP, DP)
+- Platform optimizations (FP8, BF16)
+- Benchmarking settings (metrics, costs)
+
+#### 2. Two Methodologies
+
+##### Maximum Performance (Default)
+Each platform uses its optimal configuration.
+
+**Why different configs?**
+- **AMD MI300X**: 192GB memory → can fit full model (TP=1) → less communication overhead
+- **NVIDIA H100**: 80GB memory → needs model splitting (TP=4) → more communication
+
+**Use for:** Production deployment, cost analysis, real-world performance
+
+**Example:**
+```yaml
+parallelism:
+  maximum_performance:
+    llama:
+      nvidia: { TP: 4, PP: 1, DP: 2 }  # H100: needs TP=4
+      amd:    { TP: 1, PP: 1, DP: 8 }  # MI300X: can use TP=1
+```
+
+##### Identical Configuration
+Both platforms use the same settings.
+
+**Use for:** Academic research, hardware-only comparison
+
+**Example:**
+```yaml
+parallelism:
+  identical_config:
+    llama:
+      nvidia: { TP: 4, PP: 1, DP: 2 }  # Same
+      amd:    { TP: 4, PP: 1, DP: 2 }  # Same
+```
+
+**Switch by editing config.yaml:**
+```yaml
+experiment:
+  methodology: "identical_config"  # or "maximum_performance"
+```
+
+### Comparison Methodologies
+
+#### Maximum Performance Results
+
+| Metric | NVIDIA H100 | AMD MI300X | Advantage |
+|--------|-------------|------------|-----------|
+| Tokens/s/GPU | ~5,115 | ~13,363 | 6.34x AMD |
+| Memory/GPU | 22 GB | 118 GB | 5.3x AMD |
+| Configuration | TP=4, FP8 | TP=1, BF16 | Different |
+
+**Valid for:** Production decisions, cost analysis, real-world planning
+
+#### Identical Configuration Results
+
+Both platforms use TP=4, same precision, same batch sizes.
+
+**Expected:** 2-3x AMD advantage (isolates hardware differences)
+
+**Valid for:** Academic hardware studies, framework maturity comparisons
+
+### Parallelism Explained
+
+#### The Formula
+
+```
+TP × PP × DP = num_gpus
+```
+
+Must always be satisfied!
+
+#### What Each Means
+
+**Tensor Parallel (TP):** Splits individual layers across GPUs
+- Example: TP=4 → each layer split into 4 pieces across 4 GPUs
+- Trade-off: ✅ Reduces memory per GPU | ❌ Requires all-reduce per layer
+
+**Pipeline Parallel (PP):** Splits model vertically (layers across GPUs)
+- Example: PP=2 → first half of layers on GPU group 1, second half on group 2
+- Trade-off: ✅ Less communication than TP | ❌ Pipeline bubbles (idle time)
+
+**Data Parallel (DP):** Replicates full model, splits data batches
+- Example: DP=8 → 8 copies of model, each processes different data
+- Trade-off: ✅ Perfect scaling | ❌ Requires memory for full model per GPU
+
+#### Examples (8 GPUs)
+
+| TP | PP | DP | Product | Valid? | Use Case |
+|----|----|----|---------|--------|----------|
+| 1  | 1  | 8  | 8       | ✓      | Maximum DP (AMD with large memory) |
+| 4  | 1  | 2  | 8       | ✓      | Balanced (NVIDIA Llama) |
+| 4  | 2  | 1  | 8       | ✓      | No DP (NVIDIA Qwen) |
+| 8  | 1  | 1  | 8       | ✓      | Maximum TP (no DP) |
+| 2  | 2  | 2  | 8       | ✓      | Balanced mix |
+| 3  | 3  | 1  | 9       | ❌     | 3×3×1 = 9 ≠ 8 |
+
+#### Gradient Accumulation
+
+**Formula:**
+```
+global_batch_size = micro_batch_size × DP × gradient_accumulation_steps
+```
+
+**Example:**
+```
+128 = 1 × 2 × 64
+
+Where:
+- micro_batch_size = 1 (per GPU, per step)
+- DP = 2 (2 data parallel groups)
+- gradient_accumulation_steps = 64
+- global_batch_size = 128
+```
+
+This means:
+- Each GPU processes 1 sample at a time (MBS=1)
+- 2 GPU groups process data in parallel (DP=2)
+- Each group accumulates gradients over 64 steps
+- Total effective batch size = 128
+
+#### Choosing TP/PP/DP
+
+**High memory (AMD MI300X: 192GB):**
+- Prefer TP=1 (less communication)
+- Use more DP (better scaling)
+- Example: TP=1, PP=1, DP=8
+
+**Limited memory (NVIDIA H100: 80GB):**
+- Need higher TP (model splitting)
+- Less DP available
+- Example: TP=4, PP=1, DP=2
+
+**Very large models:**
+- May need PP (pipeline stages)
+- Example: TP=4, PP=2, DP=1
+
+### Platform Optimizations
+
+#### NVIDIA H100
+
+```yaml
+platform_optimizations:
+  nvidia:
+    precision: "fp8"              # H100 excels at FP8
+    fp8_hybrid: true
+    fp8_param: true
+    cuda_alloc_conf: "expandable_segments:True"
+    activation_checkpointing: true
+    gradient_checkpointing: false
+```
+
+**Why FP8?**
+- H100 has 989 TFLOPs in FP8 (vs 494 TFLOPs in BF16)
+- 2x throughput improvement
+- Minimal accuracy loss with hybrid mode
+
+#### AMD MI300X
+
+```yaml
+platform_optimizations:
+  amd:
+    precision: "bf16"             # BF16 is well-supported
+    fp8_hybrid: false             # FP8 support may vary
+    fp8_param: false
+    activation_checkpointing: false  # Less needed with 192GB
+    gradient_checkpointing: false
+```
+
+**Why BF16?**
+- Excellent BF16 support: 653 TFLOPs
+- 192GB memory reduces need for activation checkpointing
+- More stable than FP8 on current ROCm versions
+
+### All Parameters
+
+#### Experiment
+
+```yaml
+experiment:
+  name: "tprimat_benchmark"           # Experiment name
+  description: "..."                  # Description
+  version: "2.0"                      # Config version
+  methodology: "maximum_performance"  # or "identical_config"
+```
+
+#### Hardware
+
+```yaml
+hardware:
+  platforms:
+    nvidia:
+      gpu_model: "H100"               # GPU model name
+      memory_per_gpu_gb: 80           # Memory per GPU
+      num_gpus: 8                     # Number of GPUs
+      software_stack: "cuda"          # Software stack
+      framework: "nemo"               # Framework name
+```
+
+#### Models
+
+```yaml
+models:
+  llama:
+    name: "llama3.1_8b"               # Model identifier
+    full_name: "Llama 3.1 8B"         # Display name
+    num_parameters: 8.0e9             # Parameter count
+    num_layers: 32                    # Number of layers
+    hidden_size: 4096                 # Hidden dimension
+    num_attention_heads: 32           # Attention heads
+    primus_config: "path/to/config"   # Primus config path
+    nemo_recipe: "recipe_name"        # NeMo recipe name
+```
+
+#### Training
+
+```yaml
+training:
+  data:
+    micro_batch_size: 1               # Per-GPU batch per step
+    global_batch_size: 128            # Total batch size
+    seq_length: 2048                  # Sequence length
+  
+  duration:
+    max_steps: 10                     # Training steps
+    train_iters: 10                   # Alternative name
+  
+  optimizer:
+    type: "adam"                      # Optimizer type
+    learning_rate: 3.0e-4             # Learning rate
+    weight_decay: 0.1                 # Weight decay
+    beta1: 0.9                        # Adam beta1
+    beta2: 0.95                       # Adam beta2
+  
+  precision:
+    default: "bf16"                   # Default precision
+    fp8_hybrid: false                 # FP8 hybrid mode
+    fp8_param: false                  # FP8 parameters
+```
+
+#### Parallelism
+
+```yaml
+parallelism:
+  maximum_performance:
+    llama:
+      nvidia:
+        tensor_model_parallel_size: 4       # TP
+        pipeline_model_parallel_size: 1     # PP
+        data_parallel_size: 2               # DP
+        gradient_accumulation_steps: 64     # GA steps
+```
+
+#### Benchmarking
+
+```yaml
+benchmarking:
+  output:
+    directory: "./output"
+    filename_format: "benchmark_{software_stack}_{model}.json"
+    log_format: "training_{model}.log"
+  
+  metrics:
+    performance:
+      - "tokens_per_second_per_gpu"
+      - "avg_step_time_seconds"
+    memory:
+      - "avg_memory_allocated_gb"
+      - "peak_memory_allocated_gb"
+  
+  enhanced_metrics:
+    cloud_costs:
+      nvidia_h100_8gpu_per_hour: 32.0     # $/hour
+      amd_mi300x_8gpu_per_hour: 24.0      # $/hour
+    
+    hardware_specs:
+      nvidia_h100:
+        peak_tflops_fp8: 989.0e12         # TFLOPs
+        tdp_watts: 700                     # Power
+```
 
 ---
 
@@ -100,6 +700,12 @@ pip install -r requirements.txt
 # Get help
 ./benchmark.py --help
 ```
+
+**Note:** All training scripts (Python and Shell) now automatically load settings from `config.yaml`:
+- **Python:** `pretrain_llama.py`, `pretrain_qwen.py`
+- **Shell:** `run_primus_llama.sh`, `run_primus_qwen.sh`
+
+To change parallelism, batch sizes, or other parameters, simply edit `config.yaml` and re-run the benchmarks.
 
 ### Primus Training Scripts
 
@@ -173,156 +779,84 @@ python3 compare.py
 
 ---
 
-## 📚 Comparison Methodology
+## 📈 Enhanced Metrics
 
-TensorPrimat uses **"Maximum Performance"** comparison methodology by default.
+### 1. Cost-Normalized Metrics 💰
 
-### Two Comparison Approaches
+```python
+# Tokens per Dollar-Hour
+tokens_per_dollar_hour = (tokens_per_second * 3600) / cost_per_hour
 
-#### 1. Maximum Performance (Default)
-Each platform is configured for **optimal performance** on that specific hardware.
-
-**Why this approach?**
-- ✅ Answers: *"What's the best real-world performance each platform can deliver?"*
-- ✅ Real-world deployments optimize for each platform's strengths
-- ✅ Cloud providers tune separately for AMD vs NVIDIA instances
-- ✅ Represents actual production usage
-
-**Example Results:**
-| Metric | NVIDIA H100 | AMD MI300X | Advantage |
-|--------|-------------|------------|-----------|
-| Tokens/s/GPU | 1,380 | 13,363 | 6.34x AMD |
-| Memory/GPU | 22 GB | 118 GB | 5.3x AMD |
-| Configuration | TP=4, FP8 | TP=1, BF16 | Different |
-
-**Valid for:** Production deployment decisions, cost analysis, real-world planning
-
-#### 2. Identical Configuration (Optional)
-Both platforms use the same parallelism strategy and settings.
-
-**When to use:**
-- ❌ Academic hardware studies
-- ❌ Isolating pure hardware differences
-- ❌ Framework maturity comparisons
-
-**How to run:**
-```bash
-# Create identical configs (both use TP=4, BF16)
-cd /workspace/Primus/examples/megatron/configs/MI300X/
-cp llama3.1_8B-pretrain.yaml llama3.1_8B-pretrain-tp4.yaml
-# Edit to match NVIDIA: TP=4, same precision, same batch sizes
-
-# Run with fair config
-FAIR_CONFIG=1 ./run_amd_dual_comparison.sh
+# Cost to Train 1 Trillion Tokens
+cost_per_trillion_tokens = (1e12 / tokens_per_second) * (cost_per_hour / 3600)
 ```
 
-### Configuration Checker
+**Cloud Pricing (from config.yaml):**
+- NVIDIA H100 (8 GPUs): $32/hr
+- AMD MI300X (8 GPUs): $24/hr
 
-```bash
-# Verify your Primus configuration
-./check_primus_config.sh
+### 2. Model FLOPs Utilization (MFU) 📊
 
-# Run both comparisons
-./run_amd_dual_comparison.sh
+Industry-standard metric for training efficiency:
+
+```python
+# Peak theoretical FLOPs (from config.yaml)
+peak_flops_h100 = 989e12  # 989 TFLOPs (FP8)
+peak_flops_mi300x = 653e12  # 653 TFLOPs (FP16)
+
+# Model FLOPs per token (Llama 8B)
+model_flops_per_token = 6 * num_parameters  # 48e9 for Llama 8B
+
+# MFU
+mfu = achieved_flops / (peak_flops * num_gpus)
 ```
 
-See your comparison results and understand what they mean:
+**Typical values:**
+- Good: 30-40% MFU
+- Excellent: 40-55% MFU
+- State-of-art: 55-65% MFU
 
-**Maximum Performance (6.34x AMD advantage):**
-- Real-world optimal configurations
-- Different TP strategies (TP=4 vs TP=1)
-- Each platform at its best
+### 3. Memory Efficiency 💾
 
-**Identical Configuration (~2-3x AMD advantage expected):**
-- Same TP=4 on both
-- Isolates hardware differences
-- More apples-to-apples
+```python
+# Memory utilization percentage
+memory_utilization = (memory_used / total_memory) * 100
+```
 
----
+### 4. Power Efficiency ⚡
 
-## 🔧 Primus Training Guide
+```python
+# Tokens per watt-hour (using TDP from config.yaml)
+tokens_per_watt_hour = tokens_per_second * 3600 / (tdp * num_gpus)
 
-### Quick Start with Primus
+# TDP values from config:
+# H100: 700W, MI300X: 750W
+```
+
+### 5. Training Time Estimates 🎯
+
+```python
+# Time to train 1 Trillion tokens
+time_to_1T_tokens_hours = (1e12 / tokens_per_second) / 3600
+
+# Full Llama 3.1 8B training (≈ 15T tokens)
+time_to_full_training_days = (15e12 / tokens_per_second) / (3600 * 24)
+```
+
+### Generate Comparison Report
 
 ```bash
-# Run single model
-./run_primus_llama.sh
-
-# What happens automatically:
-# 1. ✅ Validates Primus installation
-# 2. ✅ Checks config file exists
-# 3. ✅ Creates output directory
-# 4. ✅ Runs Primus training
-# 5. ✅ Captures logs (two copies)
-# 6. ✅ Extracts metrics automatically
-# 7. ✅ Generates benchmark JSON
-# 8. ✅ Shows next steps
+python3 compare.py
 ```
 
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PRIMUS_PATH` | `/workspace/Primus` | Primus installation directory |
-| `TRAIN_ITERS` | `10` | Number of training iterations |
-
-### Output Files
-
-**Log Files:**
-```
-output/training_llama.log                    # Primary log (overwritten)
-output/primus_training_llama_<timestamp>.log # Backup (timestamped)
-```
-
-**Benchmark Files:**
-```
-output/benchmark_rocm_llama.json
-output/benchmark_rocm_qwen.json
-```
-
-### Manual Primus Training
-
-If you need to run Primus manually:
-
-```bash
-cd /workspace/Primus
-
-# Run Llama
-export EXP=examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml
-bash ./examples/run_pretrain.sh --train_iters 10 2>&1 | tee /workspace/tprimat/training_llama.log
-
-# Run Qwen
-export EXP=examples/megatron/configs/MI300X/qwen2.5_7B-pretrain.yaml
-bash ./examples/run_pretrain.sh --train_iters 10 2>&1 | tee /workspace/tprimat/training_qwen.log
-
-# Extract metrics
-cd /workspace/tprimat
-./benchmark.py  # Auto-detects logs
-```
-
-### Customizing Primus Config
-
-```bash
-cd /workspace/Primus/examples/megatron/configs/MI300X/
-vi llama3.1_8B-pretrain.yaml
-```
-
-**Common parameters:**
-```yaml
-# Parallelism
-tensor_model_parallel_size: 1    # Model parallelism
-pipeline_model_parallel_size: 1
-
-# Batch sizes
-micro_batch_size: 1
-global_batch_size: 128
-
-# Precision
-precision: bf16  # or fp16, fp8
-
-# Sequence length
-seq_length: 2048
-```
+**Output includes:**
+- Visual charts (comparison.png)
+- Throughput comparison
+- Memory efficiency
+- Cost per trillion tokens
+- MFU comparison
+- Training time estimates
+- Power efficiency
 
 ---
 
@@ -335,12 +869,6 @@ seq_length: 2048
 ./fix_gpu_memory.sh
 ```
 
-This will:
-- Show current GPU memory usage
-- Kill lingering Python processes
-- Clear PyTorch cache
-- Verify memory is freed
-
 **Manual Solutions:**
 
 ```bash
@@ -348,14 +876,10 @@ This will:
 nvidia-smi | grep python | awk '{print $5}' | xargs -r kill -9
 
 # Clear cache
-python3 -c "import torch; torch.cuda.empty_cache(); print('Cache cleared')"
+python3 -c "import torch; torch.cuda.empty_cache()"
 
 # Set memory allocator (already in pretrain scripts)
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-
-# Reduce memory usage in scripts
-recipe.data.global_batch_size = 64  # Instead of 128
-recipe.trainer.strategy.tensor_model_parallel_size = 8  # Instead of 4
 ```
 
 ### No Logs Found Error
@@ -378,317 +902,37 @@ cp /path/to/logs/*.log .
 # Script looks for: training_llama.log, training_qwen.log
 ```
 
-### NeMo Not Found (AMD Systems)
+### Configuration Issues
 
-This is **expected** on AMD systems! The benchmark automatically:
-1. Detects no NeMo available
-2. Switches to log extraction mode
-3. Searches for Primus training logs
+**Parallelism validation fails:**
+```python
+# Check that TP × PP × DP = num_gpus
+config = load_config()
+p = config.get_parallelism("llama", "nvidia")
+product = p['tensor_model_parallel_size'] * \
+          p['pipeline_model_parallel_size'] * \
+          p['data_parallel_size']
+print(f"Product: {product} (should be 8)")
+# If mismatch, edit config.yaml
+```
 
-Just run Primus training first, then:
-```bash
-./benchmark.py  # Will auto-extract from logs
+**Batch size mismatch:**
+```python
+# Check: GBS = MBS × DP × GA_steps
+gbs = config.training.data.global_batch_size
+mbs = config.training.data.micro_batch_size
+dp = parallelism['data_parallel_size']
+ga = parallelism['gradient_accumulation_steps']
+calculated = mbs * dp * ga
+print(f"GBS={gbs}, calculated={calculated} (should match)")
+# If mismatch, update gradient_accumulation_steps in config.yaml
 ```
 
 ### Platform Detection Issues
 
 If you see `❌ No AMD benchmark results found!` but you have ROCm files:
 
-**Solution:** Already fixed! Make sure your JSON files have `"software_stack": "rocm"` or `"cuda"`.
-
-Re-run: `python3 compare_results.py`
-
-### Performance Issues
-
-**Checklist:**
-
-```bash
-# 1. Check GPU utilization (should be ~100%)
-watch -n 1 nvidia-smi
-
-# 2. Check MFU (Model FLOPs Utilization)
-python3 compare.py
-# Good: 30-50%, Excellent: 50-65%
-
-# 3. Memory efficiency
-# If memory < 50%, try larger batch size
-# If memory > 95%, reduce batch size
-
-# 4. Check for CPU bottleneck
-htop  # Should not be at 100%
-```
-
-### Best Practices for Benchmarking
-
-**Before:**
-```bash
-# 1. Clean GPU memory
-./fix_gpu_memory.sh
-
-# 2. Check system is idle
-nvidia-smi
-htop
-
-# 3. Set environment variables
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-
-# 4. Run benchmark
-./benchmark.py
-```
-
-**During:**
-- ✅ Don't run other GPU processes
-- ✅ Monitor with `nvidia-smi`
-- ✅ Let it run without interruption
-
-**After:**
-- ✅ Verify JSON files in `output/`
-- ✅ Check metrics make sense
-- ✅ Run comparison scripts
-
----
-
-## 📈 Enhanced Metrics
-
-Beyond basic performance metrics, TensorPrimat can calculate:
-
-### 1. Cost-Normalized Metrics 💰
-
-```python
-# Tokens per Dollar-Hour
-tokens_per_dollar_hour = (tokens_per_second * 3600) / cost_per_hour
-
-# Cost to Train 1 Trillion Tokens
-cost_per_trillion_tokens = (1e12 / tokens_per_second) * (cost_per_hour / 3600)
-```
-
-**Cloud Pricing (approximate):**
-- NVIDIA H100 (8 GPUs): ~$32/hr
-- AMD MI300X (8 GPUs): ~$24/hr
-
-### 2. Model FLOPs Utilization (MFU) 📊
-
-Industry-standard metric for training efficiency:
-
-```python
-# Peak theoretical FLOPs
-peak_flops_h100 = 989e12  # 989 TFLOPs (FP8)
-peak_flops_mi300x = 653e12  # 653 TFLOPs (FP16)
-
-# Model FLOPs per token (Llama 8B)
-model_flops_per_token = 6 * num_parameters  # 48e9 for Llama 8B
-
-# MFU
-mfu = achieved_flops / (peak_flops * num_gpus)
-```
-
-**Typical values:**
-- Good: 30-40% MFU
-- Excellent: 40-55% MFU
-- State-of-art: 55-65% MFU
-
-### 3. Memory Efficiency 💾
-
-```python
-# Memory utilization percentage
-memory_utilization = (memory_used / total_memory) * 100
-
-# Potential batch size
-potential_batch_size = (total_memory * 0.9) / (memory_per_token * seq_length)
-```
-
-### 4. Power Efficiency ⚡
-
-```python
-# Tokens per watt-hour
-tokens_per_watt_hour = tokens_per_second * 3600 / (tdp * num_gpus)
-
-# TDP values
-# H100: 700W, MI300X: 750W
-```
-
-### 5. Training Time Estimates 🎯
-
-```python
-# Time to train 1 Trillion tokens
-time_to_1T_tokens_hours = (1e12 / tokens_per_second) / 3600
-
-# Full Llama 3.1 8B training (≈ 15T tokens)
-time_to_full_training_days = (15e12 / tokens_per_second) / (3600 * 24)
-```
-
-### Generate Comparison Report
-
-```bash
-python3 compare.py
-```
-
-**Output includes:**
-- Visual charts (comparison.png)
-- Throughput and step time comparison
-- Speed comparison metrics
-- Stability analysis (variance)
-- Cost per trillion tokens
-- MFU comparison
-- Memory efficiency
-- Training time estimates
-- Power efficiency
-- Timestamps and configuration
-
----
-
-## 🔌 ROCm Compatibility
-
-**TensorPrimat works seamlessly with both NVIDIA and AMD GPUs** without code modifications.
-
-### How It Works
-
-AMD's ROCm provides CUDA API compatibility through **HIP (Heterogeneous Interface for Portability)**.
-
-### Supported APIs (Work on Both)
-
-```python
-torch.cuda.is_available()          # ✓ Works on both
-torch.cuda.device_count()          # ✓ Works on both
-torch.cuda.get_device_name(0)      # ✓ Works on both
-torch.cuda.get_device_properties() # ✓ Works on both
-torch.cuda.memory_allocated()      # ✓ Works on both
-torch.cuda.synchronize()           # ✓ Works on both
-```
-
-### Platform Detection
-
-```python
-# Automatic detection
-is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-software_stack = "rocm" if is_rocm else "cuda"
-software_version = torch.version.hip if is_rocm else torch.version.cuda
-```
-
-**Detection Points:**
-- **NVIDIA (CUDA)**: `torch.version.cuda` is set (e.g., "12.8")
-- **AMD (ROCm)**: `torch.version.hip` is set (e.g., "6.3.0")
-
-### GPU Metrics
-
-**NVIDIA (CUDA):**
-- Cores: CUDA Cores (e.g., H100: 16,896)
-- Device: "NVIDIA H100 80GB HBM3"
-
-**AMD (ROCm):**
-- Cores: Stream Processors (e.g., MI300X: 19,456 SPs)
-- Device: "AMD Instinct MI300X"
-
-### Log Analysis Mode (No GPU)
-
-Run without a GPU present:
-```bash
-# Copy logs from training server
-scp training-server:~/logs/*.log .
-
-# Analyze locally (no GPU needed)
-./benchmark.py
-```
-
----
-
-## 🛠️ Core Components
-
-### Main Scripts
-
-| File | Purpose |
-|------|---------|
-| **`benchmark.py`** | Main entrypoint - runs everything |
-| **`compare.py`** | Generate comparison plots with all metrics |
-| **`benchmark_utils.py`** | Core benchmarking framework |
-| **`extract_primus_metrics.py`** | Extract from Primus logs |
-
-### Training Scripts (NeMo)
-
-| File | Model |
-|------|-------|
-| `pretrain_llama.py` | Llama 3.1 8B |
-| `pretrain_qwen.py` | Qwen 2.5 7B |
-
-All include automatic benchmarking via `BenchmarkCallback`.
-
-### Primus Scripts (AMD)
-
-| Script | Purpose |
-|--------|---------|
-| `run_primus_llama.sh` | Run Llama 3.1 8B training |
-| `run_primus_qwen.sh` | Run Qwen 2.5 7B training |
-| `run_primus_all.sh` | Run all models in sequence |
-
-### Utility Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `fix_gpu_memory.sh` | Clean up GPU memory |
-| `check_primus_config.sh` | Verify Primus configuration |
-| `run_amd_dual_comparison.sh` | Run both comparison types |
-
----
-
-## 🔬 Advanced Usage
-
-### How Automatic Log Detection Works
-
-On AMD platforms without NeMo:
-
-**Search Strategy:**
-1. **Environment Variables**: `LLAMA_LOG`, `QWEN_LOG`
-2. **Standard Filenames**: `training_llama.log`, `training_qwen.log`, etc.
-3. **Pattern Matching**: `*llama*.log`, `primus_*llama*.log`
-4. **Multiple Directories**: Current dir, `output/`, `/workspace/Primus/`, `/workspace/tprimat/`
-5. **Content-Based Search**: Scans all `.log` and `.txt` files for model keywords
-
-**Result:** No need to specify log paths manually!
-
-### Customizing Benchmarks
-
-Edit training scripts:
-
-```python
-# In pretrain_llama.py (or qwen)
-
-# Change number of steps
-recipe.trainer.max_steps = 20  # Default is 10
-
-# Change batch size
-recipe.data.global_batch_size = 256  # Default is 128
-
-# Customize output directory
-benchmark_callback = BenchmarkCallback(
-    output_dir="./my_results",
-    model_name="llama"
-)
-```
-
-### Manual Log Extraction
-
-```bash
-python3 extract_primus_metrics.py \
-    --log-file training_llama.log \
-    --model-name llama \
-    --num-gpus 8 \
-    --global-batch-size 128 \
-    --sequence-length 2048
-```
-
-### Multiple Runs for Statistics
-
-```bash
-# Run 5 times for better statistics
-./benchmark.py --runs 5
-
-# Or manually
-for i in {1..5}; do
-    echo "Run $i"
-    ./benchmark.py
-    sleep 30  # Cool down
-done
-```
+**Solution:** Make sure your JSON files have `"software_stack": "rocm"` or `"cuda"`.
 
 ---
 
@@ -703,6 +947,14 @@ done
 5. ✅ **Document your setup** (GPU model, driver versions, configs)
 6. ✅ **Monitor during run** (`nvidia-smi` or `rocm-smi`)
 
+### For Configuration
+
+1. ✅ **Always validate** after editing config.yaml
+2. ✅ **Check batch size math** after changing DP
+3. ✅ **Print summary** before running expensive training
+4. ✅ **Version control** configuration changes
+5. ✅ **Document changes** with comments in YAML
+
 ### For Fair Comparisons
 
 1. ✅ **Decide on methodology**: Maximum performance or identical configuration
@@ -711,13 +963,121 @@ done
 4. ✅ **Check MFU**: Both platforms should have reasonable utilization
 5. ✅ **Report context**: Explain why configurations differ (if they do)
 
-### For Production Use
+---
 
-1. ✅ **Consider cost**: Not just performance, but $/token
-2. ✅ **Consider memory**: Can you fit your target model?
-3. ✅ **Consider scaling**: How does it scale to your cluster size?
-4. ✅ **Consider ecosystem**: Framework maturity, support, tooling
-5. ✅ **Run long tests**: Not just 10 steps, but 100+ for stability
+## 🚀 Advanced Topics
+
+### Changing Configuration Settings
+
+**All settings in one place:**
+
+```yaml
+# Edit config.yaml
+training:
+  data:
+    global_batch_size: 256      # Changed from 128
+  duration:
+    max_steps: 20               # Changed from 10
+
+experiment:
+  methodology: "identical_config"  # Changed from "maximum_performance"
+```
+
+```bash
+# Run - automatically uses new settings
+./benchmark.py --model llama
+./run_primus_llama.sh
+```
+
+**All scripts (Python and Shell) automatically use the new values!**
+
+### Switching Methodologies
+
+```bash
+# 1. Maximum performance (each platform optimized)
+# Edit config.yaml: methodology: "maximum_performance"
+./benchmark.py --model llama
+
+# 2. Identical configuration (fair hardware comparison)
+# Edit config.yaml: methodology: "identical_config"
+./benchmark.py --model llama
+
+# 3. Compare both
+python3 compare.py
+```
+
+### Adding New Models
+
+**1. Add to config.yaml:**
+```yaml
+models:
+  llama_70b:
+    name: "llama3.1_70b"
+    num_parameters: 70.0e9
+    primus_config: "path/to/config.yaml"
+    nemo_recipe: "llama31_70b.pretrain_recipe"
+```
+
+**2. Add parallelism configs:**
+```yaml
+parallelism:
+  maximum_performance:
+    llama_70b:
+      nvidia:
+        tensor_model_parallel_size: 8
+        pipeline_model_parallel_size: 1
+        data_parallel_size: 1
+```
+
+**3. Use in script:**
+```python
+config = load_config()
+parallelism = config.get_parallelism("llama_70b", "nvidia")
+```
+
+### Custom Validation
+
+```python
+config = load_config()
+
+def validate_memory_estimate(model, platform):
+    """Estimate if model fits in memory."""
+    model_config = config.get_model_config(model)
+    hw_config = config.get_hardware_config(platform)
+    parallelism = config.get_parallelism(model, platform)
+    
+    params = model_config['num_parameters']
+    memory_per_gpu = hw_config['memory_per_gpu_gb']
+    tp = parallelism['tensor_model_parallel_size']
+    
+    # Model size per GPU (with TP)
+    model_size_gb = (params * 2) / (1024**3) / tp
+    
+    # Total memory needed (rough estimate)
+    total_needed = model_size_gb * 6  # 6x for optimizer + gradients
+    
+    if total_needed > memory_per_gpu * 0.9:
+        print(f"⚠️  Warning: Need ~{total_needed:.1f}GB, have {memory_per_gpu}GB")
+        return False
+    
+    return True
+```
+
+### Environment Variables
+
+Use `${VAR:-default}` syntax in config.yaml:
+
+```yaml
+paths:
+  primus:
+    installation: "${PRIMUS_PATH:-/workspace/Primus}"
+```
+
+Then:
+```bash
+export PRIMUS_PATH=/custom/path
+python3 config_loader.py  # Will use /custom/path
+```
 
 ---
 
@@ -730,10 +1090,13 @@ done
 | `./benchmark.py` | Run all models on current platform |
 | `./benchmark.py --model llama` | Run single model |
 | `./benchmark.py --runs 3` | Run 3 times per model |
-| `python3 compare.py` | Generate comparison plot with all metrics |
-| `./fix_gpu_memory.sh` | Clean GPU memory |
-| `./check_primus_config.sh` | Verify Primus config |
+| `python3 compare.py` | Generate comparison plot |
+| `python3 config_loader.py` | View configuration |
+| `python3 config_to_shell.py` | Export config as shell variables |
+| `./run_primus_llama.sh` | Run Llama on AMD/Primus |
+| `./run_primus_qwen.sh` | Run Qwen on AMD/Primus |
 | `./run_primus_all.sh` | Run all Primus models |
+| `./fix_gpu_memory.sh` | Clean GPU memory |
 
 ### Environment Variables
 
@@ -754,7 +1117,8 @@ output/
 ├── benchmark_rocm_qwen.json       # AMD Qwen results
 └── training_*.log                 # Training logs (Primus)
 
-comparison.png                     # Visual comparison with all metrics
+comparison.png                     # Visual comparison
+config.yaml                        # Configuration file
 ```
 
 ### JSON Output Format
@@ -783,57 +1147,146 @@ comparison.png                     # Visual comparison with all metrics
 }
 ```
 
-All float values are automatically rounded to 3 decimal places.
+### Formulas
 
-### Workflow Diagram
-
+#### Parallelism Constraint
 ```
-NVIDIA (NeMo):
-  ./benchmark.py  →  pretrain_llama.py  →  benchmark_cuda_llama.json
-                  →  pretrain_qwen.py   →  benchmark_cuda_qwen.json
-
-AMD (Primus):
-  training_llama.log  →  extract_primus_metrics.py  →  benchmark_rocm_llama.json
-  training_qwen.log   →  extract_primus_metrics.py  →  benchmark_rocm_qwen.json
-
-Both Platforms:
-  output/benchmark_*.json  →  compare.py  →  comparison.png (with all metrics)
+TP × PP × DP = num_gpus
 ```
+
+#### Batch Size Calculation
+```
+global_batch_size = micro_batch_size × DP × gradient_accumulation_steps
+```
+
+#### Memory Estimate (Rough)
+```
+memory_needed ≈ (params × 2 bytes / TP) × 6
+```
+
+#### Model FLOPs Utilization
+```
+MFU = (achieved_FLOPs / peak_FLOPs) × 100%
+```
+
+### File Descriptions
+
+| File | Purpose |
+|------|---------|
+| **Configuration** | |
+| `config.yaml` | Main configuration file - edit this! |
+| `config_loader.py` | Python module to load config |
+| `config_to_shell.py` | Helper to export config for shell scripts |
+| `example_config_usage.py` | Usage examples |
+| **Benchmarking** | |
+| `benchmark.py` | Main benchmark entrypoint |
+| `benchmark_utils.py` | Core benchmarking framework |
+| **Python Training (NeMo/NVIDIA)** | |
+| `pretrain_llama.py` | NeMo Llama training (uses config.yaml) |
+| `pretrain_qwen.py` | NeMo Qwen training (uses config.yaml) |
+| **Shell Training (Primus/AMD)** | |
+| `run_primus_llama.sh` | Primus Llama training (uses config.yaml) |
+| `run_primus_qwen.sh` | Primus Qwen training (uses config.yaml) |
+| `run_primus_all.sh` | Run all Primus models |
+| **Analysis** | |
+| `extract_primus_metrics.py` | Extract from Primus logs |
+| `compare.py` | Generate comparison plots |
+| `compare_results.py` | Detailed comparison |
+| `enhanced_metrics.py` | MFU, cost, power metrics |
 
 ---
 
-## 🆕 Features
+## 🎉 Summary
 
-- ✅ **Single Python entrypoint** - `./benchmark.py` does everything
+TensorPrimat provides:
+
+- ✅ **Unified configuration** - single YAML for all settings
 - ✅ **Automatic platform detection** - works on NVIDIA and AMD
+- ✅ **Two methodologies** - max performance or identical config
 - ✅ **Smart log discovery** - finds logs automatically
-- ✅ **Model-based filenames** - single file per model
-- ✅ **Automatic rounding** - clean 3-decimal JSON output
-- ✅ **Environment variable support** - specify log paths easily
-- ✅ **Beautiful CLI output** - colored, formatted, clear
-- ✅ **Comprehensive metrics** - tokens/sec/GPU, memory, timing
-- ✅ **Fair comparison** - multiple methodologies supported
+- ✅ **Comprehensive metrics** - tokens/sec/GPU, memory, MFU, cost
+- ✅ **Easy Python API** - dot notation and helper methods
+- ✅ **Built-in validation** - consistency checks
 - ✅ **Enhanced metrics** - MFU, cost, power, training time
 - ✅ **ROCm compatibility** - seamless AMD support via HIP
-- ✅ **Log analysis mode** - no GPU required
+- ✅ **Beautiful CLI output** - colored, formatted, clear
+
+### Get Started
+
+```bash
+# 1. Install dependencies
+pip install pyyaml matplotlib numpy
+
+# 2. Review configuration
+python3 config_loader.py
+
+# 3. Run benchmark
+./benchmark.py
+
+# 4. Compare results
+python3 compare.py
+```
 
 ---
 
-## 🔄 Version History
+## 🎯 Configuration Summary
 
-**Version 2.0** (Current)
-- Python main entrypoint
-- Automatic platform detection
-- Smart log file discovery
-- Model-based output filenames
-- Enhanced metrics (MFU, cost, power)
-- Improved comparison methodology
-- Primus training scripts
-- ROCm compatibility
+### All Scripts Integrated
 
-**Version 1.0**
-- Initial shell script implementation
-- Basic benchmarking functionality
+**Python Scripts:**
+- `pretrain_llama.py` - Loads config, applies parallelism/batch size/optimizations
+- `pretrain_qwen.py` - Loads config, applies parallelism/batch size/optimizations
+- `enhanced_metrics.py` - Loads hardware specs and costs from config
+
+**Shell Scripts:**
+- `run_primus_llama.sh` - Loads config via `config_to_shell.py`
+- `run_primus_qwen.sh` - Loads config via `config_to_shell.py`
+- `run_primus_all.sh` - Calls other scripts (inherits config)
+
+### Configuration Files
+
+- **`config.yaml`** - Main configuration (EDIT THIS!)
+- **`config_loader.py`** - Python module (loads YAML)
+- **`config_to_shell.py`** - Shell helper (exports env vars)
+- **`example_config_usage.py`** - Usage examples
+
+### Quick Workflow
+
+1. **Edit:** `vim config.yaml` (change batch size, steps, methodology, etc.)
+2. **Run:** `./benchmark.py` or `./run_primus_llama.sh`
+3. **Done:** All scripts automatically use new settings!
+
+### Key Features
+
+✅ **Single source of truth** - One file controls everything  
+✅ **Fully integrated** - All scripts (Python & Shell) use config  
+✅ **Two methodologies** - Max performance or identical config  
+✅ **Platform detection** - Auto-detects AMD/NVIDIA  
+✅ **Validation** - Built-in consistency checks  
+✅ **Flexible** - Can override with env vars  
+✅ **Documented** - Self-documenting YAML with comments  
+
+### Example Changes
+
+```yaml
+# config.yaml - Edit these values
+
+# Change batch size globally
+training:
+  data:
+    global_batch_size: 256  # All scripts use 256
+
+# Change training duration
+training:
+  duration:
+    max_steps: 20  # All scripts run 20 steps
+
+# Switch methodology
+experiment:
+  methodology: "identical_config"  # Fair comparison
+```
+
+**Result:** All scripts automatically updated! 🎉
 
 ---
 
@@ -842,4 +1295,4 @@ Both Platforms:
 **Platforms**: NVIDIA CUDA, AMD ROCm  
 **Python**: 3.8+
 
-**Happy Benchmarking! 🎉**
+**Happy Benchmarking! 🚀**

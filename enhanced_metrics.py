@@ -13,36 +13,88 @@ Provides additional comparison metrics:
 from typing import Dict, Tuple
 
 
-# Hardware specifications
-GPU_SPECS = {
-    "h100": {
-        "peak_tflops_fp8": 989,
-        "peak_tflops_fp16": 494,
-        "tdp_watts": 700,
-        "memory_gb": 80,
-        "cost_per_hour_8gpu": 32.0,  # Approximate cloud pricing
-        "interconnect": "NVLink 4.0 (900 GB/s)",
-    },
-    "mi300x": {
-        "peak_tflops_fp8": 653,  # FP8 (if supported)
-        "peak_tflops_fp16": 653,
-        "tdp_watts": 750,
-        "memory_gb": 192,
-        "cost_per_hour_8gpu": 24.0,  # Approximate cloud pricing
-        "interconnect": "Infinity Fabric (896 GB/s)",
-    }
-}
+def _get_gpu_specs_from_config():
+    """Load GPU specs from config if available, otherwise use defaults."""
+    try:
+        from config_loader import load_config
+        config = load_config()
+        
+        # Convert config to GPU_SPECS format
+        nvidia_specs = config.benchmarking.enhanced_metrics.hardware_specs.nvidia_h100
+        amd_specs = config.benchmarking.enhanced_metrics.hardware_specs.amd_mi300x
+        nvidia_cost = config.benchmarking.enhanced_metrics.cloud_costs.nvidia_h100_8gpu_per_hour
+        amd_cost = config.benchmarking.enhanced_metrics.cloud_costs.amd_mi300x_8gpu_per_hour
+        
+        return {
+            "h100": {
+                "peak_tflops_fp8": nvidia_specs.peak_tflops_fp8 / 1e12,
+                "peak_tflops_fp16": nvidia_specs.peak_tflops_fp16 / 1e12,
+                "tdp_watts": nvidia_specs.tdp_watts,
+                "memory_gb": 80,
+                "cost_per_hour_8gpu": nvidia_cost,
+                "interconnect": "NVLink 4.0 (900 GB/s)",
+            },
+            "mi300x": {
+                "peak_tflops_fp8": amd_specs.peak_tflops_fp8 / 1e12,
+                "peak_tflops_fp16": amd_specs.peak_tflops_fp16 / 1e12,
+                "tdp_watts": amd_specs.tdp_watts,
+                "memory_gb": 192,
+                "cost_per_hour_8gpu": amd_cost,
+                "interconnect": "Infinity Fabric (896 GB/s)",
+            }
+        }
+    except:
+        # Fallback to hardcoded values if config not available
+        return {
+            "h100": {
+                "peak_tflops_fp8": 989,
+                "peak_tflops_fp16": 494,
+                "tdp_watts": 700,
+                "memory_gb": 80,
+                "cost_per_hour_8gpu": 32.0,
+                "interconnect": "NVLink 4.0 (900 GB/s)",
+            },
+            "mi300x": {
+                "peak_tflops_fp8": 653,
+                "peak_tflops_fp16": 653,
+                "tdp_watts": 750,
+                "memory_gb": 192,
+                "cost_per_hour_8gpu": 24.0,
+                "interconnect": "Infinity Fabric (896 GB/s)",
+            }
+        }
 
-# Model specifications (FLOPs per token)
-MODEL_PARAMS = {
-    "llama": {
-        "8b": 8e9,
-        "70b": 70e9,
-    },
-    "qwen": {
-        "7b": 7.6e9,
-    }
-}
+
+def _get_model_params_from_config():
+    """Load model params from config if available, otherwise use defaults."""
+    try:
+        from config_loader import load_config
+        config = load_config()
+        
+        return {
+            "llama": {
+                "8b": config.models.llama.num_parameters,
+            },
+            "qwen": {
+                "7b": config.models.qwen.num_parameters,
+            }
+        }
+    except:
+        # Fallback to hardcoded values
+        return {
+            "llama": {
+                "8b": 8e9,
+                "70b": 70e9,
+            },
+            "qwen": {
+                "7b": 7.6e9,
+            }
+        }
+
+
+# Load specs from config (with fallback to hardcoded values)
+GPU_SPECS = _get_gpu_specs_from_config()
+MODEL_PARAMS = _get_model_params_from_config()
 
 
 def calculate_model_flops_per_token(num_parameters: float) -> float:
