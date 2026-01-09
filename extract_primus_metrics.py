@@ -378,7 +378,7 @@ Examples:
     parser.add_argument('--output', 
                        help='Output JSON file path (if not specified, uses output/benchmark_<stack>_<model>.json)')
     parser.add_argument('--model-name', 
-                       help='Model name (e.g., llama, mixtral, qwen) - used in auto-generated filename')
+                       help='Model name (e.g., llama, qwen) - used in auto-generated filename')
     parser.add_argument('--num-gpus', type=int, required=True,
                        help='Number of GPUs used in training')
     parser.add_argument('--global-batch-size', type=int, required=True,

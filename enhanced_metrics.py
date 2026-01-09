@@ -39,10 +39,6 @@ MODEL_PARAMS = {
         "8b": 8e9,
         "70b": 70e9,
     },
-    "mixtral": {
-        "8x7b": 47e9,  # Total parameters (8 experts * ~7B each, ~13B active per token)
-        "8x7b_active": 13e9,  # Active parameters per token
-    },
     "qwen": {
         "7b": 7.6e9,
     }
@@ -224,8 +220,8 @@ def calculate_training_estimates(
     
     Args:
         tokens_per_second: Training throughput
-        model_name: Model name (llama, mixtral, qwen)
-        model_size: Model size (8b, 8x7b, 70b, etc.)
+        model_name: Model name (llama, qwen)
+        model_size: Model size (8b, 70b, 7b, etc.)
         
     Returns:
         Dictionary with training estimates

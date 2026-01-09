@@ -11,7 +11,6 @@ Usage:
     
 Environment variables (for AMD/Primus):
     LLAMA_LOG=/path/to/llama.log
-    MIXTRAL_LOG=/path/to/mixtral.log
     QWEN_LOG=/path/to/qwen.log
 """
 
@@ -87,7 +86,7 @@ def find_log_file(model: str) -> Optional[str]:
     Find log file for a given model.
     
     Searches for:
-    1. Environment variable (LLAMA_LOG, MIXTRAL_LOG, QWEN_LOG)
+    1. Environment variable (LLAMA_LOG, QWEN_LOG)
     2. Standard filenames (training_llama.log, etc.)
     3. Pattern matching in current directory (*llama*.log)
     4. Pattern matching in output directory
@@ -95,7 +94,7 @@ def find_log_file(model: str) -> Optional[str]:
     6. Content-based search in all .log/.txt files
     
     Args:
-        model: Model name (llama, mixtral, qwen)
+        model: Model name (llama, qwen)
         
     Returns:
         Path to log file or None
@@ -164,9 +163,6 @@ def find_log_file(model: str) -> Optional[str]:
                 if model == "llama" and "llama" in content_lower and ("8b" in content_lower or "pretrain" in content_lower):
                     print(f"{Colors.GREEN}✓{Colors.NC} Found by content: {log_file}")
                     return log_file
-                elif model == "mixtral" and "mixtral" in content_lower and ("8x7b" in content_lower or "pretrain" in content_lower):
-                    print(f"{Colors.GREEN}✓{Colors.NC} Found by content: {log_file}")
-                    return log_file
                 elif model == "qwen" and "qwen" in content_lower and ("pretrain" in content_lower or "2.5" in content_lower):
                     print(f"{Colors.GREEN}✓{Colors.NC} Found by content: {log_file}")
                     return log_file
@@ -209,14 +205,13 @@ def run_nemo_training(model: str) -> bool:
     Run NeMo training script for a model.
     
     Args:
-        model: Model name (llama, mixtral, qwen)
+        model: Model name (llama, qwen)
         
     Returns:
         True if successful, False otherwise
     """
     scripts = {
         "llama": "pretrain_llama.py",
-        "mixtral": "pretrain_mixtral.py",
         "qwen": "pretrain_qwen.py",
     }
     
@@ -353,14 +348,13 @@ def print_summary(successful: List[str], failed: List[str], software_stack: str,
                 print(f"{Colors.GREEN}Option 1: Provide log paths via environment variables{Colors.NC}")
                 print()
                 print("  LLAMA_LOG=/path/to/llama.log \\")
-                print("  MIXTRAL_LOG=/path/to/mixtral.log \\")
                 print("  QWEN_LOG=/path/to/qwen.log \\")
                 print("  ./benchmark.py")
                 print()
                 print(f"{Colors.GREEN}Option 2: Copy logs to current directory{Colors.NC}")
                 print()
                 print("  cp /path/to/logs/*.log .")
-                print("  # Name them: training_llama.log, training_mixtral.log, training_qwen.log")
+                print("  # Name them: training_llama.log, training_qwen.log")
                 print("  ./benchmark.py")
                 print()
                 print(f"{Colors.GREEN}Option 3: Run Primus training and capture logs{Colors.NC}")
@@ -404,7 +398,7 @@ Examples:
     
     parser.add_argument(
         '--model',
-        choices=['llama', 'mixtral', 'qwen', 'all'],
+        choices=['llama', 'qwen', 'all'],
         default='all',
         help='Model to benchmark (default: all)'
     )
@@ -420,7 +414,7 @@ Examples:
     
     # Determine models to run
     if args.model == 'all':
-        models = ['llama', 'mixtral', 'qwen']
+        models = ['llama', 'qwen']
     else:
         models = [args.model]
     

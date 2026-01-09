@@ -46,10 +46,8 @@ python3 compare_results.py
 
 **Benchmark Files:**
 - `output/benchmark_cuda_llama.json`
-- `output/benchmark_cuda_mixtral.json`
 - `output/benchmark_cuda_qwen.json`
 - `output/benchmark_rocm_llama.json`
-- `output/benchmark_rocm_mixtral.json`
 - `output/benchmark_rocm_qwen.json`
 
 **Comparison Output:**
@@ -95,7 +93,6 @@ pip install -r requirements.txt
 
 # Run specific model
 ./benchmark.py --model llama
-./benchmark.py --model mixtral
 ./benchmark.py --model qwen
 
 # Run multiple times for statistics
@@ -112,7 +109,6 @@ pip install -r requirements.txt
 ```bash
 # Run single model
 ./run_primus_llama.sh     # Llama 3.1 8B
-./run_primus_mixtral.sh   # Mixtral 8x7B
 ./run_primus_qwen.sh      # Qwen 2.5 7B
 
 # Run all models
@@ -285,7 +281,6 @@ output/primus_training_llama_<timestamp>.log # Backup (timestamped)
 **Benchmark Files:**
 ```
 output/benchmark_rocm_llama.json
-output/benchmark_rocm_mixtral.json
 output/benchmark_rocm_qwen.json
 ```
 
@@ -299,10 +294,6 @@ cd /workspace/Primus
 # Run Llama
 export EXP=examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml
 bash ./examples/run_pretrain.sh --train_iters 10 2>&1 | tee /workspace/tprimat/training_llama.log
-
-# Run Mixtral
-export EXP=examples/megatron/configs/MI300X/mixtral_8x7B-pretrain.yaml
-bash ./examples/run_pretrain.sh --train_iters 10 2>&1 | tee /workspace/tprimat/training_mixtral.log
 
 # Run Qwen
 export EXP=examples/megatron/configs/MI300X/qwen2.5_7B-pretrain.yaml
@@ -388,7 +379,7 @@ cp /path/to/logs/*.log .
 ./benchmark.py
 
 # 3. Name logs correctly
-# Script looks for: training_llama.log, training_mixtral.log, training_qwen.log
+# Script looks for: training_llama.log, training_qwen.log
 ```
 
 ### NeMo Not Found (AMD Systems)
@@ -619,7 +610,6 @@ scp training-server:~/logs/*.log .
 | File | Model |
 |------|-------|
 | `pretrain_llama.py` | Llama 3.1 8B |
-| `pretrain_mixtral.py` | Mixtral 8x7B |
 | `pretrain_qwen.py` | Qwen 2.5 7B |
 
 All include automatic benchmarking via `BenchmarkCallback`.
@@ -629,7 +619,6 @@ All include automatic benchmarking via `BenchmarkCallback`.
 | Script | Purpose |
 |--------|---------|
 | `run_primus_llama.sh` | Run Llama 3.1 8B training |
-| `run_primus_mixtral.sh` | Run Mixtral 8x7B training |
 | `run_primus_qwen.sh` | Run Qwen 2.5 7B training |
 | `run_primus_all.sh` | Run all models in sequence |
 
@@ -650,8 +639,8 @@ All include automatic benchmarking via `BenchmarkCallback`.
 On AMD platforms without NeMo:
 
 **Search Strategy:**
-1. **Environment Variables**: `LLAMA_LOG`, `MIXTRAL_LOG`, `QWEN_LOG`
-2. **Standard Filenames**: `training_llama.log`, `training_mixtral.log`, etc.
+1. **Environment Variables**: `LLAMA_LOG`, `QWEN_LOG`
+2. **Standard Filenames**: `training_llama.log`, `training_qwen.log`, etc.
 3. **Pattern Matching**: `*llama*.log`, `primus_*llama*.log`
 4. **Multiple Directories**: Current dir, `output/`, `/workspace/Primus/`, `/workspace/tprimat/`
 5. **Content-Based Search**: Scans all `.log` and `.txt` files for model keywords
@@ -663,7 +652,7 @@ On AMD platforms without NeMo:
 Edit training scripts:
 
 ```python
-# In pretrain_llama.py (or mixtral/qwen)
+# In pretrain_llama.py (or qwen)
 
 # Change number of steps
 recipe.trainer.max_steps = 20  # Default is 10
@@ -754,7 +743,6 @@ done
 | Variable | Purpose |
 |----------|---------|
 | `LLAMA_LOG` | Path to Llama training log |
-| `MIXTRAL_LOG` | Path to Mixtral training log |
 | `QWEN_LOG` | Path to Qwen training log |
 | `PRIMUS_PATH` | Primus installation directory |
 | `TRAIN_ITERS` | Number of training iterations |
@@ -764,10 +752,8 @@ done
 ```
 output/
 ├── benchmark_cuda_llama.json      # NVIDIA Llama results
-├── benchmark_cuda_mixtral.json    # NVIDIA Mixtral results
 ├── benchmark_cuda_qwen.json       # NVIDIA Qwen results
 ├── benchmark_rocm_llama.json      # AMD Llama results
-├── benchmark_rocm_mixtral.json    # AMD Mixtral results
 ├── benchmark_rocm_qwen.json       # AMD Qwen results
 ├── training_*.log                 # Training logs (Primus)
 ├── comparison_plot.png            # Visual comparison
@@ -806,14 +792,12 @@ All float values are automatically rounded to 3 decimal places.
 
 ```
 NVIDIA (NeMo):
-  ./benchmark.py  →  pretrain_llama.py    →  benchmark_cuda_llama.json
-                  →  pretrain_mixtral.py  →  benchmark_cuda_mixtral.json
-                  →  pretrain_qwen.py     →  benchmark_cuda_qwen.json
+  ./benchmark.py  →  pretrain_llama.py  →  benchmark_cuda_llama.json
+                  →  pretrain_qwen.py   →  benchmark_cuda_qwen.json
 
 AMD (Primus):
-  training_llama.log    →  extract_primus_metrics.py  →  benchmark_rocm_llama.json
-  training_mixtral.log  →  extract_primus_metrics.py  →  benchmark_rocm_mixtral.json
-  training_qwen.log     →  extract_primus_metrics.py  →  benchmark_rocm_qwen.json
+  training_llama.log  →  extract_primus_metrics.py  →  benchmark_rocm_llama.json
+  training_qwen.log   →  extract_primus_metrics.py  →  benchmark_rocm_qwen.json
 
 Both Platforms:
   output/benchmark_*.json  →  compare_results.py  →  comparison_plot.png

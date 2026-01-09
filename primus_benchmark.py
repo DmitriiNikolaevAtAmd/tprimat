@@ -27,7 +27,7 @@ def get_primus_benchmark_callback(output_dir: str = "./output", model_name: str 
     
     Args:
         output_dir: Directory to save benchmark results
-        model_name: Name of the model (e.g., 'llama', 'mixtral', 'qwen')
+        model_name: Name of the model (e.g., 'llama', 'qwen')
         
     Returns:
         BenchmarkCallback instance
@@ -46,7 +46,7 @@ def add_benchmark_to_trainer(trainer, output_dir: str = "./output", model_name: 
     Args:
         trainer: PyTorch Lightning Trainer instance
         output_dir: Directory to save benchmark results
-        model_name: Name of the model (e.g., 'llama', 'mixtral', 'qwen')
+        model_name: Name of the model (e.g., 'llama', 'qwen')
         
     Example:
         >>> trainer = Trainer(...)
