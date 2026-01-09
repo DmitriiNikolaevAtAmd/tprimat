@@ -16,19 +16,19 @@ def run_pretrain():
     )
     
     # 2. PARALLELISM CONFIGURATION
-    # Mixtral 8x7B is a Mixture of Experts (MoE) model
-    # TP (4) * PP (1) = 4 GPUs per model instance
-    # Total GPUs (8) / 4 = 2-way Data Parallelism
-    # Expert Parallelism can be enabled for better efficiency
-    recipe.trainer.strategy.tensor_model_parallel_size = 4
+    # Mixtral 8x7B is a Mixture of Experts (MoE) model - MUCH LARGER than 7-8B models
+    # TP=8: Model split across all 8 GPUs (required for 80GB H100s)
+    # Each GPU holds ~6B parameters instead of ~12B with TP=4
+    # No data parallelism (all GPUs used for model parallelism)
+    recipe.trainer.strategy.tensor_model_parallel_size = 8
     recipe.trainer.strategy.pipeline_model_parallel_size = 1
     recipe.trainer.strategy.expert_model_parallel_size = 1  # Can increase for MoE
     
     # 3. DATA CONFIGURATION
-    # Global Batch Size (128) / Data Parallel (2) = 64 samples per DP group
-    # With Micro Batch Size = 1, this means 64 accumulation steps
+    # With TP=8 (no data parallelism), reduce batch size to fit in memory
+    # Global Batch Size = Micro Batch Size * Gradient Accumulation Steps
     recipe.data.micro_batch_size = 1
-    recipe.data.global_batch_size = 128
+    recipe.data.global_batch_size = 64  # Reduced from 128 due to TP=8
     recipe.data.seq_length = 2048
     
     # 4. OPTIMIZATIONS & DURATION
