@@ -18,8 +18,6 @@ echo "📋 Training Plan:"
 echo "  1. Llama 3.1 8B"
 echo "  2. Qwen 2.5 7B"
 echo ""
-echo "Press Enter to continue or Ctrl+C to cancel..."
-read
 
 for MODEL in "${MODELS[@]}"; do
     echo ""
@@ -33,16 +31,7 @@ for MODEL in "${MODELS[@]}"; do
         echo "✅ $MODEL completed successfully"
     else
         FAILED+=("$MODEL")
-        echo "❌ $MODEL failed"
-        
-        # Ask if user wants to continue
-        echo ""
-        read -p "Continue with next model? (Y/n): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]] && [[ ! -z $REPLY ]]; then
-            echo "Stopping..."
-            break
-        fi
+        echo "❌ $MODEL failed (continuing with next model...)"
     fi
     
     # Cooldown between models

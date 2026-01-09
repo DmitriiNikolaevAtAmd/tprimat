@@ -64,6 +64,7 @@ class BenchmarkCallback(Callback):
         self.step_times = []
         self.memory_allocated = []
         self.memory_reserved = []
+        self.loss_values = []
         self.step_start_time = None
         self.train_start_time = None
         self.gpu_info = {}
@@ -215,6 +216,22 @@ class BenchmarkCallback(Callback):
         step_time = time.time() - self.step_start_time
         self.step_times.append(step_time)
         
+        # Collect loss value if available
+        if outputs is not None:
+            # Try to extract loss from outputs (NeMo format)
+            if isinstance(outputs, dict):
+                loss = outputs.get('loss', None)
+            elif hasattr(outputs, 'loss'):
+                loss = outputs.loss
+            else:
+                loss = None
+                
+            if loss is not None:
+                # Convert to float if it's a tensor
+                if torch.is_tensor(loss):
+                    loss = loss.item()
+                self.loss_values.append(float(loss))
+        
         # Collect memory stats (works for both CUDA and ROCm)
         if torch.cuda.is_available():
             mem_allocated = torch.cuda.memory_allocated() / 1e9  # GB
@@ -227,14 +244,19 @@ class BenchmarkCallback(Callback):
             recent_times = self.step_times[-10:]
             avg_time = sum(recent_times) / len(recent_times)
             
+            loss_str = ""
+            if self.loss_values:
+                recent_loss = self.loss_values[-1] if self.loss_values else 0
+                loss_str = f" | Loss: {recent_loss:.4f}"
+            
             if torch.cuda.is_available():
                 avg_mem = sum(self.memory_allocated[-10:]) / len(self.memory_allocated[-10:])
                 print(f"[{self.platform.upper()}] Step {batch_idx:3d} | "
                       f"Time: {step_time:.3f}s | Avg: {avg_time:.3f}s | "
-                      f"Memory: {avg_mem:.2f}GB")
+                      f"Memory: {avg_mem:.2f}GB{loss_str}")
             else:
                 print(f"[{self.platform.upper()}] Step {batch_idx:3d} | "
-                      f"Time: {step_time:.3f}s | Avg: {avg_time:.3f}s")
+                      f"Time: {step_time:.3f}s | Avg: {avg_time:.3f}s{loss_str}")
     
     def on_train_end(self, trainer, pl_module):
         """Save benchmark results."""
@@ -291,6 +313,7 @@ class BenchmarkCallback(Callback):
                     "throughput_per_gpu_core": steps_per_second / self.gpu_info["gpu_cores"] if self.gpu_info.get("gpu_cores", 0) > 0 else 0,
                 },
                 "raw_step_times": self.step_times,
+                "raw_loss_values": self.loss_values if self.loss_values else [],
             }
             
             if self.memory_allocated:

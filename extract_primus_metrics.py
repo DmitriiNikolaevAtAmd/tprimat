@@ -13,10 +13,16 @@ Usage:
 import argparse
 import json
 import re
-import torch
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    print("⚠️  PyTorch not available - running in log-only mode")
 
 
 def round_floats(obj: Any, precision: int = 3) -> Any:
@@ -102,6 +108,20 @@ def detect_gpu_info():
     """
     gpu_info = {}
     
+    if not TORCH_AVAILABLE:
+        # PyTorch not available - use placeholder info for log analysis
+        print("ℹ️  PyTorch not available - using log data only")
+        gpu_info = {
+            "device_count": "N/A",
+            "device_name": "AMD GPU (from log)",
+            "total_memory_gb": 192,  # MI300X default
+            "gpu_cores": 19456,  # MI300X default
+            "pytorch_version": "N/A",
+            "software_stack": "rocm",
+            "software_version": "N/A",
+        }
+        return gpu_info
+    
     if torch.cuda.is_available():  # Works for both CUDA and ROCm
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
@@ -142,13 +162,15 @@ def detect_gpu_info():
 
 def extract_step_times_from_log(log_file):
     """
-    Extract step timing from Primus/Megatron logs.
+    Extract step timing and loss from Primus/Megatron logs.
     
     Primus format:
     elapsed time per iteration (ms): 9836.3/21761.7
+    lm loss: 1.189761E+01
     """
     step_times = []
     tokens_per_gpu_values = []
+    loss_values = []
     
     with open(log_file, 'r') as f:
         for line in f:
@@ -176,8 +198,19 @@ def extract_step_times_from_log(log_file):
                         tokens_per_gpu_values.append(tokens_per_gpu)
                 except (ValueError, IndexError):
                     continue
+            
+            # Extract loss values
+            # lm loss: 1.189761E+01 or lm loss: 11.89761
+            loss_match = re.search(r'lm loss:\s*([0-9.Ee+-]+)', line)
+            if loss_match:
+                try:
+                    loss = float(loss_match.group(1))
+                    if 0 < loss < 10000:  # Sanity check
+                        loss_values.append(loss)
+                except (ValueError, IndexError):
+                    continue
     
-    return step_times, tokens_per_gpu_values
+    return step_times, tokens_per_gpu_values, loss_values
 
 
 def extract_memory_from_log(log_file):
@@ -213,8 +246,8 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
     
     print(f"Analyzing log file: {log_file}")
     
-    # Extract step times and tokens per GPU
-    step_times, tokens_per_gpu_values = extract_step_times_from_log(log_file)
+    # Extract step times, tokens per GPU, and loss values
+    step_times, tokens_per_gpu_values, loss_values = extract_step_times_from_log(log_file)
     
     if not step_times:
         print("⚠️  No timing data found in log file")
@@ -227,6 +260,9 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
     
     if tokens_per_gpu_values:
         print(f"✅ Found {len(tokens_per_gpu_values)} tokens/GPU entries (using Primus native metrics)")
+    
+    if loss_values:
+        print(f"✅ Found {len(loss_values)} loss values")
     
     # Extract memory (optional)
     memory_values = extract_memory_from_log(log_file)
@@ -312,6 +348,7 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
             "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
         },
         "raw_step_times": step_times,
+        "raw_loss_values": loss_values if loss_values else [],
         "source": "primus_log_extraction"
     }
     

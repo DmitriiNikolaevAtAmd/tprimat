@@ -17,8 +17,7 @@ from enhanced_metrics import get_enhanced_metrics, GPU_SPECS
 # Import original comparison functions
 from compare_results import (
     load_benchmark_results,
-    create_comparison_plot,
-    generate_comparison_report
+    create_comparison_plot
 )
 
 
@@ -236,8 +235,6 @@ def main():
         create_comparison_plot(nvidia_data, amd_data, "comparison_plot.png")
     except Exception as e:
         print(f"⚠️  Could not generate plot: {e}")
-    
-    generate_comparison_report(nvidia_data, amd_data, "comparison_report.md")
     
     # Print enhanced metrics
     print_enhanced_comparison(nvidia_data, amd_data)

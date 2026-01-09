@@ -32,7 +32,7 @@
 ./benchmark.py
 
 # Compare results after running on both platforms
-python3 compare_results.py
+python3 compare.py
 ```
 
 **That's it!** Automatically detects your platform and runs all models.
@@ -51,8 +51,7 @@ python3 compare_results.py
 - `output/benchmark_rocm_qwen.json`
 
 **Comparison Output:**
-- `comparison_plot.png` - Visual charts
-- `comparison_report.md` - Detailed analysis
+- `comparison.png` - Visual charts with all metrics
 
 ---
 
@@ -145,11 +144,8 @@ export TRAIN_ITERS=50
 # → Creates: output/benchmark_rocm_*.json
 
 # 3. Compare results (on either system)
-python3 compare_results.py
-# → Creates: comparison_plot.png, comparison_report.md
-
-# 4. View enhanced metrics
-python3 compare_with_enhanced_metrics.py
+python3 compare.py
+# → Creates: comparison.png with all metrics
 ```
 
 ---
@@ -411,7 +407,7 @@ Re-run: `python3 compare_results.py`
 watch -n 1 nvidia-smi
 
 # 2. Check MFU (Model FLOPs Utilization)
-python3 compare_with_enhanced_metrics.py
+python3 compare.py
 # Good: 30-50%, Excellent: 50-65%
 
 # 3. Memory efficiency
@@ -521,19 +517,23 @@ time_to_1T_tokens_hours = (1e12 / tokens_per_second) / 3600
 time_to_full_training_days = (15e12 / tokens_per_second) / (3600 * 24)
 ```
 
-### Generate Enhanced Report
+### Generate Comparison Report
 
 ```bash
-python3 compare_with_enhanced_metrics.py
+python3 compare.py
 ```
 
 **Output includes:**
+- Visual charts (comparison.png)
+- Throughput and step time comparison
+- Speed comparison metrics
+- Stability analysis (variance)
 - Cost per trillion tokens
 - MFU comparison
 - Memory efficiency
 - Training time estimates
 - Power efficiency
-- ROI analysis
+- Timestamps and configuration
 
 ---
 
@@ -599,11 +599,9 @@ scp training-server:~/logs/*.log .
 | File | Purpose |
 |------|---------|
 | **`benchmark.py`** | Main entrypoint - runs everything |
-| **`compare_results.py`** | Generate comparison reports |
-| **`compare_with_enhanced_metrics.py`** | Enhanced metrics report |
+| **`compare.py`** | Generate comparison plots with all metrics |
 | **`benchmark_utils.py`** | Core benchmarking framework |
 | **`extract_primus_metrics.py`** | Extract from Primus logs |
-| **`enhanced_metrics.py`** | Advanced metric calculations |
 
 ### Training Scripts (NeMo)
 
@@ -732,8 +730,7 @@ done
 | `./benchmark.py` | Run all models on current platform |
 | `./benchmark.py --model llama` | Run single model |
 | `./benchmark.py --runs 3` | Run 3 times per model |
-| `python3 compare_results.py` | Generate comparison report |
-| `python3 compare_with_enhanced_metrics.py` | Enhanced metrics report |
+| `python3 compare.py` | Generate comparison plot with all metrics |
 | `./fix_gpu_memory.sh` | Clean GPU memory |
 | `./check_primus_config.sh` | Verify Primus config |
 | `./run_primus_all.sh` | Run all Primus models |
@@ -755,9 +752,9 @@ output/
 ├── benchmark_cuda_qwen.json       # NVIDIA Qwen results
 ├── benchmark_rocm_llama.json      # AMD Llama results
 ├── benchmark_rocm_qwen.json       # AMD Qwen results
-├── training_*.log                 # Training logs (Primus)
-├── comparison_plot.png            # Visual comparison
-└── comparison_report.md           # Detailed report
+└── training_*.log                 # Training logs (Primus)
+
+comparison.png                     # Visual comparison with all metrics
 ```
 
 ### JSON Output Format
@@ -800,8 +797,7 @@ AMD (Primus):
   training_qwen.log   →  extract_primus_metrics.py  →  benchmark_rocm_qwen.json
 
 Both Platforms:
-  output/benchmark_*.json  →  compare_results.py  →  comparison_plot.png
-                                                  →  comparison_report.md
+  output/benchmark_*.json  →  compare.py  →  comparison.png (with all metrics)
 ```
 
 ---

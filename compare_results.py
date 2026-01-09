@@ -211,49 +211,69 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
                 f'{int(value)}',
                 ha='center', va='bottom', fontweight='bold', fontsize=14)
     
-    # 6. Efficiency Summary
+    # 6. Detailed Metrics Summary
     ax6 = axes[5]
     ax6.axis('off')  # Turn off axis
     
-    # Create summary text box
-    summary_text = "Performance Summary\n" + "="*40 + "\n\n"
+    # Calculate all metrics
+    nvd_time = nvidia_data['performance_metrics']['avg_step_time_seconds']
+    amd_time = amd_data['performance_metrics']['avg_step_time_seconds']
+    time_diff = abs(nvd_time - amd_time)
+    time_winner = "NVIDIA" if nvd_time < amd_time else "AMD"
+    speedup = max(nvd_time, amd_time) / min(nvd_time, amd_time)
+    efficiency = min(nvd_time, amd_time) / max(nvd_time, amd_time) * 100
     
-    # Add tokens/sec/GPU comparison
+    # Calculate variance/stability
+    nvidia_variance = np.var(nvidia_data['raw_step_times'][1:])
+    amd_variance = np.var(amd_data['raw_step_times'][1:])
+    
+    # Throughput metrics
+    throughput_advantage = 0.0
     if has_tokens_per_gpu:
         nvd_tokens = nvidia_data['performance_metrics']['tokens_per_second_per_gpu']
         amd_tokens = amd_data['performance_metrics']['tokens_per_second_per_gpu']
-        ratio = nvd_tokens / amd_tokens if amd_tokens > 0 else 1.0
-        winner = "NVIDIA" if ratio > 1 else "AMD"
-        summary_text += f"Tokens/sec/GPU:\n"
-        summary_text += f"  NVIDIA: {nvd_tokens:,.0f}\n"
-        summary_text += f"  AMD:    {amd_tokens:,.0f}\n"
-        summary_text += f"  {winner} is {max(ratio, 1/ratio):.2f}x more efficient\n\n"
-        
-        # Calculate total system throughput
-        nvd_total = nvd_tokens * gpu_counts[0]
-        amd_total = amd_tokens * gpu_counts[1]
-        summary_text += f"Total System Throughput:\n"
-        summary_text += f"  NVIDIA: {nvd_total:,.0f} tokens/sec\n"
-        summary_text += f"  AMD:    {amd_total:,.0f} tokens/sec\n\n"
+        throughput_advantage = abs(nvd_tokens - amd_tokens) / min(nvd_tokens, amd_tokens)
     
-    # Add step time comparison
-    nvd_time = nvidia_data['performance_metrics']['avg_step_time_seconds']
-    amd_time = amd_data['performance_metrics']['avg_step_time_seconds']
-    time_winner = "NVIDIA" if nvd_time < amd_time else "AMD"
-    time_speedup = max(nvd_time, amd_time) / min(nvd_time, amd_time)
-    summary_text += f"Step Time:\n"
-    summary_text += f"  NVIDIA: {nvd_time:.3f}s\n"
-    summary_text += f"  AMD:    {amd_time:.3f}s\n"
-    summary_text += f"  {time_winner} is {time_speedup:.2f}x faster\n\n"
+    # Create comprehensive summary
+    summary_text = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    summary_text += "       DETAILED METRICS\n"
+    summary_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    # Add configuration
-    summary_text += f"Configuration:\n"
+    # Speed Comparison
+    summary_text += "⚡ Speed Comparison\n"
+    summary_text += f"  Time Difference: {time_diff:.4f}s per step\n"
+    summary_text += f"  Speedup Factor:  {speedup:.2f}x\n"
+    summary_text += f"                   ({time_winner} faster)\n"
+    summary_text += f"  Efficiency:      {efficiency:.1f}%\n"
+    summary_text += f"                   (slower vs faster)\n"
+    if has_tokens_per_gpu:
+        summary_text += f"  Throughput Adv:  {throughput_advantage:.2f}x\n"
+        summary_text += f"                   ({time_winner} higher)\n"
+    summary_text += "\n"
+    
+    # Stability
+    summary_text += "📊 Stability (Variance)\n"
+    summary_text += f"  NVIDIA:  {nvidia_variance:.6f}\n"
+    summary_text += f"  AMD:     {amd_variance:.6f}\n"
+    more_stable = "NVIDIA" if nvidia_variance < amd_variance else "AMD"
+    summary_text += f"  {more_stable} is more stable\n\n"
+    
+    # Timestamps
+    summary_text += "📅 Timestamps\n"
+    nvidia_ts = nvidia_data['timestamp']
+    amd_ts = amd_data['timestamp']
+    summary_text += f"  NVIDIA: {nvidia_ts}\n"
+    summary_text += f"  AMD:    {amd_ts}\n\n"
+    
+    # Configuration
+    summary_text += "⚙️  Configuration\n"
     summary_text += f"  Batch Size: {nvidia_data['training_config']['global_batch_size']}\n"
     summary_text += f"  Seq Length: {nvidia_data['training_config'].get('sequence_length', 'N/A')}\n"
+    summary_text += f"  Steps:      {nvidia_data['training_config']['max_steps']}\n"
     
-    ax6.text(0.1, 0.95, summary_text, transform=ax6.transAxes,
-            fontsize=10, verticalalignment='top', fontfamily='monospace',
-            bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.3))
+    ax6.text(0.05, 0.98, summary_text, transform=ax6.transAxes,
+            fontsize=9.5, verticalalignment='top', fontfamily='monospace',
+            bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.4, pad=0.8))
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
@@ -426,8 +446,6 @@ def main():
                        help='Directory containing benchmark JSON files')
     parser.add_argument('--output-plot', default='comparison_plot.png',
                        help='Output file for comparison plot')
-    parser.add_argument('--output-report', default='comparison_report.md',
-                       help='Output file for comparison report')
     
     args = parser.parse_args()
     
@@ -461,9 +479,6 @@ def main():
         print("   Install with: pip install matplotlib")
     except Exception as e:
         print(f"⚠️  Error generating plot: {e}")
-    
-    # Generate report
-    generate_comparison_report(nvidia_data, amd_data, args.output_report)
     
     # Print summary
     nvidia_time = nvidia_data['performance_metrics']['avg_step_time_seconds']
