@@ -185,23 +185,21 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
     has_amd_loss = 'raw_loss_values' in amd_data and amd_data['raw_loss_values']
     has_loss_data = has_nvidia_loss or has_amd_loss
     
-    # Create grid (3x3 if we have loss data, 2x3 otherwise)
-    if has_loss_data:
-        fig, axes = plt.subplots(3, 3, figsize=(20, 15))
-        fig.suptitle('AMD vs NVIDIA GPU Comparison', fontsize=18, fontweight='bold')
-    else:
-        fig, axes = plt.subplots(2, 3, figsize=(20, 11))
-        fig.suptitle('AMD vs NVIDIA GPU Comparison', fontsize=18, fontweight='bold')
+    # Create 4x3 grid for comprehensive comparison
+    fig = plt.figure(figsize=(22, 20))
+    fig.suptitle('AMD vs NVIDIA GPU Comparison', fontsize=18, fontweight='bold', y=0.995)
     
-    axes = axes.flatten()
+    # Create grid spec for flexible subplot arrangement
+    gs = fig.add_gridspec(4, 3, hspace=0.4, wspace=0.3, top=0.97, bottom=0.05)
     
     # Setup
     platforms = ['NVIDIA\n' + nvidia_data['gpu_info']['device_name'], 
                  'AMD\n' + amd_data['gpu_info']['device_name']]
     colors = ['#76B900', '#ED1C24']  # NVIDIA green, AMD red
     
+    # ROW 1: Primary Performance Metrics
     # 1. Tokens/sec/GPU - PRIMARY METRIC
-    ax1 = axes[0]
+    ax1 = fig.add_subplot(gs[0, 0])
     if has_tokens_per_gpu:
         tokens_per_gpu = [
             nvidia_data['performance_metrics']['tokens_per_second_per_gpu'],
@@ -209,7 +207,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         ]
         bars = ax1.bar(platforms, tokens_per_gpu, color=colors, alpha=0.8, edgecolor='black', linewidth=2)
         ax1.set_ylabel('Tokens/sec/GPU', fontweight='bold', fontsize=12)
-        ax1.set_title('Tokens/sec/GPU - Per-GPU Efficiency\n(Higher is Better)', 
+        ax1.set_title('Tokens/sec/GPU - Per-GPU Efficiency', 
                      fontweight='bold', fontsize=13)
         ax1.grid(axis='y', alpha=0.3)
         
@@ -232,7 +230,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         ax1.set_title('Tokens/sec/GPU - Per-GPU Efficiency')
     
     # 2. Average Step Time
-    ax2 = axes[1]
+    ax2 = fig.add_subplot(gs[0, 1])
     step_times = [
         nvidia_data['performance_metrics']['avg_step_time_seconds'],
         amd_data['performance_metrics']['avg_step_time_seconds']
@@ -249,7 +247,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
                 ha='center', va='bottom', fontweight='bold')
     
     # 3. Total System Throughput
-    ax3 = axes[2]
+    ax3 = fig.add_subplot(gs[0, 2])
     if has_tokens_per_gpu:
         total_throughput = [
             nvidia_data['performance_metrics'].get('tokens_per_second', 0),
@@ -257,7 +255,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         ]
         bars = ax3.bar(platforms, total_throughput, color=colors, alpha=0.7, edgecolor='black')
         ax3.set_ylabel('Tokens/sec (Total)', fontweight='bold')
-        ax3.set_title('Total System Throughput\n(Higher is Better)', fontweight='bold')
+        ax3.set_title('Total System Throughput', fontweight='bold')
         ax3.grid(axis='y', alpha=0.3)
         
         for bar, value in zip(bars, total_throughput):
@@ -274,7 +272,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         ]
         bars = ax3.bar(platforms, throughputs, color=colors, alpha=0.7, edgecolor='black')
         ax3.set_ylabel('Steps per Second', fontweight='bold')
-        ax3.set_title('Throughput\n(Higher is Better)', fontweight='bold')
+        ax3.set_title('Throughput', fontweight='bold')
         ax3.grid(axis='y', alpha=0.3)
         
         for bar, value in zip(bars, throughputs):
@@ -283,8 +281,9 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
                     f'{value:.3f}',
                     ha='center', va='bottom', fontweight='bold')
     
+    # ROW 2: System Metrics
     # 4. Memory Usage
-    ax4 = axes[3]
+    ax4 = fig.add_subplot(gs[1, 0])
     if 'memory_metrics' in nvidia_data and 'memory_metrics' in amd_data:
         memory_data = {
             'Average': [
@@ -317,7 +316,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         ax4.set_title('GPU Memory Usage')
     
     # 5. GPU Configuration
-    ax5 = axes[4]
+    ax5 = fig.add_subplot(gs[1, 1])
     def get_gpu_count(data):
         count = data['gpu_info'].get('device_count', data['training_config'].get('num_gpus', 0))
         if isinstance(count, int):
@@ -343,7 +342,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
                 ha='center', va='bottom', fontweight='bold', fontsize=14)
     
     # 6. Detailed Metrics Summary
-    ax6 = axes[5]
+    ax6 = fig.add_subplot(gs[1, 2])
     ax6.axis('off')
     
     # Calculate all metrics
@@ -406,10 +405,113 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
             fontsize=9.5, verticalalignment='top', fontfamily='monospace',
             bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.4, pad=0.8))
     
-    # 7-9. Loss vs Time Plot (if available)
+    # ROW 3: Time-Series and Distribution Plots
+    
+    # 7. Throughput Over Time
+    ax7 = fig.add_subplot(gs[2, 0])
+    nvidia_steps = list(range(1, len(nvidia_data['raw_step_times']) + 1))
+    amd_steps = list(range(1, len(amd_data['raw_step_times']) + 1))
+    
+    # Calculate per-step throughput (tokens/s/GPU)
+    if has_tokens_per_gpu:
+        nvidia_step_throughput = []
+        for t in nvidia_data['raw_step_times']:
+            tokens_per_step = nvidia_data['training_config']['global_batch_size'] * nvidia_data['training_config'].get('sequence_length', 2048)
+            throughput = (tokens_per_step / t) / nvidia_data['training_config']['num_gpus']
+            nvidia_step_throughput.append(throughput)
+        
+        amd_step_throughput = []
+        for t in amd_data['raw_step_times']:
+            tokens_per_step = amd_data['training_config']['global_batch_size'] * amd_data['training_config'].get('sequence_length', 2048)
+            throughput = (tokens_per_step / t) / amd_data['training_config']['num_gpus']
+            amd_step_throughput.append(throughput)
+        
+        ax7.plot(nvidia_steps, nvidia_step_throughput, marker='o', linewidth=2, markersize=4,
+                color=colors[0], label='NVIDIA', alpha=0.7)
+        ax7.plot(amd_steps, amd_step_throughput, marker='s', linewidth=2, markersize=4,
+                color=colors[1], label='AMD', alpha=0.7)
+        ax7.set_ylabel('Tokens/s/GPU', fontweight='bold')
+        ax7.set_xlabel('Step', fontweight='bold')
+        ax7.set_title('Throughput Over Time', fontweight='bold')
+        ax7.legend(loc='best', fontsize=9)
+        ax7.grid(True, alpha=0.3)
+    else:
+        ax7.text(0.5, 0.5, 'Throughput data\nnot available', 
+                ha='center', va='center', transform=ax7.transAxes, fontsize=10)
+        ax7.set_title('Throughput Over Time')
+    
+    # 8. Memory Usage Over Time
+    ax8 = fig.add_subplot(gs[2, 1])
+    if 'memory_metrics' in nvidia_data and nvidia_data.get('memory_allocated'):
+        # Note: memory_allocated is not stored per-step in current version
+        # We'll plot what we have
+        if hasattr(nvidia_data, 'memory_allocated_per_step'):
+            ax8.plot(nvidia_steps, nvidia_data['memory_allocated_per_step'], 
+                    marker='o', linewidth=2, markersize=4, color=colors[0], label='NVIDIA', alpha=0.7)
+            ax8.plot(amd_steps, amd_data['memory_allocated_per_step'],
+                    marker='s', linewidth=2, markersize=4, color=colors[1], label='AMD', alpha=0.7)
+            ax8.set_ylabel('Memory (GB)', fontweight='bold')
+            ax8.set_xlabel('Step', fontweight='bold')
+            ax8.set_title('Memory Usage Over Time', fontweight='bold')
+            ax8.legend(loc='best', fontsize=9)
+            ax8.grid(True, alpha=0.3)
+        else:
+            # Show average as flat line if no per-step data
+            nvidia_avg = nvidia_data['memory_metrics']['avg_memory_allocated_gb']
+            amd_avg = amd_data['memory_metrics']['avg_memory_allocated_gb']
+            ax8.axhline(y=nvidia_avg, color=colors[0], linewidth=2, label=f'NVIDIA (avg: {nvidia_avg:.1f}GB)', alpha=0.7)
+            ax8.axhline(y=amd_avg, color=colors[1], linewidth=2, label=f'AMD (avg: {amd_avg:.1f}GB)', alpha=0.7)
+            ax8.set_ylabel('Memory (GB)', fontweight='bold')
+            ax8.set_xlabel('Step', fontweight='bold')
+            ax8.set_title('Memory Usage Over Time\n(Average shown)', fontweight='bold', fontsize=11)
+            ax8.legend(loc='best', fontsize=9)
+            ax8.grid(True, alpha=0.3)
+            ax8.set_xlim(0, max(len(nvidia_steps), len(amd_steps)))
+    else:
+        ax8.text(0.5, 0.5, 'Memory data\nnot available', 
+                ha='center', va='center', transform=ax8.transAxes, fontsize=10)
+        ax8.set_title('Memory Usage Over Time')
+    
+    # 9. Step Time Distribution (Box Plot)
+    ax9 = fig.add_subplot(gs[2, 2])
+    nvidia_step_times = nvidia_data['raw_step_times'][1:]  # Skip warmup
+    amd_step_times = amd_data['raw_step_times'][1:]  # Skip warmup
+    
+    box_data = [nvidia_step_times, amd_step_times]
+    box_positions = [1, 2]
+    bp = ax9.boxplot(box_data, positions=box_positions, widths=0.6, patch_artist=True,
+                     showmeans=True, meanline=True,
+                     boxprops=dict(facecolor='lightblue', alpha=0.7),
+                     medianprops=dict(color='red', linewidth=2),
+                     meanprops=dict(color='green', linewidth=2, linestyle='--'),
+                     whiskerprops=dict(linewidth=1.5),
+                     capprops=dict(linewidth=1.5))
+    
+    # Color the boxes
+    bp['boxes'][0].set_facecolor(colors[0])
+    bp['boxes'][0].set_alpha(0.6)
+    bp['boxes'][1].set_facecolor(colors[1])
+    bp['boxes'][1].set_alpha(0.6)
+    
+    ax9.set_xticks([1, 2])
+    ax9.set_xticklabels(['NVIDIA', 'AMD'])
+    ax9.set_ylabel('Step Time (seconds)', fontweight='bold')
+    ax9.set_title('Step Time Distribution\n(Box Plot)', fontweight='bold')
+    ax9.grid(axis='y', alpha=0.3)
+    
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='red', label='Median'),
+        Patch(facecolor='green', label='Mean'),
+        Patch(facecolor='white', edgecolor='black', label='IQR (25-75%)')
+    ]
+    ax9.legend(handles=legend_elements, loc='upper right', fontsize=8)
+    
+    # ROW 4: Training Loss Over Time
+    # 10. Loss vs Time Plot (if available - spanning all 3 columns)
     if has_loss_data:
-        # Plot on axis 6 (spanning 3 columns on row 3)
-        ax_loss = plt.subplot(3, 3, (7, 9))  # Span columns 7-9 (bottom row)
+        ax_loss = fig.add_subplot(gs[3, :])
         
         # Plot NVIDIA loss if available
         if has_nvidia_loss:
@@ -467,7 +569,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         ax_loss.legend(loc='upper right', fontsize=10)
         ax_loss.grid(True, alpha=0.3)
     
-    plt.tight_layout()
+    # Don't use tight_layout with gridspec - it's already configured
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"✅ Comparison plot saved to: {output_file}")
     

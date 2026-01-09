@@ -73,7 +73,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         ]
         bars = ax1.bar(platforms, tokens_per_gpu, color=colors, alpha=0.8, edgecolor='black', linewidth=2)
         ax1.set_ylabel('Tokens/sec/GPU', fontweight='bold', fontsize=12)
-        ax1.set_title('Tokens/sec/GPU - Per-GPU Efficiency\n(Higher is Better)', 
+        ax1.set_title('Tokens/sec/GPU - Per-GPU Efficiency', 
                      fontweight='bold', fontsize=13)
         ax1.grid(axis='y', alpha=0.3)
         
@@ -124,7 +124,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         ]
         bars = ax3.bar(platforms, total_throughput, color=colors, alpha=0.7, edgecolor='black')
         ax3.set_ylabel('Tokens/sec (Total)', fontweight='bold')
-        ax3.set_title('Total System Throughput\n(Higher is Better)', fontweight='bold')
+        ax3.set_title('Total System Throughput', fontweight='bold')
         ax3.grid(axis='y', alpha=0.3)
         
         for bar, value in zip(bars, total_throughput):
@@ -141,7 +141,7 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         ]
         bars = ax3.bar(platforms, throughputs, color=colors, alpha=0.7, edgecolor='black')
         ax3.set_ylabel('Steps per Second', fontweight='bold')
-        ax3.set_title('Throughput\n(Higher is Better)', fontweight='bold')
+        ax3.set_title('Throughput', fontweight='bold')
         ax3.grid(axis='y', alpha=0.3)
         
         for bar, value in zip(bars, throughputs):
