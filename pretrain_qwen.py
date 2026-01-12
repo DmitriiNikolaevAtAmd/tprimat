@@ -32,6 +32,9 @@ def run_pretrain():
         num_gpus_per_node=config.hardware.platforms[platform].num_gpus,
     )
     
+    # Set random seed for reproducibility (ensures same initialization across runs)
+    recipe.trainer.seed = config.training.general.seed
+    
     # 2. PARALLELISM CONFIGURATION (from config.yaml)
     # TP * PP * DP = num_gpus
     recipe.trainer.strategy.tensor_model_parallel_size = parallelism['tensor_model_parallel_size']

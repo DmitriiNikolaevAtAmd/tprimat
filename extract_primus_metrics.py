@@ -25,13 +25,13 @@ except ImportError:
     print("⚠️  PyTorch not available - running in log-only mode")
 
 
-def round_floats(obj: Any, precision: int = 3) -> Any:
+def round_floats(obj: Any, precision: int = 5) -> Any:
     """
     Recursively round all float values in a nested structure to specified precision.
     
     Args:
         obj: Dictionary, list, or value to process
-        precision: Number of decimal places (default: 3)
+        precision: Number of decimal places (default: 5)
     
     Returns:
         Object with all floats rounded
@@ -349,16 +349,9 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
         },
         "raw_step_times": step_times,
         "raw_loss_values": loss_values if loss_values else [],
-        "source": "primus_log_extraction"
+        "raw_memory_values": memory_values if memory_values else [],
+        "source_log_file": str(Path(log_file).absolute())
     }
-    
-    # Add memory metrics if available
-    if memory_values:
-        memory_no_warmup = memory_values[1:] if len(memory_values) > 1 else memory_values
-        results["memory_metrics"] = {
-            "avg_memory_allocated_gb": sum(memory_no_warmup) / len(memory_no_warmup),
-            "peak_memory_allocated_gb": max(memory_no_warmup),
-        }
     
     return results
 
@@ -378,10 +371,12 @@ def print_summary(results):
         print(f"  Total Throughput: {results['performance_metrics']['tokens_per_second']:,.0f} tokens/sec")
         print(f"  Per-GPU Throughput: {results['performance_metrics']['tokens_per_second_per_gpu']:,.0f} tokens/sec/GPU")
     
-    if 'memory_metrics' in results:
-        print(f"\nMemory Usage:")
-        print(f"  Avg Memory: {results['memory_metrics']['avg_memory_allocated_gb']:.2f}GB")
-        print(f"  Peak Memory: {results['memory_metrics']['peak_memory_allocated_gb']:.2f}GB")
+    if 'raw_memory_values' in results and results['raw_memory_values']:
+        memory_values = results['raw_memory_values']
+        print(f"\nMemory Usage (time series):")
+        print(f"  Memory samples: {len(memory_values)}")
+        print(f"  Avg Memory: {sum(memory_values)/len(memory_values):.2f}GB")
+        print(f"  Peak Memory: {max(memory_values):.2f}GB")
     
     print(f"{'='*60}\n")
 
@@ -469,8 +464,8 @@ Examples:
         # Save results (round all floats to 3 decimal places)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Round all float values to 3 decimal places
-        results_rounded = round_floats(results, precision=3)
+        # Round all float values to 5 decimal places
+        results_rounded = round_floats(results, precision=5)
         
         with open(output_path, 'w') as f:
             json.dump(results_rounded, f, indent=2)

@@ -67,29 +67,36 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
     has_tokens_per_gpu = (nvidia_data['performance_metrics'].get('tokens_per_second_per_gpu') is not None and 
                           amd_data['performance_metrics'].get('tokens_per_second_per_gpu') is not None)
     
-    # Create 2x2 grid for comparison
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle('GPU Benchmark Comparison', fontsize=16, fontweight='bold', y=0.98)
+    # Create 4x2 grid for comprehensive comparison with elegant styling
+    fig, axes = plt.subplots(4, 2, figsize=(16, 18), facecolor='white')
+    fig.suptitle('GPU Benchmark Comparison', fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
     
     # Flatten axes for easier indexing
     axes = axes.flatten()
     
-    # Setup
+    # Setup - elegant pastel colors
     platforms = ['NVIDIA\n' + nvidia_data['gpu_info']['device_name'], 
                  'AMD\n' + amd_data['gpu_info']['device_name']]
-    colors = ['#76B900', '#ED1C24']  # NVIDIA green, AMD red
+    colors = ['#7FB3D5', '#F1948A']  # Soft blue (NVIDIA), Soft coral (AMD)
     
-    # 1. Per-GPU Throughput
+    # Extract training config for calculations
+    nvidia_config = nvidia_data.get('training_config', {})
+    amd_config = amd_data.get('training_config', {})
+    global_batch_size = nvidia_config.get('global_batch_size', 128)
+    seq_length = nvidia_config.get('sequence_length', 2048)
+    num_gpus = nvidia_config.get('num_gpus', 8)
+    
+    # 1. Per-GPU Throughput (Bar Chart)
     ax1 = axes[0]
     if has_tokens_per_gpu:
         tokens_per_gpu = [
             nvidia_data['performance_metrics']['tokens_per_second_per_gpu'],
             amd_data['performance_metrics']['tokens_per_second_per_gpu']
         ]
-        bars = ax1.bar(platforms, tokens_per_gpu, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+        bars = ax1.bar(platforms, tokens_per_gpu, color=colors, alpha=0.75, edgecolor='#333333', linewidth=1.2)
         ax1.set_ylabel('Tokens/sec/GPU', fontweight='bold', fontsize=11)
-        ax1.set_title('Per-GPU Throughput', fontweight='bold', fontsize=12)
-        ax1.grid(axis='y', alpha=0.3)
+        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
+        ax1.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
         
         # Add value labels on bars
         for bar, value in zip(bars, tokens_per_gpu):
@@ -103,80 +110,184 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
         winner = "AMD" if tokens_per_gpu[1] > tokens_per_gpu[0] else "NVIDIA"
         ax1.text(0.5, 0.95, f'{winner}: {ratio:.1f}x faster',
                 transform=ax1.transAxes, ha='center', va='top',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.6),
+                bbox=dict(boxstyle='round', facecolor='#F9E79F', alpha=0.5, edgecolor='#E5C100', linewidth=1),
                 fontsize=9, fontweight='bold')
     else:
         ax1.text(0.5, 0.5, 'Tokens/sec/GPU data not available', 
                 ha='center', va='center', transform=ax1.transAxes)
-        ax1.set_title('Per-GPU Throughput', fontweight='bold', fontsize=12)
+        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
     
-    # 2. Training Loss over Time
+    # 2. Per-GPU Throughput over Time
     ax2 = axes[1]
-    if 'raw_loss_values' in nvidia_data and 'raw_loss_values' in amd_data:
-        nvidia_loss = nvidia_data['raw_loss_values']
-        amd_loss = amd_data['raw_loss_values']
-        steps = range(len(nvidia_loss))
-        
-        ax2.plot(steps, nvidia_loss, 'o-', color=colors[0], label='NVIDIA', linewidth=2, markersize=5)
-        ax2.plot(steps, amd_loss, 's-', color=colors[1], label='AMD', linewidth=2, markersize=5)
-        ax2.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax2.set_ylabel('Loss', fontweight='bold', fontsize=11)
-        ax2.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
-        ax2.legend(fontsize=9)
-        ax2.grid(alpha=0.3)
-    else:
-        ax2.text(0.5, 0.5, 'Loss data not available', 
-                ha='center', va='center', transform=ax2.transAxes)
-        ax2.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
-    
-    # 3. GPU Memory Usage over Time
-    ax3 = axes[2]
-    if 'memory_metrics' in nvidia_data and 'memory_metrics' in amd_data:
-        if 'raw_step_times' in nvidia_data and 'raw_step_times' in amd_data:
-            steps = range(len(nvidia_data['raw_step_times']))
-            nvidia_mem = [nvidia_data['memory_metrics']['avg_memory_allocated_gb']] * len(steps)
-            amd_mem = [amd_data['memory_metrics']['avg_memory_allocated_gb']] * len(steps)
-            
-            ax3.plot(steps, nvidia_mem, 'o-', color=colors[0], label='NVIDIA', linewidth=2, markersize=5)
-            ax3.plot(steps, amd_mem, 's-', color=colors[1], label='AMD', linewidth=2, markersize=5)
-            ax3.set_xlabel('Step', fontweight='bold', fontsize=10)
-            ax3.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
-            ax3.set_title('GPU Memory Usage', fontweight='bold', fontsize=12)
-            ax3.legend(fontsize=9)
-            ax3.grid(alpha=0.3)
-        else:
-            ax3.text(0.5, 0.5, 'Step data not available', 
-                    ha='center', va='center', transform=ax3.transAxes)
-            ax3.set_title('GPU Memory Usage', fontweight='bold', fontsize=12)
-    else:
-        ax3.text(0.5, 0.5, 'Memory data not available', 
-                ha='center', va='center', transform=ax3.transAxes)
-        ax3.set_title('GPU Memory Usage', fontweight='bold', fontsize=12)
-    
-    # 4. Step Duration over Time
-    ax4 = axes[3]
     if 'raw_step_times' in nvidia_data and 'raw_step_times' in amd_data:
         nvidia_times = nvidia_data['raw_step_times']
         amd_times = amd_data['raw_step_times']
         steps = range(len(nvidia_times))
         
-        ax4.plot(steps, nvidia_times, 'o-', color=colors[0], label='NVIDIA', linewidth=2, markersize=5)
-        ax4.plot(steps, amd_times, 's-', color=colors[1], label='AMD', linewidth=2, markersize=5)
+        # Calculate per-step throughput: (global_batch_size * seq_length) / (step_time * num_gpus)
+        nvidia_throughput = [(global_batch_size * seq_length) / (t * num_gpus) for t in nvidia_times]
+        amd_throughput = [(global_batch_size * seq_length) / (t * num_gpus) for t in amd_times]
+        
+        ax2.plot(steps, nvidia_throughput, 'o-', color=colors[0], label='NVIDIA', linewidth=1.5, markersize=2, alpha=0.85)
+        ax2.plot(steps, amd_throughput, 's-', color=colors[1], label='AMD', linewidth=1.5, markersize=2, alpha=0.85)
+        ax2.set_xlabel('Step', fontweight='bold', fontsize=10)
+        ax2.set_ylabel('Tokens/sec/GPU', fontweight='bold', fontsize=11)
+        ax2.set_title('Per-GPU Throughput over Time', fontweight='bold', fontsize=12)
+        ax2.legend(fontsize=9)
+        ax2.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+    else:
+        ax2.text(0.5, 0.5, 'Step time data not available', 
+                ha='center', va='center', transform=ax2.transAxes)
+        ax2.set_title('Per-GPU Throughput over Time', fontweight='bold', fontsize=12)
+    
+    # 3. Training Loss over Time
+    ax3 = axes[2]
+    if 'raw_loss_values' in nvidia_data and 'raw_loss_values' in amd_data:
+        nvidia_loss = nvidia_data['raw_loss_values']
+        amd_loss = amd_data['raw_loss_values']
+        steps = range(len(nvidia_loss))
+        
+        ax3.plot(steps, nvidia_loss, 'o-', color=colors[0], label='NVIDIA', linewidth=1.5, markersize=2, alpha=0.85)
+        ax3.plot(steps, amd_loss, 's-', color=colors[1], label='AMD', linewidth=1.5, markersize=2, alpha=0.85)
+        ax3.set_xlabel('Step', fontweight='bold', fontsize=10)
+        ax3.set_ylabel('Loss', fontweight='bold', fontsize=11)
+        ax3.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
+        ax3.legend(fontsize=9)
+        ax3.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+    else:
+        ax3.text(0.5, 0.5, 'Loss data not available', 
+                ha='center', va='center', transform=ax3.transAxes)
+        ax3.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
+    
+    # 4. Cumulative Tokens per GPU over Time
+    ax4 = axes[3]
+    if 'raw_step_times' in nvidia_data and 'raw_step_times' in amd_data:
+        steps = range(len(nvidia_data['raw_step_times']))
+        tokens_per_step = (global_batch_size * seq_length) / num_gpus
+        
+        # Cumulative tokens processed per GPU
+        nvidia_tokens = [tokens_per_step * (i + 1) for i in steps]
+        amd_tokens = [tokens_per_step * (i + 1) for i in steps]
+        
+        ax4.plot(steps, nvidia_tokens, 'o-', color=colors[0], label='NVIDIA', linewidth=1.5, markersize=2, alpha=0.85)
+        ax4.plot(steps, amd_tokens, 's-', color=colors[1], label='AMD', linewidth=1.5, markersize=2, alpha=0.85)
         ax4.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax4.set_ylabel('Time (seconds)', fontweight='bold', fontsize=11)
-        ax4.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
+        ax4.set_ylabel('Cumulative Tokens', fontweight='bold', fontsize=11)
+        ax4.set_title('Cumulative Tokens per GPU over Time', fontweight='bold', fontsize=12)
         ax4.legend(fontsize=9)
-        ax4.grid(alpha=0.3)
+        ax4.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+        
+        # Format y-axis as millions
+        ax4.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1e6:.1f}M'))
+    else:
+        ax4.text(0.5, 0.5, 'Step data not available', 
+                ha='center', va='center', transform=ax4.transAxes)
+        ax4.set_title('Cumulative Tokens per GPU over Time', fontweight='bold', fontsize=12)
+    
+    # 5. Learning Rate Schedule over Time
+    ax5 = axes[4]
+    if 'raw_step_times' in nvidia_data and 'raw_step_times' in amd_data:
+        num_steps = len(nvidia_data['raw_step_times'])
+        steps = range(num_steps)
+        
+        # Calculate learning rate schedule (warmup + cosine decay)
+        # Assuming: warmup_steps=10, lr=3e-4, min_lr=3e-5
+        warmup_steps = 10
+        max_lr = 3.0e-4
+        min_lr = 3.0e-5
+        
+        lr_schedule = []
+        for step in steps:
+            if step < warmup_steps:
+                # Linear warmup
+                lr = min_lr + (max_lr - min_lr) * step / warmup_steps
+            else:
+                # Cosine decay
+                progress = (step - warmup_steps) / (num_steps - warmup_steps)
+                lr = min_lr + (max_lr - min_lr) * 0.5 * (1 + np.cos(np.pi * progress))
+            lr_schedule.append(lr)
+        
+        # Same schedule for both (same config)
+        ax5.plot(steps, lr_schedule, '-', color='#9B59B6', linewidth=2, alpha=0.85)
+        ax5.set_xlabel('Step', fontweight='bold', fontsize=10)
+        ax5.set_ylabel('Learning Rate', fontweight='bold', fontsize=11)
+        ax5.set_title('Learning Rate Schedule', fontweight='bold', fontsize=12)
+        ax5.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+        ax5.axvline(x=warmup_steps, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+        ax5.text(warmup_steps, max_lr * 0.5, f'Warmup\n({warmup_steps} steps)', 
+                ha='right', va='center', fontsize=8, color='gray')
+    else:
+        ax5.text(0.5, 0.5, 'Step data not available', 
+                ha='center', va='center', transform=ax5.transAxes)
+        ax5.set_title('Learning Rate Schedule', fontweight='bold', fontsize=12)
+    
+    # 6. Consumed Samples over Time
+    ax6 = axes[5]
+    if 'raw_step_times' in nvidia_data and 'raw_step_times' in amd_data:
+        steps = range(len(nvidia_data['raw_step_times']))
+        
+        # Cumulative samples consumed (global_batch_size per step)
+        nvidia_samples = [global_batch_size * (i + 1) for i in steps]
+        amd_samples = [global_batch_size * (i + 1) for i in steps]
+        
+        ax6.plot(steps, nvidia_samples, 'o-', color=colors[0], label='NVIDIA', linewidth=1.5, markersize=2, alpha=0.85)
+        ax6.plot(steps, amd_samples, 's-', color=colors[1], label='AMD', linewidth=1.5, markersize=2, alpha=0.85)
+        ax6.set_xlabel('Step', fontweight='bold', fontsize=10)
+        ax6.set_ylabel('Consumed Samples', fontweight='bold', fontsize=11)
+        ax6.set_title('Consumed Samples over Time', fontweight='bold', fontsize=12)
+        ax6.legend(fontsize=9)
+        ax6.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+    else:
+        ax6.text(0.5, 0.5, 'Step data not available', 
+                ha='center', va='center', transform=ax6.transAxes)
+        ax6.set_title('Consumed Samples over Time', fontweight='bold', fontsize=12)
+    
+    # 7. GPU Memory Usage over Time
+    ax7 = axes[6]
+    nvidia_mem_data = nvidia_data.get('raw_memory_values', [])
+    amd_mem_data = amd_data.get('raw_memory_values', [])
+    
+    if nvidia_mem_data and amd_mem_data:
+        # Use actual memory time series
+        steps_nvidia = range(len(nvidia_mem_data))
+        steps_amd = range(len(amd_mem_data))
+        
+        ax7.plot(steps_nvidia, nvidia_mem_data, 'o-', color=colors[0], label='NVIDIA', linewidth=1.5, markersize=2, alpha=0.85)
+        ax7.plot(steps_amd, amd_mem_data, 's-', color=colors[1], label='AMD', linewidth=1.5, markersize=2, alpha=0.85)
+        ax7.set_xlabel('Step', fontweight='bold', fontsize=10)
+        ax7.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
+        ax7.set_title('GPU Memory Usage over Time', fontweight='bold', fontsize=12)
+        ax7.legend(fontsize=9)
+        ax7.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+    else:
+        ax7.text(0.5, 0.5, 'Memory time series not available', 
+                ha='center', va='center', transform=ax7.transAxes)
+        ax7.set_title('GPU Memory Usage over Time', fontweight='bold', fontsize=12)
+    
+    # 8. Step Duration over Time
+    ax8 = axes[7]
+    if 'raw_step_times' in nvidia_data and 'raw_step_times' in amd_data:
+        nvidia_times = nvidia_data['raw_step_times']
+        amd_times = amd_data['raw_step_times']
+        steps = range(len(nvidia_times))
+        
+        ax8.plot(steps, nvidia_times, 'o-', color=colors[0], label='NVIDIA', linewidth=1.5, markersize=2, alpha=0.85)
+        ax8.plot(steps, amd_times, 's-', color=colors[1], label='AMD', linewidth=1.5, markersize=2, alpha=0.85)
+        ax8.set_xlabel('Step', fontweight='bold', fontsize=10)
+        ax8.set_ylabel('Time (seconds)', fontweight='bold', fontsize=11)
+        ax8.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
+        ax8.legend(fontsize=9)
+        ax8.grid(alpha=0.2, linestyle='--', linewidth=0.5)
         
         # Add average line annotations
         nvidia_avg = sum(nvidia_times) / len(nvidia_times)
         amd_avg = sum(amd_times) / len(amd_times)
-        ax4.axhline(y=nvidia_avg, color=colors[0], linestyle='--', alpha=0.3, linewidth=1)
-        ax4.axhline(y=amd_avg, color=colors[1], linestyle='--', alpha=0.3, linewidth=1)
+        ax8.axhline(y=nvidia_avg, color=colors[0], linestyle='--', alpha=0.25, linewidth=0.8)
+        ax8.axhline(y=amd_avg, color=colors[1], linestyle='--', alpha=0.25, linewidth=0.8)
     else:
-        ax4.text(0.5, 0.5, 'Step time data not available', 
-                ha='center', va='center', transform=ax4.transAxes)
-        ax4.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
+        ax8.text(0.5, 0.5, 'Step time data not available', 
+                ha='center', va='center', transform=ax8.transAxes)
+        ax8.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
@@ -199,8 +310,8 @@ def print_comparison(nvidia_data: Dict, amd_data: Dict):
     # Extract metrics
     nvidia_perf = nvidia_data['performance_metrics']
     amd_perf = amd_data['performance_metrics']
-    nvidia_mem = nvidia_data.get('memory_metrics', {})
-    amd_mem = amd_data.get('memory_metrics', {})
+    nvidia_mem_series = nvidia_data.get('raw_memory_values', [])
+    amd_mem_series = amd_data.get('raw_memory_values', [])
     nvidia_gpu = nvidia_data['gpu_info']
     amd_gpu = amd_data['gpu_info']
     
@@ -234,17 +345,19 @@ def print_comparison(nvidia_data: Dict, amd_data: Dict):
     print("\n💾 Memory Usage")
     print("-" * 80)
     
-    if nvidia_mem and amd_mem:
-        nvidia_mem_used = nvidia_mem.get('avg_memory_allocated_gb', 0)
-        amd_mem_used = amd_mem.get('avg_memory_allocated_gb', 0)
+    if nvidia_mem_series and amd_mem_series:
+        nvidia_mem_used = sum(nvidia_mem_series) / len(nvidia_mem_series)
+        amd_mem_used = sum(amd_mem_series) / len(amd_mem_series)
         nvidia_mem_total = nvidia_gpu.get('total_memory_gb', 80)
         amd_mem_total = amd_gpu.get('total_memory_gb', 192)
         
         nvidia_util = (nvidia_mem_used / nvidia_mem_total) * 100 if nvidia_mem_total > 0 else 0
         amd_util = (amd_mem_used / amd_mem_total) * 100 if amd_mem_total > 0 else 0
         
-        print(f"  NVIDIA: {nvidia_mem_used:5.1f} GB / {nvidia_mem_total:5.1f} GB ({nvidia_util:4.1f}% utilized)")
-        print(f"  AMD:    {amd_mem_used:5.1f} GB / {amd_mem_total:5.1f} GB ({amd_util:4.1f}% utilized)")
+        print(f"  NVIDIA: {nvidia_mem_used:5.1f} GB / {nvidia_mem_total:5.1f} GB ({nvidia_util:4.1f}% utilized) [{len(nvidia_mem_series)} samples]")
+        print(f"  AMD:    {amd_mem_used:5.1f} GB / {amd_mem_total:5.1f} GB ({amd_util:4.1f}% utilized) [{len(amd_mem_series)} samples]")
+    else:
+        print(f"  Memory time series data not available")
     
     # 3. Hardware Info
     print("\n🖥️  Hardware Configuration")
