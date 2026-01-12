@@ -53,10 +53,9 @@ def run_pretrain():
     recipe.optim.config.adam_beta1 = config.training.optimizer.beta1
     recipe.optim.config.adam_beta2 = config.training.optimizer.beta2
     
-    # Configure warmup scheduler (sched is at recipe.optim level, not config)
-    recipe.optim.sched.warmup_steps = config.training.optimizer.warmup_steps
-    recipe.optim.sched.constant_steps = 0  # No constant phase, go straight to decay after warmup
-    recipe.optim.sched.max_steps = config.training.duration.max_steps
+    # Configure warmup scheduler (it's lr_scheduler, not sched)
+    recipe.optim.lr_scheduler.warmup_steps = config.training.optimizer.warmup_steps
+    recipe.optim.lr_scheduler.constant_steps = 0  # No constant phase, go straight to decay after warmup
     
     # Apply platform-specific precision settings
     if platform_opts.get('fp8_hybrid'):
