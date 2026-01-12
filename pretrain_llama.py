@@ -49,7 +49,8 @@ def run_pretrain():
     # Apply learning rate and warmup settings
     recipe.optim.config.lr = config.training.optimizer.learning_rate
     recipe.optim.config.weight_decay = config.training.optimizer.weight_decay
-    recipe.optim.config.betas = (config.training.optimizer.beta1, config.training.optimizer.beta2)
+    recipe.optim.config.adam_beta1 = config.training.optimizer.beta1
+    recipe.optim.config.adam_beta2 = config.training.optimizer.beta2
     
     # Configure warmup scheduler
     recipe.optim.config.sched.warmup_steps = config.training.optimizer.warmup_steps
