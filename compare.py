@@ -71,9 +71,9 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
     has_tokens_per_gpu = (nvidia_data['performance_metrics'].get('tokens_per_second_per_gpu') is not None and 
                           amd_data['performance_metrics'].get('tokens_per_second_per_gpu') is not None)
     
-    # Create 3x2 grid for comprehensive comparison
-    fig, axes = plt.subplots(2, 3, figsize=(20, 11))
-    fig.suptitle('AMD vs NVIDIA GPU Comparison', fontsize=18, fontweight='bold')
+    # Create 2x4 grid for comprehensive comparison (6 plots + 1 details + 1 extra)
+    fig, axes = plt.subplots(2, 4, figsize=(24, 11))
+    fig.suptitle('GPU Comparison', fontsize=18, fontweight='bold')
     
     # Flatten axes for easier indexing
     axes = axes.flatten()
@@ -83,74 +83,31 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
                  'AMD\n' + amd_data['gpu_info']['device_name']]
     colors = ['#76B900', '#ED1C24']  # NVIDIA green, AMD red
     
-    # 1. Tokens/sec/GPU - PRIMARY METRIC (Most Important)
+    # 1. Total Throughput - FIRST METRIC
     ax1 = axes[0]
-    if has_tokens_per_gpu:
-        tokens_per_gpu = [
-            nvidia_data['performance_metrics']['tokens_per_second_per_gpu'],
-            amd_data['performance_metrics']['tokens_per_second_per_gpu']
-        ]
-        bars = ax1.bar(platforms, tokens_per_gpu, color=colors, alpha=0.8, edgecolor='black', linewidth=2)
-        ax1.set_ylabel('Tokens/sec/GPU', fontweight='bold', fontsize=12)
-        ax1.set_title('Tokens/sec/GPU - Per-GPU Efficiency', 
-                     fontweight='bold', fontsize=13)
-        ax1.grid(axis='y', alpha=0.3)
-        
-        # Add value labels on bars
-        for bar, value in zip(bars, tokens_per_gpu):
-            height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{value:,.0f}',
-                    ha='center', va='bottom', fontweight='bold', fontsize=11)
-        
-        # Add annotation explaining the metric
-        max_val = max(tokens_per_gpu)
-        ratio = tokens_per_gpu[0] / tokens_per_gpu[1] if tokens_per_gpu[1] > 0 else 1.0
-        winner = "NVIDIA" if ratio > 1 else "AMD"
-        ax1.text(0.5, 0.95, f'{winner} is {max(ratio, 1/ratio):.2f}x more efficient per GPU',
-                transform=ax1.transAxes, ha='center', va='top',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
-                fontsize=10, fontweight='bold')
-    else:
-        ax1.text(0.5, 0.5, 'Tokens/sec/GPU data not available', 
-                ha='center', va='center', transform=ax1.transAxes)
-        ax1.set_title('Tokens/sec/GPU - Per-GPU Efficiency')
-    
-    # 2. Average Step Time Comparison
-    ax2 = axes[1]
-    step_times = [
-        nvidia_data['performance_metrics']['avg_step_time_seconds'],
-        amd_data['performance_metrics']['avg_step_time_seconds']
-    ]
-    bars = ax2.bar(platforms, step_times, color=colors, alpha=0.7, edgecolor='black')
-    ax2.set_ylabel('Time (seconds)', fontweight='bold')
-    ax2.set_title('Average Step Time\n(Lower is Better)', fontweight='bold')
-    ax2.grid(axis='y', alpha=0.3)
-    
-    # Add value labels on bars
-    for bar, value in zip(bars, step_times):
-        height = bar.get_height()
-        ax2.text(bar.get_x() + bar.get_width()/2., height,
-                f'{value:.3f}s',
-                ha='center', va='bottom', fontweight='bold')
-    
-    # 3. Total System Throughput
-    ax3 = axes[2]
     if has_tokens_per_gpu:
         total_throughput = [
             nvidia_data['performance_metrics'].get('tokens_per_second', 0),
             amd_data['performance_metrics'].get('tokens_per_second', 0)
         ]
-        bars = ax3.bar(platforms, total_throughput, color=colors, alpha=0.7, edgecolor='black')
-        ax3.set_ylabel('Tokens/sec (Total)', fontweight='bold')
-        ax3.set_title('Total System Throughput', fontweight='bold')
-        ax3.grid(axis='y', alpha=0.3)
+        bars = ax1.bar(platforms, total_throughput, color=colors, alpha=0.8, edgecolor='black', linewidth=2)
+        ax1.set_ylabel('Tokens/sec (Total)', fontweight='bold', fontsize=12)
+        ax1.set_title('Total Throughput', fontweight='bold', fontsize=13)
+        ax1.grid(axis='y', alpha=0.3)
         
         for bar, value in zip(bars, total_throughput):
             height = bar.get_height()
-            ax3.text(bar.get_x() + bar.get_width()/2., height,
+            ax1.text(bar.get_x() + bar.get_width()/2., height,
                     f'{value:,.0f}',
-                    ha='center', va='bottom', fontweight='bold')
+                    ha='center', va='bottom', fontweight='bold', fontsize=11)
+        
+        # Add annotation
+        ratio = total_throughput[0] / total_throughput[1] if total_throughput[1] > 0 else 1.0
+        winner = "NVIDIA" if ratio > 1 else "AMD"
+        ax1.text(0.5, 0.95, f'{winner} has {max(ratio, 1/ratio):.2f}x higher total throughput',
+                transform=ax1.transAxes, ha='center', va='top',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+                fontsize=10, fontweight='bold')
     else:
         throughputs = [
             nvidia_data['performance_metrics'].get('throughput_steps_per_second', 
@@ -158,141 +115,105 @@ def create_comparison_plot(nvidia_data: Dict, amd_data: Dict, output_file: str =
             amd_data['performance_metrics'].get('throughput_steps_per_second',
                 amd_data['performance_metrics'].get('steps_per_second', 0))
         ]
-        bars = ax3.bar(platforms, throughputs, color=colors, alpha=0.7, edgecolor='black')
-        ax3.set_ylabel('Steps per Second', fontweight='bold')
-        ax3.set_title('Throughput', fontweight='bold')
-        ax3.grid(axis='y', alpha=0.3)
+        bars = ax1.bar(platforms, throughputs, color=colors, alpha=0.8, edgecolor='black', linewidth=2)
+        ax1.set_ylabel('Steps per Second', fontweight='bold', fontsize=12)
+        ax1.set_title('Total Throughput', fontweight='bold', fontsize=13)
+        ax1.grid(axis='y', alpha=0.3)
         
         for bar, value in zip(bars, throughputs):
             height = bar.get_height()
-            ax3.text(bar.get_x() + bar.get_width()/2., height,
+            ax1.text(bar.get_x() + bar.get_width()/2., height,
                     f'{value:.3f}',
+                    ha='center', va='bottom', fontweight='bold', fontsize=11)
+    
+    # 2. Per-GPU Throughput
+    ax2 = axes[1]
+    if has_tokens_per_gpu:
+        tokens_per_gpu = [
+            nvidia_data['performance_metrics']['tokens_per_second_per_gpu'],
+            amd_data['performance_metrics']['tokens_per_second_per_gpu']
+        ]
+        bars = ax2.bar(platforms, tokens_per_gpu, color=colors, alpha=0.7, edgecolor='black')
+        ax2.set_ylabel('Tokens/sec/GPU', fontweight='bold')
+        ax2.set_title('Per-GPU Throughput', fontweight='bold')
+        ax2.grid(axis='y', alpha=0.3)
+        
+        # Add value labels on bars
+        for bar, value in zip(bars, tokens_per_gpu):
+            height = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{value:,.0f}',
                     ha='center', va='bottom', fontweight='bold')
-    
-    # 4. Memory Usage Comparison
-    ax4 = axes[3]
-    if 'memory_metrics' in nvidia_data and 'memory_metrics' in amd_data:
-        memory_data = {
-            'Average': [
-                nvidia_data['memory_metrics']['avg_memory_allocated_gb'],
-                amd_data['memory_metrics']['avg_memory_allocated_gb']
-            ],
-            'Peak': [
-                nvidia_data['memory_metrics']['peak_memory_allocated_gb'],
-                amd_data['memory_metrics']['peak_memory_allocated_gb']
-            ]
-        }
-        
-        x = np.arange(len(platforms))
-        width = 0.35
-        
-        bars1 = ax4.bar(x - width/2, memory_data['Average'], width, 
-                       label='Average', alpha=0.7, edgecolor='black')
-        bars2 = ax4.bar(x + width/2, memory_data['Peak'], width,
-                       label='Peak', alpha=0.7, edgecolor='black')
-        
-        ax4.set_ylabel('Memory (GB)', fontweight='bold')
-        ax4.set_title('GPU Memory Usage')
-        ax4.set_xticks(x)
-        ax4.set_xticklabels(platforms)
-        ax4.legend()
-        ax4.grid(axis='y', alpha=0.3)
     else:
-        ax4.text(0.5, 0.5, 'Memory data not available', 
-                ha='center', va='center', transform=ax4.transAxes)
-        ax4.set_title('GPU Memory Usage')
+        ax2.text(0.5, 0.5, 'Tokens/sec/GPU data not available', 
+                ha='center', va='center', transform=ax2.transAxes)
+        ax2.set_title('Per-GPU Throughput')
     
-    # 5. GPU Configuration Info
+    # 3. GPU Memory Usage over Time (line chart)
+    ax3 = axes[2]
+    # For now, we'll show a simple average memory line since we don't have per-step memory data
+    # This is a placeholder that shows memory usage during training
+    if 'memory_metrics' in nvidia_data and 'memory_metrics' in amd_data:
+        # Simulate constant memory usage over steps (since we don't have per-step data)
+        if 'raw_step_times' in nvidia_data and 'raw_step_times' in amd_data:
+            steps = range(len(nvidia_data['raw_step_times']))
+            nvidia_mem = [nvidia_data['memory_metrics']['avg_memory_allocated_gb']] * len(steps)
+            amd_mem = [amd_data['memory_metrics']['avg_memory_allocated_gb']] * len(steps)
+            
+            ax3.plot(steps, nvidia_mem, 'o-', color=colors[0], label='NVIDIA', linewidth=2, markersize=6)
+            ax3.plot(steps, amd_mem, 's-', color=colors[1], label='AMD', linewidth=2, markersize=6)
+            ax3.set_xlabel('Step', fontweight='bold')
+            ax3.set_ylabel('Memory (GB)', fontweight='bold')
+            ax3.set_title('GPU Memory Usage over Time', fontweight='bold')
+            ax3.legend()
+            ax3.grid(alpha=0.3)
+        else:
+            ax3.text(0.5, 0.5, 'Step timing data not available', 
+                    ha='center', va='center', transform=ax3.transAxes)
+            ax3.set_title('GPU Memory Usage over Time')
+    else:
+        ax3.text(0.5, 0.5, 'Memory data not available', 
+                ha='center', va='center', transform=ax3.transAxes)
+        ax3.set_title('GPU Memory Usage over Time')
+    
+    # 4. Training Loss over Time (if available)
+    ax4 = axes[3]
+    if 'raw_loss_values' in nvidia_data and 'raw_loss_values' in amd_data:
+        nvidia_loss = nvidia_data['raw_loss_values']
+        amd_loss = amd_data['raw_loss_values']
+        steps = range(len(nvidia_loss))
+        
+        ax4.plot(steps, nvidia_loss, 'o-', color=colors[0], label='NVIDIA', linewidth=2, markersize=6)
+        ax4.plot(steps, amd_loss, 's-', color=colors[1], label='AMD', linewidth=2, markersize=6)
+        ax4.set_xlabel('Step', fontweight='bold')
+        ax4.set_ylabel('Loss', fontweight='bold')
+        ax4.set_title('Training Loss over Time', fontweight='bold')
+        ax4.legend()
+        ax4.grid(alpha=0.3)
+    else:
+        ax4.axis('off')
+    
+    # 5. Step Duration over Time
     ax5 = axes[4]
-    # Handle "N/A" values in device_count
-    def get_gpu_count(data):
-        count = data['gpu_info'].get('device_count', data['training_config'].get('num_gpus', 0))
-        if isinstance(count, int):
-            return count
-        if isinstance(count, str) and count.isdigit():
-            return int(count)
-        # If "N/A", try to get from training_config
-        return data['training_config'].get('num_gpus', 8)
+    if 'raw_step_times' in nvidia_data and 'raw_step_times' in amd_data:
+        nvidia_times = nvidia_data['raw_step_times']
+        amd_times = amd_data['raw_step_times']
+        steps = range(len(nvidia_times))
+        
+        ax5.plot(steps, nvidia_times, 'o-', color=colors[0], label='NVIDIA', linewidth=2, markersize=6)
+        ax5.plot(steps, amd_times, 's-', color=colors[1], label='AMD', linewidth=2, markersize=6)
+        ax5.set_xlabel('Step', fontweight='bold')
+        ax5.set_ylabel('Time (secs)', fontweight='bold')
+        ax5.set_title('Step Duration over Time', fontweight='bold')
+        ax5.legend()
+        ax5.grid(alpha=0.3)
+    else:
+        ax5.axis('off')
     
-    gpu_counts = [
-        get_gpu_count(nvidia_data),
-        get_gpu_count(amd_data)
-    ]
-    bars = ax5.bar(platforms, gpu_counts, color=colors, alpha=0.7, edgecolor='black')
-    ax5.set_ylabel('Number of GPUs', fontweight='bold')
-    ax5.set_title('GPU Count per System', fontweight='bold')
-    ax5.grid(axis='y', alpha=0.3)
-    ax5.set_ylim(0, max(gpu_counts) * 1.2)
-    
-    for bar, value in zip(bars, gpu_counts):
-        height = bar.get_height()
-        ax5.text(bar.get_x() + bar.get_width()/2., height,
-                f'{int(value)}',
-                ha='center', va='bottom', fontweight='bold', fontsize=14)
-    
-    # 6. Detailed Metrics Summary
-    ax6 = axes[5]
-    ax6.axis('off')  # Turn off axis
-    
-    # Calculate all metrics
-    nvd_time = nvidia_data['performance_metrics']['avg_step_time_seconds']
-    amd_time = amd_data['performance_metrics']['avg_step_time_seconds']
-    time_diff = abs(nvd_time - amd_time)
-    time_winner = "NVIDIA" if nvd_time < amd_time else "AMD"
-    speedup = max(nvd_time, amd_time) / min(nvd_time, amd_time)
-    efficiency = min(nvd_time, amd_time) / max(nvd_time, amd_time) * 100
-    
-    # Calculate variance/stability
-    nvidia_variance = np.var(nvidia_data['raw_step_times'][1:])
-    amd_variance = np.var(amd_data['raw_step_times'][1:])
-    
-    # Throughput metrics
-    throughput_advantage = 0.0
-    if has_tokens_per_gpu:
-        nvd_tokens = nvidia_data['performance_metrics']['tokens_per_second_per_gpu']
-        amd_tokens = amd_data['performance_metrics']['tokens_per_second_per_gpu']
-        throughput_advantage = abs(nvd_tokens - amd_tokens) / min(nvd_tokens, amd_tokens)
-    
-    # Create comprehensive summary
-    summary_text = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    summary_text += "       DETAILED METRICS\n"
-    summary_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    # Speed Comparison
-    summary_text += "⚡ Speed Comparison\n"
-    summary_text += f"  Time Difference: {time_diff:.4f}s per step\n"
-    summary_text += f"  Speedup Factor:  {speedup:.2f}x\n"
-    summary_text += f"                   ({time_winner} faster)\n"
-    summary_text += f"  Efficiency:      {efficiency:.1f}%\n"
-    summary_text += f"                   (slower vs faster)\n"
-    if has_tokens_per_gpu:
-        summary_text += f"  Throughput Adv:  {throughput_advantage:.2f}x\n"
-        summary_text += f"                   ({time_winner} higher)\n"
-    summary_text += "\n"
-    
-    # Stability
-    summary_text += "📊 Stability (Variance)\n"
-    summary_text += f"  NVIDIA:  {nvidia_variance:.6f}\n"
-    summary_text += f"  AMD:     {amd_variance:.6f}\n"
-    more_stable = "NVIDIA" if nvidia_variance < amd_variance else "AMD"
-    summary_text += f"  {more_stable} is more stable\n\n"
-    
-    # Timestamps
-    summary_text += "📅 Timestamps\n"
-    nvidia_ts = nvidia_data['timestamp']
-    amd_ts = amd_data['timestamp']
-    summary_text += f"  NVIDIA: {nvidia_ts}\n"
-    summary_text += f"  AMD:    {amd_ts}\n\n"
-    
-    # Configuration
-    summary_text += "⚙️  Configuration\n"
-    summary_text += f"  Batch Size: {nvidia_data['training_config']['global_batch_size']}\n"
-    summary_text += f"  Seq Length: {nvidia_data['training_config'].get('sequence_length', 'N/A')}\n"
-    summary_text += f"  Steps:      {nvidia_data['training_config']['max_steps']}\n"
-    
-    ax6.text(0.05, 0.98, summary_text, transform=ax6.transAxes,
-            fontsize=9.5, verticalalignment='top', fontfamily='monospace',
-            bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.4, pad=0.8))
+    # Hide unused plots (axes[5], axes[6], and axes[7])
+    axes[5].axis('off')
+    axes[6].axis('off')
+    axes[7].axis('off')
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
