@@ -1,25 +1,10 @@
-# TensorPrimat - Unified Experiment Configuration
-# Single configuration file for AMD (Primus) and NVIDIA (NeMo) benchmarking
-#
-# Usage:
-#   - Supports both "maximum performance" and "identical configuration" methodologies
-#   - Platform-specific overrides for hardware optimization
-#   - Can be used with both Primus (AMD) and NeMo (NVIDIA) frameworks
-
-# ==============================================================================
-# EXPERIMENT METADATA
-# ==============================================================================
 experiment:
   name: "tprimat_benchmark"
-  description: "LLM training benchmark comparing AMD MI300X vs NVIDIA H100"
-  version: "2.0"
-  methodology: "maximum_performance"  # Options: "maximum_performance" or "identical_config"
+  description: "LLM training benchmark comparing AMD vs NVIDIA hardware"
+  version: "1.0"
+  methodology: "maximum_performance"
 
-# ==============================================================================
-# HARDWARE CONFIGURATION
-# ==============================================================================
 hardware:
-  # Target platforms
   platforms:
     nvidia:
       gpu_model: "H100"
@@ -35,9 +20,6 @@ hardware:
       software_stack: "rocm"
       framework: "primus"
 
-# ==============================================================================
-# MODEL CONFIGURATIONS
-# ==============================================================================
 models:
   llama:
     name: "llama3.1_8b"
@@ -46,11 +28,7 @@ models:
     num_layers: 32
     hidden_size: 4096
     num_attention_heads: 32
-    
-    # Primus config path (AMD)
     primus_config: "examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml"
-    
-    # NeMo recipe (NVIDIA)
     nemo_recipe: "llama31_8b.pretrain_recipe"
     
   qwen:
@@ -60,54 +38,33 @@ models:
     num_layers: 28
     hidden_size: 3584
     num_attention_heads: 28
-    
-    # Primus config path (AMD)
     primus_config: "examples/megatron/configs/MI300X/qwen2.5_7B-pretrain.yaml"
-    
-    # NeMo recipe (NVIDIA)
     nemo_recipe: "qwen25_7b.pretrain_recipe"
 
-# ==============================================================================
-# TRAINING CONFIGURATION (Common across platforms)
-# ==============================================================================
 training:
-  # Data configuration
   data:
     micro_batch_size: 1           # Per-GPU batch size per accumulation step
     global_batch_size: 128        # Total batch size across all GPUs
     seq_length: 2048              # Sequence length in tokens
-    
-  # Training duration
   duration:
     max_steps: 10                 # Number of training steps (for benchmarking)
     train_iters: 10               # Alternative name used by Primus
-    
-  # Optimization
   optimizer:
     type: "adam"
     learning_rate: 3.0e-4
     weight_decay: 0.1
     beta1: 0.9
     beta2: 0.95
-    
-  # Precision (default, can be overridden per platform)
   precision:
     default: "bf16"               # Options: fp32, fp16, bf16, fp8
     fp8_hybrid: false             # Enable FP8 hybrid mode (H100 specific)
     fp8_param: false              # Store parameters in FP8
-    
-  # Checkpointing (disabled for benchmarking)
   checkpointing:
     enabled: false
     save_interval: 1000
     keep_last_n: 2
 
-# ==============================================================================
-# PARALLELISM STRATEGY
-# ==============================================================================
 parallelism:
-  # Maximum Performance Mode (default)
-  # Each platform uses its optimal configuration
   maximum_performance:
     llama:
       nvidia:
@@ -120,7 +77,6 @@ parallelism:
         pipeline_model_parallel_size: 1  # PP=1
         data_parallel_size: 8            # Calculated: 8/(1*1) = 8
         gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
-    
     qwen:
       nvidia:
         tensor_model_parallel_size: 4    # TP=4
@@ -133,8 +89,6 @@ parallelism:
         data_parallel_size: 8            # Calculated: 8/(1*1) = 8
         gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
   
-  # Identical Configuration Mode (for fair hardware comparison)
-  # Both platforms use the same parallelism strategy
   identical_config:
     llama:
       nvidia:
@@ -147,7 +101,6 @@ parallelism:
         pipeline_model_parallel_size: 1  # Same as NVIDIA
         data_parallel_size: 2            # Same as NVIDIA
         gradient_accumulation_steps: 64  # Same as NVIDIA
-    
     qwen:
       nvidia:
         tensor_model_parallel_size: 4
@@ -159,43 +112,101 @@ parallelism:
         pipeline_model_parallel_size: 2  # Same as NVIDIA
         data_parallel_size: 1            # Same as NVIDIA
         gradient_accumulation_steps: 128 # Same as NVIDIA
+  
+  memory_optimized:
+    llama:
+      nvidia:
+        tensor_model_parallel_size: 8    # TP=8 (aggressive model sharding)
+        pipeline_model_parallel_size: 1  # PP=1
+        data_parallel_size: 1            # Calculated: 8/(8*1) = 1
+        gradient_accumulation_steps: 128 # Calculated: 128/(1*1) = 128
+      amd:
+        tensor_model_parallel_size: 2    # TP=2 (conservative given 192GB)
+        pipeline_model_parallel_size: 1  # PP=1
+        data_parallel_size: 4            # Calculated: 8/(2*1) = 4
+        gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
+    qwen:
+      nvidia:
+        tensor_model_parallel_size: 8    # TP=8 (aggressive model sharding)
+        pipeline_model_parallel_size: 1  # PP=1
+        data_parallel_size: 1            # Calculated: 8/(8*1) = 1
+        gradient_accumulation_steps: 128 # Calculated: 128/(1*1) = 128
+      amd:
+        tensor_model_parallel_size: 2    # TP=2
+        pipeline_model_parallel_size: 1  # PP=1
+        data_parallel_size: 4            # Calculated: 8/(2*1) = 4
+        gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
+  
+  minimal_communication:
+    llama:
+      nvidia:
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel communication)
+        pipeline_model_parallel_size: 1  # PP=1 (no pipeline bubbles)
+        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+      amd:
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel communication)
+        pipeline_model_parallel_size: 1  # PP=1 (no pipeline bubbles)
+        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+    qwen:
+      nvidia:
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel communication)
+        pipeline_model_parallel_size: 1  # PP=1 (no pipeline bubbles)
+        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+      amd:
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel communication)
+        pipeline_model_parallel_size: 1  # PP=1 (no pipeline bubbles)
+        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+  
+  balanced:
+    llama:
+      nvidia:
+        tensor_model_parallel_size: 2    # TP=2 (moderate sharding)
+        pipeline_model_parallel_size: 1  # PP=1
+        data_parallel_size: 4            # Calculated: 8/(2*1) = 4
+        gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
+      amd:
+        tensor_model_parallel_size: 2    # TP=2 (moderate sharding)
+        pipeline_model_parallel_size: 1  # PP=1
+        data_parallel_size: 4            # Calculated: 8/(2*1) = 4
+        gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
+    qwen:
+      nvidia:
+        tensor_model_parallel_size: 2    # TP=2 (moderate sharding)
+        pipeline_model_parallel_size: 2  # PP=2
+        data_parallel_size: 2            # Calculated: 8/(2*2) = 2
+        gradient_accumulation_steps: 64  # Calculated: 128/(1*2) = 64
+      amd:
+        tensor_model_parallel_size: 2    # TP=2 (moderate sharding)
+        pipeline_model_parallel_size: 2  # PP=2
+        data_parallel_size: 2            # Calculated: 8/(2*2) = 2
+        gradient_accumulation_steps: 64  # Calculated: 128/(1*2) = 64
 
-# ==============================================================================
-# PLATFORM-SPECIFIC OPTIMIZATIONS
-# ==============================================================================
 platform_optimizations:
   nvidia:
-    # H100-specific optimizations
-    precision: "fp8"              # Use FP8 on H100 for max performance
+    precision: "fp8"
     fp8_hybrid: true
     fp8_param: true
     cuda_alloc_conf: "expandable_segments:True"
-    
-    # Memory optimizations
     activation_checkpointing: true
     gradient_checkpointing: false
     
   amd:
-    # MI300X-specific optimizations
-    precision: "bf16"             # BF16 is well-supported on MI300X
-    fp8_hybrid: false             # FP8 support may vary
+    precision: "bf16"
+    fp8_hybrid: false
     fp8_param: false
-    
-    # Memory optimizations (less critical with 192GB)
     activation_checkpointing: false
     gradient_checkpointing: false
 
-# ==============================================================================
-# BENCHMARKING CONFIGURATION
-# ==============================================================================
 benchmarking:
-  # Output settings
   output:
     directory: "./output"
     filename_format: "benchmark_{software_stack}_{model}.json"
     log_format: "training_{model}.log"
     
-  # Metrics to collect
   metrics:
     performance:
       - "avg_step_time_seconds"
@@ -224,16 +235,11 @@ benchmarking:
       - "software_version"
       - "pytorch_version"
   
-  # Enhanced metrics
   enhanced_metrics:
     enabled: true
-    
-    # Cost analysis (cloud pricing per hour for 8 GPUs)
     cloud_costs:
       nvidia_h100_8gpu_per_hour: 32.0
       amd_mi300x_8gpu_per_hour: 24.0
-    
-    # Hardware specifications for MFU calculation
     hardware_specs:
       nvidia_h100:
         peak_tflops_fp8: 989.0e12
@@ -243,141 +249,68 @@ benchmarking:
       amd_mi300x:
         peak_tflops_fp16: 653.0e12
         peak_tflops_bf16: 653.0e12
-        peak_tflops_fp8: 1300.0e12  # Theoretical, may not be fully utilized
+        peak_tflops_fp8: 1300.0e12
         tdp_watts: 750
   
-  # Warmup and stability
   warmup:
     skip_first_n_steps: 1         # Skip first step (warmup)
     
-  # Run configuration
   runs:
     default_num_runs: 1           # For quick benchmarking
     recommended_num_runs: 3       # For statistical significance
     cooldown_seconds: 10          # Between runs
 
-# ==============================================================================
-# COMPARISON SETTINGS
-# ==============================================================================
 comparison:
-  # What to compare
   metrics_to_compare:
     - "tokens_per_second_per_gpu"
     - "avg_step_time_seconds"
     - "avg_memory_allocated_gb"
     - "mfu_percent"
     - "cost_per_trillion_tokens"
-    
-  # Visualization
   plots:
     format: "png"
     dpi: 300
     style: "seaborn"
     filename: "comparison.png"
-    
-  # Report generation
   report:
     format: "markdown"
     filename: "comparison_report.md"
     include_plots: true
 
-# ==============================================================================
-# PATHS AND ENVIRONMENT
-# ==============================================================================
 paths:
-  # Primus (AMD)
   primus:
     installation: "${PRIMUS_PATH:-/workspace/Primus}"
     config_dir: "examples/megatron/configs/MI300X"
     run_script: "./examples/run_pretrain.sh"
-    
-  # NeMo (NVIDIA)
   nemo:
     checkpoint_dir: "/checkpoints"
-    
-  # TensorPrimat
   tprimat:
     base_dir: "."
     output_dir: "./output"
     logs_dir: "./output"
 
-# ==============================================================================
-# LOGGING AND MONITORING
-# ==============================================================================
 logging:
-  # Console output
   console:
     enabled: true
     level: "INFO"
     colored: true
-    
-  # File logging
   file:
     enabled: true
     capture_stdout: true
     capture_stderr: true
-    
-  # Disable framework loggers (for cleaner benchmark logs)
   disable:
     tensorboard: true
     wandb: true
     mlflow: true
 
-# ==============================================================================
-# VALIDATION AND SANITY CHECKS
-# ==============================================================================
 validation:
-  # Check that configuration is valid
   checks:
     - "validate_parallelism_product"    # TP * PP * DP = num_gpus
     - "validate_batch_size"              # global_batch_size % (micro_batch_size * DP) == 0
     - "validate_memory_estimate"         # Estimate if model fits in memory
     - "validate_precision_support"       # Check if precision is supported on platform
     
-  # Warnings
   warnings:
     low_mfu_threshold: 0.25              # Warn if MFU < 25%
     high_memory_threshold: 0.95          # Warn if memory > 95%
     high_variance_threshold: 0.20        # Warn if step time variance > 20%
-
-# ==============================================================================
-# NOTES AND DOCUMENTATION
-# ==============================================================================
-notes: |
-  Configuration Notes:
-  
-  1. Methodology Selection:
-     - "maximum_performance": Each platform uses optimal settings (default)
-     - "identical_config": Both platforms use identical parallelism settings
-  
-  2. Parallelism Strategy:
-     - TP (Tensor Parallel): Split model layers across GPUs
-     - PP (Pipeline Parallel): Split model vertically across GPUs
-     - DP (Data Parallel): Replicate model, split data
-     - Constraint: TP × PP × DP = num_gpus
-  
-  3. Batch Size Calculation:
-     - global_batch_size = micro_batch_size × DP × gradient_accumulation_steps
-     - Example: 128 = 1 × 2 × 64 (Llama on NVIDIA, max_perf mode)
-  
-  4. Platform Differences (Maximum Performance):
-     - AMD MI300X: Uses TP=1 to leverage 192GB memory per GPU
-     - NVIDIA H100: Uses TP=4 due to 80GB memory constraint
-     - Result: AMD shows higher per-GPU throughput, NVIDIA requires more communication
-  
-  5. Fair Comparison (Identical Config):
-     - Both platforms use same TP/PP/DP settings
-     - Isolates pure hardware differences
-     - AMD may not utilize full memory capacity
-  
-  6. Cost Considerations:
-     - Cloud pricing is approximate (as of 2024)
-     - Actual costs vary by provider, region, commitment level
-     - Calculate cost per trillion tokens for production planning
-  
-  7. Memory Estimates:
-     - Model size (BF16): ~2 bytes × num_parameters
-     - Optimizer states: ~3× model size (Adam)
-     - Activations: Depends on micro_batch_size and seq_length
-     - Gradients: ~1× model size
-     - Total: ~6× model size + activations

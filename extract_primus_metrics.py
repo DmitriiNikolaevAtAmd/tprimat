@@ -427,9 +427,30 @@ Examples:
     
     args = parser.parse_args()
     
+    # Check if log file exists, fallback to backup logs if needed
+    log_file = Path(args.log_file)
+    if not log_file.exists():
+        print(f"⚠️  Primary log file not found: {log_file}")
+        
+        # Try to find backup logs in the same directory
+        log_dir = log_file.parent
+        log_pattern = f"primus_training_{args.model_name}_*.log" if args.model_name else "primus_training_*.log"
+        
+        backup_logs = sorted(log_dir.glob(log_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        
+        if backup_logs:
+            log_file = backup_logs[0]
+            print(f"✓ Found backup log: {log_file}")
+            print(f"  Using most recent backup from: {datetime.fromtimestamp(log_file.stat().st_mtime)}")
+            print()
+        else:
+            print(f"❌ No backup logs found matching pattern: {log_pattern}")
+            print(f"   Searched in: {log_dir}")
+            return 1
+    
     # Extract metrics
     results = extract_metrics_from_log(
-        args.log_file,
+        str(log_file),
         args.num_gpus,
         args.global_batch_size,
         args.sequence_length

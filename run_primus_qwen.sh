@@ -63,10 +63,10 @@ echo "📦 Global Batch Size: $GLOBAL_BATCH_SIZE"
 echo "📏 Sequence Length: $SEQ_LENGTH"
 echo ""
 
-# Log file
-LOG_FILE="$OUTPUT_DIR/training_${MODEL}.log"
+# Log file (use absolute paths to avoid issues when changing directories)
+LOG_FILE="$(cd "$OUTPUT_DIR" && pwd)/training_${MODEL}.log"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_LOG="$OUTPUT_DIR/primus_training_${MODEL}_${TIMESTAMP}.log"
+BACKUP_LOG="$(cd "$OUTPUT_DIR" && pwd)/primus_training_${MODEL}_${TIMESTAMP}.log"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🚀 Starting training..."
