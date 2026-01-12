@@ -125,7 +125,7 @@ def calculate_mfu(
     MFU = (Achieved FLOPs) / (Peak FLOPs)
     
     Args:
-        tokens_per_second: Training throughput
+        tokens_per_second: Total training throughput across all GPUs
         num_gpus: Number of GPUs
         num_parameters: Model parameter count
         peak_tflops: Peak TFLOPs per GPU
@@ -133,11 +133,17 @@ def calculate_mfu(
     Returns:
         (mfu_percentage, achieved_tflops)
     """
+    # Ensure all inputs are numeric (prevent TypeError)
+    tokens_per_second = float(tokens_per_second)
+    num_gpus = int(num_gpus)
+    num_parameters = float(num_parameters)
+    peak_tflops = float(peak_tflops)
+    
     # FLOPs per token
     flops_per_token = calculate_model_flops_per_token(num_parameters)
     
-    # Total achieved FLOPs
-    achieved_flops = tokens_per_second * flops_per_token * num_gpus
+    # Total achieved FLOPs (tokens_per_second is already total across all GPUs)
+    achieved_flops = tokens_per_second * flops_per_token
     achieved_tflops = achieved_flops / 1e12
     
     # Peak system FLOPs

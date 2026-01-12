@@ -1190,9 +1190,8 @@ MFU = (achieved_FLOPs / peak_FLOPs) × 100%
 | `run_primus_all.sh` | Run all Primus models |
 | **Analysis** | |
 | `extract_primus_metrics.py` | Extract from Primus logs |
-| `compare.py` | Generate comparison plots |
-| `compare_results.py` | Detailed comparison |
-| `enhanced_metrics.py` | MFU, cost, power metrics |
+| `compare.py` | Main comparison script (plots + enhanced metrics) |
+| `enhanced_metrics.py` | MFU, cost, power metrics calculator |
 
 ---
 
