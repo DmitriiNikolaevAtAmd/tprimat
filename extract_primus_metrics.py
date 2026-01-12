@@ -167,10 +167,12 @@ def extract_step_times_from_log(log_file):
     Primus format:
     elapsed time per iteration (ms): 9836.3/21761.7
     lm loss: 1.189761E+01
+    learning rate: 5.000000E-06
     """
     step_times = []
     tokens_per_gpu_values = []
     loss_values = []
+    learning_rates = []
     
     with open(log_file, 'r') as f:
         for line in f:
@@ -209,8 +211,18 @@ def extract_step_times_from_log(log_file):
                         loss_values.append(loss)
                 except (ValueError, IndexError):
                     continue
+            
+            # learning rate: 5.000000E-06 or learning rate: 0.000005
+            lr_match = re.search(r'learning rate:\s*([0-9.Ee+-]+)', line)
+            if lr_match:
+                try:
+                    lr = float(lr_match.group(1))
+                    if 0 < lr < 1:  # Sanity check (learning rates are typically 1e-7 to 1e-3)
+                        learning_rates.append(lr)
+                except (ValueError, IndexError):
+                    continue
     
-    return step_times, tokens_per_gpu_values, loss_values
+    return step_times, tokens_per_gpu_values, loss_values, learning_rates
 
 
 def extract_memory_from_log(log_file):
@@ -246,8 +258,8 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
     
     print(f"Analyzing log file: {log_file}")
     
-    # Extract step times, tokens per GPU, and loss values
-    step_times, tokens_per_gpu_values, loss_values = extract_step_times_from_log(log_file)
+    # Extract step times, tokens per GPU, loss values, and learning rates
+    step_times, tokens_per_gpu_values, loss_values, learning_rates = extract_step_times_from_log(log_file)
     
     if not step_times:
         print("⚠️  No timing data found in log file")
@@ -350,6 +362,7 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
         "raw_step_times": step_times,
         "raw_loss_values": loss_values if loss_values else [],
         "raw_memory_values": memory_values if memory_values else [],
+        "raw_learning_rates": learning_rates if learning_rates else [],
         "source_log_file": str(Path(log_file).absolute())
     }
     

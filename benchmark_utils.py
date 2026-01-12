@@ -65,6 +65,7 @@ class BenchmarkCallback(Callback):
         self.memory_allocated = []
         self.memory_reserved = []
         self.loss_values = []
+        self.learning_rates = []
         self.step_start_time = None
         self.train_start_time = None
         self.gpu_info = {}
@@ -239,6 +240,16 @@ class BenchmarkCallback(Callback):
             self.memory_allocated.append(mem_allocated)
             self.memory_reserved.append(mem_reserved)
         
+        # Collect learning rate from optimizer/scheduler
+        try:
+            # Try to get learning rate from optimizer (works with NeMo)
+            lr = trainer.optimizers[0].param_groups[0]['lr'] if trainer.optimizers else None
+            if lr is not None:
+                self.learning_rates.append(float(lr))
+        except (IndexError, KeyError, AttributeError):
+            # If we can't get LR, skip (will extract from logs if needed)
+            pass
+        
         # Log every 10 steps (only on rank 0)
         if trainer.is_global_zero and batch_idx > 0 and batch_idx % 10 == 0:
             recent_times = self.step_times[-10:]
@@ -315,6 +326,7 @@ class BenchmarkCallback(Callback):
                 "raw_step_times": self.step_times,
                 "raw_loss_values": self.loss_values if self.loss_values else [],
                 "raw_memory_values": self.memory_allocated if self.memory_allocated else [],
+                "raw_learning_rates": self.learning_rates if self.learning_rates else [],
             }
             
             # Save results (round all floats to 3 decimal places)
