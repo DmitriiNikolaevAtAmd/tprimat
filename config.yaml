@@ -302,15 +302,3 @@ logging:
     tensorboard: true
     wandb: true
     mlflow: true
-
-validation:
-  checks:
-    - "validate_parallelism_product"    # TP * PP * DP = num_gpus
-    - "validate_batch_size"              # global_batch_size % (micro_batch_size * DP) == 0
-    - "validate_memory_estimate"         # Estimate if model fits in memory
-    - "validate_precision_support"       # Check if precision is supported on platform
-    
-  warnings:
-    low_mfu_threshold: 0.25              # Warn if MFU < 25%
-    high_memory_threshold: 0.95          # Warn if memory > 95%
-    high_variance_threshold: 0.20        # Warn if step time variance > 20%
