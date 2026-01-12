@@ -47,12 +47,12 @@ training:
     global_batch_size: 128        # Total batch size across all GPUs
     seq_length: 2048              # Sequence length in tokens
   duration:
-    max_steps: 200                # Number of training steps
-    train_iters: 200              # Alternative name used by Primus
+    max_steps: 100                # Number of training steps
+    train_iters: 100              # Alternative name used by Primus
   optimizer:
     type: "adam"
     learning_rate: 3.0e-4
-    warmup_steps: 20              # Warmup for 10% of training
+    warmup_steps: 10              # Warmup for 10% of training
     weight_decay: 0.1
     beta1: 0.9
     beta2: 0.95
