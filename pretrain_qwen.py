@@ -10,8 +10,19 @@ def run_pretrain():
     
     # Detect platform
     import torch
+    import random
+    import numpy as np
     is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
     platform = "amd" if is_rocm else "nvidia"
+    
+    # Set random seed for reproducibility (must be done before recipe creation)
+    seed = config.training.general.seed
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    # Set deterministic behavior for reproducibility
+    os.environ['PYTHONHASHSEED'] = str(seed)
     
     # Get model name and parallelism settings from config
     model_name = "qwen"
@@ -31,9 +42,6 @@ def run_pretrain():
         num_nodes=1,
         num_gpus_per_node=config.hardware.platforms[platform].num_gpus,
     )
-    
-    # Set random seed for reproducibility (ensures same initialization across runs)
-    recipe.trainer.seed = config.training.general.seed
     
     # 2. PARALLELISM CONFIGURATION (from config.yaml)
     # TP * PP * DP = num_gpus

@@ -103,8 +103,16 @@ This confirms they're seeing **different data distributions** from step 0.
 
 **Added to both scripts**:
 ```python
-# Set random seed for reproducibility
-recipe.trainer.seed = 42  # config.training.general.seed
+# Set random seed for reproducibility (must be done before recipe creation)
+import torch
+import random
+import numpy as np
+seed = config.training.general.seed
+torch.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+np.random.seed(seed)
+random.seed(seed)
+os.environ['PYTHONHASHSEED'] = str(seed)
 ```
 
 **Added to `config.yaml`**:
