@@ -299,9 +299,9 @@ logging:
     capture_stdout: true
     capture_stderr: true
   disable:
-    tensorboard: true
-    wandb: true
-    mlflow: true
+    tensorboard: false     # Keep TensorBoard logs
+    wandb: true            # Disable W&B (external service)
+    mlflow: true           # Disable MLflow (external service)
 
 validation:
   checks:
