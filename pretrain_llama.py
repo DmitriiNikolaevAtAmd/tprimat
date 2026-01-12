@@ -45,6 +45,17 @@ def run_pretrain():
     # 4. OPTIMIZATIONS & DURATION (from config.yaml)
     recipe.trainer.max_steps = config.training.duration.max_steps
     
+    # 5. OPTIMIZER & LEARNING RATE CONFIGURATION (from config.yaml)
+    # Apply learning rate and warmup settings
+    recipe.optim.config.lr = config.training.optimizer.learning_rate
+    recipe.optim.config.weight_decay = config.training.optimizer.weight_decay
+    recipe.optim.config.betas = (config.training.optimizer.beta1, config.training.optimizer.beta2)
+    
+    # Configure warmup scheduler
+    recipe.optim.config.sched.warmup_steps = config.training.optimizer.warmup_steps
+    recipe.optim.config.sched.constant_steps = 0  # No constant phase, go straight to decay after warmup
+    recipe.optim.config.sched.min_lr = config.training.optimizer.learning_rate * 0.1  # Decay to 10% of peak LR
+    
     # Apply platform-specific precision settings
     if platform_opts.get('fp8_hybrid'):
         recipe.model.config.fp8 = "hybrid"
@@ -55,7 +66,7 @@ def run_pretrain():
         # NeMo handles this automatically based on model config
         pass
     
-    # 5. DISABLE ALL CHECKPOINTING AND INTERMEDIATE SAVES
+    # 6. DISABLE ALL CHECKPOINTING AND INTERMEDIATE SAVES
     # Only logs and benchmark profiles will be saved
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None  # Disable checkpoint callback
@@ -69,7 +80,7 @@ def run_pretrain():
     recipe.trainer.val_check_interval = None
     recipe.trainer.check_val_every_n_epoch = None
     
-    # 6. ADD BENCHMARK CALLBACK (configured from config.yaml)
+    # 7. ADD BENCHMARK CALLBACK (configured from config.yaml)
     benchmark_callback = BenchmarkCallback(
         output_dir=config.get_output_dir(),
         platform="auto",  # Auto-detects CUDA or ROCm
@@ -79,7 +90,7 @@ def run_pretrain():
         recipe.trainer.callbacks = []
     recipe.trainer.callbacks.append(benchmark_callback)
     
-    # 7. EXECUTE
+    # 8. EXECUTE
     run.run(recipe, direct=True)
 
 if __name__ == "__main__":
