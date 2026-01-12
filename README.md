@@ -24,8 +24,6 @@ vim config.yaml             # Edit if needed
 python3 compare.py
 ```
 
-**That's it!** Automatically detects your platform and runs all models.
-
 **All scripts use `config.yaml`** - Edit once, applies everywhere!
 
 ---
