@@ -61,7 +61,6 @@ echo "📁 Output: $OUTPUT_DIR"
 echo "🔧 Num GPUs: $NUM_GPUS"
 echo "📦 Global Batch Size: $GLOBAL_BATCH_SIZE"
 echo "📏 Sequence Length: $SEQ_LENGTH"
-echo "💾 Checkpointing: Disabled (logs and profiles enabled)"
 echo ""
 
 # Log file (use absolute paths to avoid issues when changing directories)
@@ -85,16 +84,10 @@ cd "$PRIMUS_PATH"
 export EXP="$CONFIG_FILE"
 
 # Run training and capture logs
-# Disable checkpointing to save only logs
-echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --no-save-optim --no-save-rng --save-interval 999999"
+echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS"
 echo ""
 
-bash ./examples/run_pretrain.sh \
-    --train_iters $TRAIN_ITERS \
-    --no-save-optim \
-    --no-save-rng \
-    --save-interval 999999 \
-    2>&1 | tee "$LOG_FILE" "$BACKUP_LOG"
+bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS 2>&1 | tee "$LOG_FILE" "$BACKUP_LOG"
 
 EXIT_CODE=${PIPESTATUS[0]}
 

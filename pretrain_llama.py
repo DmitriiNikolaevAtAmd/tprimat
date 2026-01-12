@@ -55,14 +55,15 @@ def run_pretrain():
         # NeMo handles this automatically based on model config
         pass
     
-    # 5. DISABLE CHECKPOINTING BUT KEEP LOGGING/PROFILING
-    # Disable model checkpoints but keep TensorBoard and profiling
+    # 5. DISABLE ALL CHECKPOINTING AND INTERMEDIATE SAVES
+    # Only logs and benchmark profiles will be saved
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None  # Disable checkpoint callback
     recipe.resume = None    # No resume from checkpoint
     
-    # Keep TensorBoard enabled, disable external services only
-    recipe.log.wandb = None  # Disable W&B (external service)
+    # Disable TensorBoard and other loggers (keep only benchmark)
+    recipe.log.tensorboard = None
+    recipe.log.wandb = None
     
     # Set validation to None to avoid validation checkpoints
     recipe.trainer.val_check_interval = None
