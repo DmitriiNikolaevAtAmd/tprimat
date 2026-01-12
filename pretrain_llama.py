@@ -48,14 +48,15 @@ def run_pretrain():
     # 5. OPTIMIZER & LEARNING RATE CONFIGURATION (from config.yaml)
     # Apply learning rate and warmup settings
     recipe.optim.config.lr = config.training.optimizer.learning_rate
+    recipe.optim.config.min_lr = config.training.optimizer.learning_rate * 0.1  # Decay to 10% of peak LR
     recipe.optim.config.weight_decay = config.training.optimizer.weight_decay
     recipe.optim.config.adam_beta1 = config.training.optimizer.beta1
     recipe.optim.config.adam_beta2 = config.training.optimizer.beta2
     
-    # Configure warmup scheduler
-    recipe.optim.config.sched.warmup_steps = config.training.optimizer.warmup_steps
-    recipe.optim.config.sched.constant_steps = 0  # No constant phase, go straight to decay after warmup
-    recipe.optim.config.sched.min_lr = config.training.optimizer.learning_rate * 0.1  # Decay to 10% of peak LR
+    # Configure warmup scheduler (sched is at recipe.optim level, not config)
+    recipe.optim.sched.warmup_steps = config.training.optimizer.warmup_steps
+    recipe.optim.sched.constant_steps = 0  # No constant phase, go straight to decay after warmup
+    recipe.optim.sched.max_steps = config.training.duration.max_steps
     
     # Apply platform-specific precision settings
     if platform_opts.get('fp8_hybrid'):
