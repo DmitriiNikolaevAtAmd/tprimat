@@ -26,6 +26,8 @@ python3 compare.py
 
 **All scripts use `config.yaml`** - Edit once, applies everywhere!
 
+**⚠️ Important:** All optimizer settings (learning rate, warmup, etc.) are now synchronized between NVIDIA and AMD platforms via `config.yaml` for fair comparison.
+
 ---
 
 ## 📋 Table of Contents
@@ -40,6 +42,7 @@ python3 compare.py
   - [Helper Methods](#helper-methods)
   - [Integration Examples](#integration-examples)
   - [Validation](#validation)
+- [Learning Rate Synchronization](#-learning-rate-synchronization)
 - [Configuration Reference](#-configuration-reference)
   - [Core Concepts](#core-concepts)
   - [Comparison Methodologies](#comparison-methodologies)
@@ -154,7 +157,92 @@ parallelism:
       amd:    { TP: 4, PP: 1, DP: 2 }   # platforms
 ```
 
-### Basic Usage
+---
+
+## 🔄 Learning Rate Synchronization
+
+**Ensuring Fair Comparison: Unified Optimizer Configuration**
+
+### Problem Identified
+
+Previously, NVIDIA and AMD platforms used **different learning rates**:
+- **NVIDIA (NeMo)**: `3.0e-4` from `config.yaml` ✓
+- **AMD (Primus)**: `1.0e-5` from hardcoded Primus config files ❌
+- **Difference**: 30x different learning rates made comparisons unfair!
+
+### Solution Implemented
+
+All optimizer parameters are now shared via `config.yaml`:
+
+```yaml
+training:
+  optimizer:
+    learning_rate: 3.0e-4    # Peak LR (same for both platforms)
+    warmup_steps: 10         # Warmup duration
+    weight_decay: 0.1        # Weight decay
+    beta1: 0.9              # Adam beta1
+    beta2: 0.95             # Adam beta2
+```
+
+### How It Works
+
+**NVIDIA (NeMo):**
+- `pretrain_llama.py` and `pretrain_qwen.py` read directly from `config.yaml`
+- No changes needed - already integrated
+
+**AMD (Primus):**
+- `run_primus_llama.sh` and `run_primus_qwen.sh` now export config to shell variables
+- Scripts pass learning rate to Primus via command-line arguments:
+  ```bash
+  bash ./examples/run_pretrain.sh \
+      --lr $LEARNING_RATE \
+      --min_lr $MIN_LEARNING_RATE \
+      --lr_warmup_iters $WARMUP_STEPS \
+      --weight_decay $WEIGHT_DECAY
+  ```
+
+### Verification
+
+**Check configuration is applied:**
+
+```bash
+# Run AMD training - look for these lines in output:
+./run_primus_llama.sh
+
+# Should display:
+# 📈 Learning Rate: 0.0003
+# 📉 Min Learning Rate: 3e-05
+# 🔥 Warmup Steps: 10
+```
+
+**Verify in logs:**
+
+```bash
+# NVIDIA logs
+grep "learning" output/training_llama.log
+
+# AMD logs  
+grep "lr \." output/primus_training_llama_*.log
+# Should show: lr .............................................. 0.0003
+```
+
+### Benefits
+
+✅ **Single source of truth** - All hyperparameters in `config.yaml`  
+✅ **Fair comparison** - Both platforms use identical training configuration  
+✅ **Easy modification** - Change learning rate once, applies everywhere  
+✅ **Reproducibility** - No hidden hyperparameters in separate config files  
+✅ **Transparency** - Learning rate curves in comparison plots show synchronization
+
+### Comparison Impact
+
+With synchronized learning rates, you'll see:
+- **Similar LR schedules** in comparison plots (both warmup, peak, decay)
+- **Comparable loss convergence** (same optimization strategy)
+- **Fair hardware comparison** (identical software configuration)
+- **Valid performance metrics** (throughput, memory remain hardware-dependent)
+
+---
 
 ```python
 from config_loader import load_config
@@ -626,7 +714,8 @@ training:
   
   optimizer:
     type: "adam"                      # Optimizer type
-    learning_rate: 3.0e-4             # Learning rate
+    learning_rate: 3.0e-4             # Learning rate (shared across platforms)
+    warmup_steps: 10                  # LR warmup steps
     weight_decay: 0.1                 # Weight decay
     beta1: 0.9                        # Adam beta1
     beta2: 0.95                       # Adam beta2
@@ -1178,7 +1267,7 @@ MFU = (achieved_FLOPs / peak_FLOPs) × 100%
 | `example_config_usage.py` | Usage examples |
 | **Benchmarking** | |
 | `benchmark.py` | Main benchmark entrypoint |
-| `benchmark_utils.py` | Core benchmarking framework |
+| `utils.py` | Core benchmarking framework |
 | **Python Training (NeMo/NVIDIA)** | |
 | `pretrain_llama.py` | NeMo Llama training (uses config.yaml) |
 | `pretrain_qwen.py` | NeMo Qwen training (uses config.yaml) |

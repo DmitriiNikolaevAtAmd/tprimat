@@ -23,6 +23,12 @@ def main():
         print(f"export CONFIG_MICRO_BATCH_SIZE='{config.training.data.micro_batch_size}'")
         print(f"export CONFIG_SEQ_LENGTH='{config.training.data.seq_length}'")
         
+        # Optimizer configuration
+        print(f"export CONFIG_LEARNING_RATE='{config.training.optimizer.learning_rate}'")
+        print(f"export CONFIG_MIN_LEARNING_RATE='{config.training.optimizer.learning_rate * 0.1}'")
+        print(f"export CONFIG_WARMUP_STEPS='{config.training.optimizer.warmup_steps}'")
+        print(f"export CONFIG_WEIGHT_DECAY='{config.training.optimizer.weight_decay}'")
+        
         # Paths
         print(f"export CONFIG_PRIMUS_PATH='{config.get_primus_path()}'")
         

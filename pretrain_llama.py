@@ -1,6 +1,6 @@
 from nemo.collections import llm
 import nemo_run as run
-from benchmark_utils import BenchmarkCallback
+from utils import BenchmarkCallback
 from config_loader import load_config
 import os
 

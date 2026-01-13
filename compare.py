@@ -65,7 +65,7 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     
     # Create 3x2 grid for comprehensive comparison with elegant styling
     fig, axes = plt.subplots(3, 2, figsize=(16, 13.5), facecolor='white')
-    fig.suptitle('GPU Benchmark Comparison - All Models', fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
+    fig.suptitle('NVIDIA H100 vs AMD Instinct Mi300X', fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
     
     # Flatten axes for easier indexing
     axes = axes.flatten()
@@ -106,7 +106,6 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
         ax1.set_ylabel('Tokens/sec/GPU', fontweight='bold', fontsize=11)
         ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
         ax1.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
-        ax1.tick_params(axis='x', rotation=15)
         
         # Add value labels on bars
         for bar, value in zip(bars, values):
@@ -119,39 +118,37 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
                 ha='center', va='center', transform=ax1.transAxes)
         ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
     
-    # 2. Per-GPU Throughput over Time
+    # 2. GPU Memory Usage (Bar Chart)
     ax2 = axes[1]
-    has_data = False
+    labels = []
+    values = []
+    colors_list = []
     
     for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks and 'raw_step_times' in benchmarks[key]:
-            step_times = benchmarks[key]['raw_step_times']
-            if step_times:
-                steps = range(len(step_times))
-                # Calculate per-step throughput
-                throughput = [(global_batch_size * seq_length) / (t * num_gpus) for t in step_times]
-                
-                style = style_map[key]
-                ax2.plot(steps, throughput, 
-                        marker=style['marker'], 
-                        linestyle=style['linestyle'],
-                        color=style['color'], 
-                        label=style['label'], 
-                        linewidth=1.5, 
-                        markersize=2, 
-                        alpha=0.85)
-                has_data = True
+        if key in benchmarks and 'raw_memory_values' in benchmarks[key]:
+            mem_values = benchmarks[key]['raw_memory_values']
+            if mem_values:
+                avg_memory = sum(mem_values) / len(mem_values)
+                labels.append(style_map[key]['label'])
+                values.append(avg_memory)
+                colors_list.append(style_map[key]['color'])
     
-    if has_data:
-        ax2.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax2.set_ylabel('Tokens/sec/GPU', fontweight='bold', fontsize=11)
-        ax2.set_title('Per-GPU Throughput over Time', fontweight='bold', fontsize=12)
-        ax2.legend(fontsize=8, loc='best')
-        ax2.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+    if values:
+        bars = ax2.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
+        ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
+        ax2.set_title('Average Memory Usage', fontweight='bold', fontsize=12)
+        ax2.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
+        
+        # Add value labels on bars
+        for bar, value in zip(bars, values):
+            height = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{value:.1f}',
+                    ha='center', va='bottom', fontweight='bold', fontsize=9)
     else:
-        ax2.text(0.5, 0.5, 'Step time data not available', 
+        ax2.text(0.5, 0.5, 'Memory data not available', 
                 ha='center', va='center', transform=ax2.transAxes)
-        ax2.set_title('Per-GPU Throughput over Time', fontweight='bold', fontsize=12)
+        ax2.set_title('Average GPU Memory Usage', fontweight='bold', fontsize=12)
     
     # 3. Training Loss over Time
     ax3 = axes[2]
@@ -207,14 +204,14 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     if has_data:
         ax4.set_xlabel('Step', fontweight='bold', fontsize=10)
         ax4.set_ylabel('Learning Rate', fontweight='bold', fontsize=11)
-        ax4.set_title('Learning Rate Schedule', fontweight='bold', fontsize=12)
+        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=12)
         ax4.legend(fontsize=8, loc='best')
         ax4.grid(alpha=0.2, linestyle='--', linewidth=0.5)
         ax4.ticklabel_format(axis='y', style='scientific', scilimits=(0,0))
     else:
         ax4.text(0.5, 0.5, 'Learning rate data not available', 
                 ha='center', va='center', transform=ax4.transAxes)
-        ax4.set_title('Learning Rate Schedule', fontweight='bold', fontsize=12)
+        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=12)
     
     # 5. GPU Memory Usage over Time
     ax5 = axes[4]
@@ -239,13 +236,13 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     if has_data:
         ax5.set_xlabel('Step', fontweight='bold', fontsize=10)
         ax5.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
-        ax5.set_title('GPU Memory Usage over Time', fontweight='bold', fontsize=12)
+        ax5.set_title('Memory Usage over Time', fontweight='bold', fontsize=12)
         ax5.legend(fontsize=8, loc='best')
         ax5.grid(alpha=0.2, linestyle='--', linewidth=0.5)
     else:
         ax5.text(0.5, 0.5, 'Memory time series not available', 
                 ha='center', va='center', transform=ax5.transAxes)
-        ax5.set_title('GPU Memory Usage over Time', fontweight='bold', fontsize=12)
+        ax5.set_title('Memory Usage over Time', fontweight='bold', fontsize=12)
     
     # 6. Step Duration over Time
     ax6 = axes[5]

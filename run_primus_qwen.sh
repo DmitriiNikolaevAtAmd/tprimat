@@ -31,6 +31,12 @@ NUM_GPUS="${CONFIG_AMD_NUM_GPUS:-8}"
 GLOBAL_BATCH_SIZE="${CONFIG_GLOBAL_BATCH_SIZE:-128}"
 SEQ_LENGTH="${CONFIG_SEQ_LENGTH:-2048}"
 
+# Optimizer parameters from config.yaml
+LEARNING_RATE="${CONFIG_LEARNING_RATE:-3.0e-4}"
+MIN_LEARNING_RATE="${CONFIG_MIN_LEARNING_RATE:-3.0e-5}"
+WARMUP_STEPS="${CONFIG_WARMUP_STEPS:-10}"
+WEIGHT_DECAY="${CONFIG_WEIGHT_DECAY:-0.1}"
+
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 
@@ -61,6 +67,9 @@ echo "📁 Output: $OUTPUT_DIR"
 echo "🔧 Num GPUs: $NUM_GPUS"
 echo "📦 Global Batch Size: $GLOBAL_BATCH_SIZE"
 echo "📏 Sequence Length: $SEQ_LENGTH"
+echo "📈 Learning Rate: $LEARNING_RATE"
+echo "📉 Min Learning Rate: $MIN_LEARNING_RATE"
+echo "🔥 Warmup Steps: $WARMUP_STEPS"
 echo ""
 
 # Log file (use absolute paths to avoid issues when changing directories)
@@ -84,10 +93,16 @@ cd "$PRIMUS_PATH"
 export EXP="$CONFIG_FILE"
 
 # Run training and capture logs
-echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS"
+echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --weight_decay $WEIGHT_DECAY"
 echo ""
 
-bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS 2>&1 | tee "$LOG_FILE" "$BACKUP_LOG"
+bash ./examples/run_pretrain.sh \
+    --train_iters $TRAIN_ITERS \
+    --lr $LEARNING_RATE \
+    --min_lr $MIN_LEARNING_RATE \
+    --lr_warmup_iters $WARMUP_STEPS \
+    --weight_decay $WEIGHT_DECAY \
+    2>&1 | tee "$LOG_FILE" "$BACKUP_LOG"
 
 EXIT_CODE=${PIPESTATUS[0]}
 

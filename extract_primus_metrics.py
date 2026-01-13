@@ -37,6 +37,11 @@ def round_floats(obj: Any, precision: int = 5) -> Any:
         Object with all floats rounded
     """
     if isinstance(obj, float):
+        # Use higher precision for very small numbers (like learning rates)
+        # to avoid rounding 5e-6 and 1e-5 to the same value
+        if abs(obj) < 0.001 and obj != 0:
+            # For learning rates and other small values, preserve more precision
+            return round(obj, 10)  # 10 decimal places for small values
         return round(obj, precision)
     elif isinstance(obj, dict):
         return {key: round_floats(value, precision) for key, value in obj.items()}
