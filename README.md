@@ -661,6 +661,252 @@ Each plot includes 6 subplots:
 
 ---
 
+## Peak Throughput Analysis
+
+TPrimat includes comprehensive tools for analyzing peak throughput across all your benchmark configurations.
+
+### Quick Start
+
+```bash
+# Analyze peak throughput across all configurations
+python3 analyze_peak_throughput.py
+
+# Show all configurations (not just peaks)
+python3 analyze_peak_throughput.py --show-all
+
+# Generate visualization
+python3 visualize_peak_throughput.py
+```
+
+### What You Get
+
+**1. Peak Throughput Analysis (`analyze_peak_throughput.py`)**
+
+Comprehensive analysis showing:
+- Peak tokens/second for each platform-model combination
+- Total TFLOPS achieved
+- Hardware utilization percentage
+- Per-GPU performance metrics
+- Multi-node scaling projections
+- Daily training capacity estimates
+
+**Example output:**
+```
+🥇 OVERALL PEAK THROUGHPUT
+Best Configuration: AMD Instinct MI300X - qwen
+Peak Throughput:    87,933 tokens/s
+                    4,009.8 TFLOPS total
+                    501.2 TFLOPS per GPU
+Hardware:           8 × AMD Instinct MI300X
+HW Utilization:     38.3%
+
+Projected Training Capacity (24h at peak):
+  Tokens:         7,597,433,417 (7.6B tokens)
+  Samples:        3,709,684
+```
+
+**2. Peak Throughput Visualization (`visualize_peak_throughput.py`)**
+
+Creates `peak_throughput_analysis.png` with 9 comprehensive plots:
+- Peak throughput comparison (tokens/s)
+- Peak compute performance (TFLOPS)
+- Hardware utilization by configuration
+- Per-GPU throughput and TFLOPS
+- Average step time comparison
+- Configuration distribution (box plots)
+- Best platform performance
+
+**3. Peak Throughput Guide (`PEAK_THROUGHPUT_GUIDE.md`)**
+
+Detailed documentation including:
+- How to estimate peak throughput for your hardware
+- Understanding TFLOPS and hardware utilization
+- Configuration impact analysis
+- Scaling projections
+- Performance optimization recommendations
+
+### Key Insights from Analysis
+
+**Platform Winners:**
+- **AMD MI300X**: Peak 87,933 tokens/s (38.3% utilization)
+- **NVIDIA H100**: Peak 78,877 tokens/s (22.7% utilization)
+- **Speedup**: AMD is 1.11x faster at peak
+
+**Configuration Impact:**
+- **Best configs**: 60-88K tokens/s
+- **Worst configs**: 6-20K tokens/s
+- **Range**: Up to 14x performance difference!
+
+**Hardware Utilization:**
+- **Good**: 30-40% (realistic for LLM training)
+- **Average**: 15-25%
+- **Poor**: 5-10%
+
+### Understanding Peak Metrics
+
+#### Tokens per Second
+Raw throughput for processing training tokens. Higher is better.
+
+#### TFLOPS (Tera Floating-Point Operations per Second)
+Computational intensity. Calculated as:
+```
+TFLOPS = (tokens/s × FLOPs_per_token) / 1e12
+```
+
+For our models:
+- Llama 3.1 8B: 48 billion FLOPs per token
+- Qwen 2.5 7B: 45.6 billion FLOPs per token
+
+#### Hardware Utilization
+Percentage of theoretical peak performance achieved:
+```
+Utilization = (Achieved TFLOPS / Theoretical Peak) × 100
+```
+
+Theoretical peaks:
+- AMD MI300X: 1,307 TFLOPS per GPU
+- NVIDIA H100: 1,979 TFLOPS per GPU
+
+#### Why Not 100% Utilization?
+
+Real-world LLM training achieves 20-40% utilization due to:
+1. Memory bandwidth bottlenecks
+2. Multi-GPU communication overhead
+3. Framework inefficiencies
+4. Non-compute operations (I/O, data loading)
+
+**38% utilization is excellent for production workloads!**
+
+### Estimating Peak for Your Setup
+
+**Step 1: Run benchmarks across configurations**
+```bash
+./run_all_configs.sh
+```
+
+**Step 2: Analyze peak performance**
+```bash
+python3 analyze_peak_throughput.py --show-all > analysis.txt
+```
+
+**Step 3: Identify best configuration**
+Look for highest tokens/s in the results table.
+
+**Step 4: Project to your scale**
+```python
+# Example: Scale to 4 nodes (32 GPUs)
+peak_1_node = 87_933  # tokens/s
+scaling_efficiency = 0.90  # 90% (realistic)
+nodes = 4
+
+projected_throughput = peak_1_node * nodes * scaling_efficiency
+# = 316,547 tokens/s
+```
+
+### Multi-Node Scaling
+
+Based on peak single-node performance (87,933 tokens/s):
+
+| Nodes | GPUs | Tokens/s (Linear) | Tokens/s (90% Eff) | Daily Tokens |
+|-------|------|-------------------|-------------------|--------------|
+| 1 | 8 | 87,933 | 87,933 | 7.6B |
+| 2 | 16 | 175,867 | 158,280 | 13.7B |
+| 4 | 32 | 351,733 | 316,560 | 27.4B |
+| 8 | 64 | 703,466 | 633,119 | 54.7B |
+
+**Note**: Requires high-speed interconnect (InfiniBand, RoCE) for efficient scaling.
+
+### Performance Recommendations
+
+**For Maximum Throughput:**
+1. Use the best platform-model combo (AMD MI300X + Qwen)
+2. Choose the best configuration from analysis
+3. Monitor hardware utilization (aim for >30%)
+4. Test different parallelism strategies
+
+**For Cost Efficiency:**
+1. Optimize hardware utilization
+2. Use configurations with best TFLOPS per dollar
+3. Consider multi-node only if >85% scaling efficiency
+
+**For Memory-Constrained:**
+1. Use memory_optimized configuration (TP=4, PP=2)
+2. AMD MI300X has 2.4x more memory (192GB vs 80GB)
+3. Check per-GPU memory in analysis
+
+### Files Generated
+
+After running the analysis tools:
+```
+tprimat/
+├── peak_throughput_analysis.png    # Comprehensive visualization
+├── peak_throughput_summary.txt     # Full text analysis
+└── PEAK_THROUGHPUT_GUIDE.md        # Detailed documentation
+```
+
+### API Reference
+
+#### analyze_peak_throughput.py
+```bash
+python3 analyze_peak_throughput.py [OPTIONS]
+
+Options:
+  --show-all    Show all configurations, not just peaks
+```
+
+**Output:**
+- Peak throughput by platform-model
+- Overall peak performance
+- Throughput scaling projections
+- Complete results table
+
+#### visualize_peak_throughput.py
+```bash
+python3 visualize_peak_throughput.py
+```
+
+**Output:**
+- Creates `peak_throughput_analysis.png`
+- 9 comprehensive comparison plots
+- Peak performance highlighted
+
+### Example Workflow
+
+```bash
+# 1. Run comprehensive benchmarks
+./run_all_configs.sh
+
+# 2. Analyze peak throughput
+python3 analyze_peak_throughput.py --show-all
+
+# 3. Generate visualization
+python3 visualize_peak_throughput.py
+
+# 4. Read detailed guide
+cat PEAK_THROUGHPUT_GUIDE.md
+```
+
+### Understanding Your Results
+
+**Good Performance:**
+- Hardware utilization: 30-40%
+- Tokens/s: >60K for 8 GPUs
+- TFLOPS per GPU: >400
+
+**Average Performance:**
+- Hardware utilization: 15-25%
+- Tokens/s: 20-60K for 8 GPUs
+- TFLOPS per GPU: 200-400
+
+**Poor Performance:**
+- Hardware utilization: <15%
+- Tokens/s: <20K for 8 GPUs
+- TFLOPS per GPU: <200
+
+If you're seeing poor performance, try different parallelism strategies!
+
+---
+
 ## Advanced Topics
 
 ### Environment Variables
