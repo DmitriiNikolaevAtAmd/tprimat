@@ -68,7 +68,7 @@ training:
     keep_last_n: 2
 
 parallelism:
-  maximum_performance:
+  maximum_performance: # 00
     llama:
       nvidia:
         tensor_model_parallel_size: 4    # TP=4
@@ -92,7 +92,7 @@ parallelism:
         data_parallel_size: 8            # Calculated: 8/(1*1) = 8
         gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
   
-  identical_config:
+  identical_config: # 01
     llama:
       nvidia:
         tensor_model_parallel_size: 4
@@ -100,10 +100,10 @@ parallelism:
         data_parallel_size: 2
         gradient_accumulation_steps: 64
       amd:
-        tensor_model_parallel_size: 4    # Same as NVIDIA
-        pipeline_model_parallel_size: 1  # Same as NVIDIA
-        data_parallel_size: 2            # Same as NVIDIA
-        gradient_accumulation_steps: 64  # Same as NVIDIA
+        tensor_model_parallel_size: 4    
+        pipeline_model_parallel_size: 1  
+        data_parallel_size: 2            
+        gradient_accumulation_steps: 64  
     qwen:
       nvidia:
         tensor_model_parallel_size: 4
@@ -111,12 +111,12 @@ parallelism:
         data_parallel_size: 1
         gradient_accumulation_steps: 128
       amd:
-        tensor_model_parallel_size: 4    # Same as NVIDIA
-        pipeline_model_parallel_size: 2  # Same as NVIDIA
-        data_parallel_size: 1            # Same as NVIDIA
-        gradient_accumulation_steps: 128 # Same as NVIDIA
+        tensor_model_parallel_size: 4    
+        pipeline_model_parallel_size: 2  
+        data_parallel_size: 1            
+        gradient_accumulation_steps: 128 
   
-  memory_optimized:
+  memory_optimized: # 02
     llama:
       nvidia:
         tensor_model_parallel_size: 8    # TP=8 (aggressive model sharding)
@@ -140,7 +140,7 @@ parallelism:
         data_parallel_size: 4            # Calculated: 8/(2*1) = 4
         gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
   
-  minimal_communication:
+  minimal_communication: # 03
     llama:
       nvidia:
         tensor_model_parallel_size: 1    # TP=1 (no tensor parallel communication)
@@ -164,7 +164,7 @@ parallelism:
         data_parallel_size: 8            # Calculated: 8/(1*1) = 8
         gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
   
-  balanced:
+  balanced: # 04
     llama:
       nvidia:
         tensor_model_parallel_size: 2    # TP=2 (moderate sharding)
@@ -274,7 +274,7 @@ comparison:
     format: "png"
     dpi: 300
     style: "seaborn"
-    filename: "comparison.png"
+    filename: "compare.png"
   report:
     format: "markdown"
     filename: "comparison_report.md"

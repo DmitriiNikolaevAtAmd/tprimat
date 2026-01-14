@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 import matplotlib.pyplot as plt
@@ -60,12 +61,26 @@ def load_all_benchmark_results(results_dir: str) -> Dict[str, Dict]:
 # PLOTTING
 # ============================================================================
 
-def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comparison.png"):
+def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "compare.png"):
     """Create visual comparison of all platform-model combinations."""
+    
+    # Detect which platforms are available
+    has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
+    has_amd = any(key.startswith('amd-') for key in benchmarks.keys())
+    
+    # Create dynamic title based on available data
+    if has_nvidia and has_amd:
+        title = 'NVIDIA H100 vs AMD Instinct Mi300X'
+    elif has_nvidia:
+        title = 'NVIDIA H100 Benchmark Results'
+    elif has_amd:
+        title = 'AMD Instinct Mi300X Benchmark Results'
+    else:
+        title = 'GPU Benchmark Results'
     
     # Create 3x2 grid for comprehensive comparison with elegant styling
     fig, axes = plt.subplots(3, 2, figsize=(16, 13.5), facecolor='white')
-    fig.suptitle('NVIDIA H100 vs AMD Instinct Mi300X', fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
+    fig.suptitle(title, fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
     
     # Flatten axes for easier indexing
     axes = axes.flatten()
@@ -86,24 +101,37 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     seq_length = config.get('sequence_length', 2048)
     num_gpus = config.get('num_gpus', 8)
     
-    # 1. Per-GPU Throughput (Bar Chart)
+    # 1. Per-GPU Throughput (Bar Chart) - in TFLOP/s
     ax1 = axes[0]
     labels = []
     values = []
     colors_list = []
+    
+    # Model FLOPs per token: approximately 6 × num_parameters for transformers
+    model_flops_per_token = {
+        'llama': 6 * 8.0e9,   # 48 billion FLOPs per token (Llama 3.1 8B)
+        'qwen': 6 * 7.6e9,    # 45.6 billion FLOPs per token (Qwen 2.5 7B)
+    }
     
     for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
         if key in benchmarks:
             perf = benchmarks[key]['performance_metrics']
             tps_gpu = perf.get('tokens_per_second_per_gpu')
             if tps_gpu:
+                # Determine model type from key
+                model_type = 'llama' if 'llama' in key else 'qwen'
+                flops_per_token = model_flops_per_token[model_type]
+                
+                # Convert tokens/s/GPU to TFLOP/s/GPU
+                tflops_per_gpu = (tps_gpu * flops_per_token) / 1e12
+                
                 labels.append(style_map[key]['label'])
-                values.append(tps_gpu)
+                values.append(tflops_per_gpu)
                 colors_list.append(style_map[key]['color'])
     
     if values:
         bars = ax1.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
-        ax1.set_ylabel('Tokens/sec/GPU', fontweight='bold', fontsize=11)
+        ax1.set_ylabel('TFLOP/s/GPU', fontweight='bold', fontsize=11)
         ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
         ax1.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
         
@@ -111,10 +139,10 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
         for bar, value in zip(bars, values):
             height = bar.get_height()
             ax1.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{value:,.0f}',
+                    f'{value:.1f}',
                     ha='center', va='bottom', fontweight='bold', fontsize=9)
     else:
-        ax1.text(0.5, 0.5, 'Tokens/sec/GPU data not available', 
+        ax1.text(0.5, 0.5, 'TFLOP/s/GPU data not available', 
                 ha='center', va='center', transform=ax1.transAxes)
         ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
     
@@ -390,8 +418,10 @@ def main():
     parser = argparse.ArgumentParser(
         description='GPU benchmark comparison - all models and platforms'
     )
-    parser.add_argument('--results-dir', default='./output',
-                       help='Directory containing benchmark JSON files')
+    # Default to OUTPUT_DIR env var if set, otherwise './output'
+    default_dir = os.environ.get('OUTPUT_DIR', './output')
+    parser.add_argument('--results-dir', default=default_dir,
+                       help='Directory containing benchmark JSON files (default: OUTPUT_DIR env var or ./output)')
     
     args = parser.parse_args()
     
@@ -400,18 +430,36 @@ def main():
     
     if not benchmarks:
         print("❌ No benchmark results found!")
-        print("Expected files: benchmark_cuda_llama.json, benchmark_cuda_qwen.json, benchmark_rocm_llama.json, benchmark_rocm_qwen.json")
+        print(f"Expected files in {args.results_dir}/:")
+        print("  - benchmark_cuda_llama.json, benchmark_cuda_qwen.json (for NVIDIA)")
+        print("  - benchmark_rocm_llama.json, benchmark_rocm_qwen.json (for AMD)")
         return 1
+    
+    # Detect which platforms are available
+    has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
+    has_amd = any(key.startswith('amd-') for key in benchmarks.keys())
     
     print(f"\n📊 Found {len(benchmarks)} benchmark(s):")
     for key in sorted(benchmarks.keys()):
         data = benchmarks[key]
         print(f"  {key}: {data['gpu_info']['device_name']} ({data['timestamp']})")
     
+    # Show platform availability
+    print(f"\n🔍 Platform availability:")
+    print(f"  NVIDIA: {'✓ Available' if has_nvidia else '✗ Not available'}")
+    print(f"  AMD:    {'✓ Available' if has_amd else '✗ Not available'}")
+    
+    if not has_nvidia and not has_amd:
+        print("⚠️  Warning: No recognized platform data found")
+    elif not has_nvidia:
+        print("ℹ️  Note: Generating AMD-only comparison (no NVIDIA data)")
+    elif not has_amd:
+        print("ℹ️  Note: Generating NVIDIA-only comparison (no AMD data)")
+    
     # Generate comparison plot with all models
     print("\nGenerating comparison plot...")
     try:
-        create_comparison_plot(benchmarks, "comparison.png")
+        create_comparison_plot(benchmarks, "compare.png")
     except Exception as e:
         print(f"⚠️  Could not generate plot: {e}")
         import traceback

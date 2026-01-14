@@ -838,7 +838,7 @@ export TRAIN_ITERS=50
 
 # 3. Compare results (on either system)
 python3 compare.py
-# → Creates: comparison.png with all metrics
+# → Creates: compare.png with all metrics
 ```
 
 ---
@@ -937,7 +937,7 @@ python3 compare.py
 ```
 
 **Output includes:**
-- Visual charts (comparison.png)
+- Visual charts (compare.png)
 - Throughput comparison
 - Memory efficiency
 - Cost per trillion tokens
@@ -1204,7 +1204,7 @@ output/
 ├── benchmark_rocm_qwen.json       # AMD Qwen results
 └── training_*.log                 # Training logs (Primus)
 
-comparison.png                     # Visual comparison
+compare.png                       # Visual comparison
 config.yaml                        # Configuration file
 ```
 

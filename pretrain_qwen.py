@@ -26,7 +26,10 @@ def run_pretrain():
     
     # Get model name and parallelism settings from config
     model_name = "qwen"
-    parallelism = config.get_parallelism(model_name, platform)
+    # Allow overriding methodology via environment variable (for different configurations)
+    methodology = os.environ.get('TPRIMAT_METHODOLOGY', config.get_methodology())
+    print(f"🔧 Using methodology: {methodology}")
+    parallelism = config.get_parallelism(model_name, platform, methodology=methodology)
     platform_opts = config.get_platform_optimizations(platform)
     
     # Set PyTorch memory allocator for better fragmentation handling
@@ -45,6 +48,10 @@ def run_pretrain():
     
     # 2. PARALLELISM CONFIGURATION (from config.yaml)
     # TP * PP * DP = num_gpus
+    print(f"🔧 Parallelism: TP={parallelism['tensor_model_parallel_size']}, "
+          f"PP={parallelism['pipeline_model_parallel_size']}, "
+          f"DP={parallelism['data_parallel_size']}, "
+          f"GradAccum={parallelism['gradient_accumulation_steps']}")
     recipe.trainer.strategy.tensor_model_parallel_size = parallelism['tensor_model_parallel_size']
     recipe.trainer.strategy.pipeline_model_parallel_size = parallelism['pipeline_model_parallel_size']
     

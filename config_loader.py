@@ -153,8 +153,8 @@ class Config:
         return dict(self.benchmarking)
     
     def get_output_dir(self) -> str:
-        """Get output directory path."""
-        return self.benchmarking.output.directory
+        """Get output directory path (can be overridden by OUTPUT_DIR env var)."""
+        return os.environ.get('OUTPUT_DIR', self.benchmarking.output.directory)
     
     def get_log_filename(self, model: str) -> str:
         """Get log filename for model."""
