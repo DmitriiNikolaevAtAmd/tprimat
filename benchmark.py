@@ -174,7 +174,7 @@ def find_log_file(model: str) -> Optional[str]:
 
 def extract_metrics(log_file: str, model: str, num_gpus: int = 8, 
                    global_batch_size: int = 128, sequence_length: int = 2048,
-                   parallel_strategy: str = "unknown") -> bool:
+                   parallel_strategy: str = "unknown", output_dir: str = "./output") -> bool:
     """
     Extract metrics from Primus log file.
     
@@ -185,14 +185,19 @@ def extract_metrics(log_file: str, model: str, num_gpus: int = 8,
         global_batch_size: Global batch size
         sequence_length: Sequence length
         parallel_strategy: Parallelism strategy name
+        output_dir: Output directory for JSON results
         
     Returns:
         True if successful, False otherwise
     """
+    # Determine output path
+    output_path = os.path.join(output_dir, f"benchmark_rocm_{model}.json")
+    
     cmd = [
         "python3", "extract_primus_metrics.py",
         "--log-file", log_file,
         "--model-name", model,
+        "--output", output_path,
         "--num-gpus", str(num_gpus),
         "--global-batch-size", str(global_batch_size),
         "--sequence-length", str(sequence_length),
@@ -285,7 +290,10 @@ def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[
         # Get parallel strategy from environment or default to "unknown"
         parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', 'unknown')
         
-        if extract_metrics(log_file, model, parallel_strategy=parallel_strategy):
+        # Get output directory from environment or default
+        output_dir = os.environ.get('OUTPUT_DIR', './output')
+        
+        if extract_metrics(log_file, model, parallel_strategy=parallel_strategy, output_dir=output_dir):
             successful.append(model)
             print(f"{Colors.GREEN}✅ {model} metrics extracted successfully{Colors.NC}")
         else:

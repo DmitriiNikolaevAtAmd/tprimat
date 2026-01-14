@@ -125,12 +125,17 @@ if [ $EXIT_CODE -eq 0 ]; then
     
     cd "$TPRIMAT_PATH"
     
+    # Get parallel strategy from environment (if set)
+    PARALLEL_STRATEGY="${TPRIMAT_PARALLEL:-unknown}"
+    
     python3 extract_primus_metrics.py \
         --log-file "$LOG_FILE" \
         --model-name "$MODEL" \
+        --output "$OUTPUT_DIR/benchmark_rocm_${MODEL}.json" \
         --num-gpus "$NUM_GPUS" \
         --global-batch-size "$GLOBAL_BATCH_SIZE" \
-        --sequence-length "$SEQ_LENGTH"
+        --sequence-length "$SEQ_LENGTH" \
+        --parallel-strategy "$PARALLEL_STRATEGY"
     
     if [ $? -eq 0 ]; then
         echo ""

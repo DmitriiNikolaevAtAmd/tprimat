@@ -15,7 +15,14 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional
+
+try:
+    from config_loader import load_config
+    CONFIG_LOADER_AVAILABLE = True
+except ImportError:
+    CONFIG_LOADER_AVAILABLE = False
+    print("⚠️  config_loader not available - parallelism details will be limited")
 
 try:
     import torch
@@ -258,7 +265,42 @@ def extract_memory_from_log(log_file):
     return memory_values
 
 
-def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
+def get_parallelism_config(strategy: str, model: str, platform: str) -> Dict[str, Any]:
+    """
+    Get parallelism configuration from config.yaml.
+    
+    Args:
+        strategy: Parallelism strategy name
+        model: Model name (llama, qwen)
+        platform: Platform (amd, nvidia/nvd)
+        
+    Returns:
+        Dictionary with parallelism parameters or minimal info if unavailable
+    """
+    if not CONFIG_LOADER_AVAILABLE or not strategy or strategy == "unknown":
+        return {"strategy": strategy or "unknown"}
+    
+    try:
+        config = load_config()
+        # Normalize platform name (nvd -> nvidia)
+        platform_normalized = "nvidia" if platform in ["nvd", "nvidia"] else "amd"
+        
+        # Get parallelism config for this strategy/model/platform
+        params = config.get_parallelism(model, platform_normalized, methodology=strategy)
+        
+        return {
+            "strategy": strategy,
+            "tensor_parallel_size": params.get("tensor_model_parallel_size", 1),
+            "pipeline_parallel_size": params.get("pipeline_model_parallel_size", 1),
+            "data_parallel_size": params.get("data_parallel_size", 1),
+            "gradient_accumulation_steps": params.get("gradient_accumulation_steps", 1),
+        }
+    except Exception as e:
+        print(f"⚠️  Could not load parallelism config: {e}")
+        return {"strategy": strategy or "unknown"}
+
+
+def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, parallel_strategy=None, model_name=None):
     """Extract comprehensive metrics from Primus training log."""
     
     print(f"Analyzing log file: {log_file}")
@@ -344,20 +386,24 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
     
     steps_per_second = 1.0 / avg_step_time
     
-    # Try to extract parallelism configuration from environment or log
-    parallelism_info = {}
+    # Get parallelism configuration from config.yaml
     import os
-    parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', None)
-    if parallel_strategy:
-        parallelism_info["strategy_name"] = parallel_strategy
-        # Could potentially parse TP/PP/DP from Primus log if available
-        # For now, just store the strategy name
+    # Priority: explicit argument > environment variable
+    if not parallel_strategy:
+        parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', None)
+    
+    # Load full parallelism config from config.yaml
+    parallelism_config = get_parallelism_config(
+        parallel_strategy or "unknown",
+        model_name or "llama",  # Default to llama if not specified
+        platform
+    )
     
     results = {
         "platform": platform,
         "gpu_info": gpu_info,
         "timestamp": datetime.now().isoformat(),
-        "parallelism_config": parallelism_info if parallelism_info else {"strategy_name": "unknown"},
+        "parallelism": parallelism_config,
         "training_config": {
             "max_steps": len(step_times),
             "global_batch_size": global_batch_size,
@@ -445,6 +491,8 @@ Examples:
                        help='Global batch size (total across all GPUs)')
     parser.add_argument('--sequence-length', type=int, default=2048,
                        help='Sequence length (default: 2048)')
+    parser.add_argument('--parallel-strategy', 
+                       help='Parallelism strategy name (e.g., balanced, minimal_communication)')
     parser.add_argument('--verbose', action='store_true',
                        help='Print verbose output')
     
@@ -476,7 +524,9 @@ Examples:
         str(log_file),
         args.num_gpus,
         args.global_batch_size,
-        args.sequence_length
+        args.sequence_length,
+        args.parallel_strategy,
+        args.model_name
     )
     
     if results:
