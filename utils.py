@@ -39,12 +39,13 @@ def round_floats(obj: Any, precision: int = 5) -> Any:
 class BenchmarkCallback(Callback):
     """Callback to collect platform-agnostic performance metrics."""
     
-    def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None):
+    def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, parallel_strategy: str = "unknown"):
         """
         Args:
             output_dir: Directory to save benchmark results
             platform: 'cuda', 'rocm', or 'auto' for auto-detection
             model_name: Name of the model (e.g., 'llama', 'qwen')
+            parallel_strategy: Parallelism strategy name (e.g., 'minimal_communication', 'balanced')
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -73,6 +74,7 @@ class BenchmarkCallback(Callback):
         self.sequence_length = None
         self.num_gpus = None
         self.model_name = model_name
+        self.parallel_strategy = parallel_strategy
     
     def _get_gpu_core_count(self, device_name: str, device_props) -> int:
         """
@@ -337,6 +339,7 @@ class BenchmarkCallback(Callback):
                     "micro_batch_size": getattr(trainer.datamodule, 'micro_batch_size', 'N/A'),
                     "sequence_length": self.sequence_length or 'N/A',
                     "num_gpus": self.num_gpus,
+                    "parallel_strategy": self.parallel_strategy,
                 },
                 "performance_metrics": {
                     "total_steps": len(self.step_times),
