@@ -101,8 +101,40 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     seq_length = config.get('sequence_length', 2048)
     num_gpus = config.get('num_gpus', 8)
     
-    # 1. Per-GPU Throughput (Bar Chart) - in TFLOP/s
+    # 1. Total Throughput (Bar Chart)
     ax1 = axes[0]
+    labels = []
+    values = []
+    colors_list = []
+    
+    for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
+        if key in benchmarks:
+            perf = benchmarks[key]['performance_metrics']
+            tps = perf.get('tokens_per_second')
+            if tps:
+                labels.append(style_map[key]['label'])
+                values.append(tps)
+                colors_list.append(style_map[key]['color'])
+    
+    if values:
+        bars = ax1.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
+        ax1.set_ylabel('Tokens/s', fontweight='bold', fontsize=11)
+        ax1.set_title('Total System Throughput', fontweight='bold', fontsize=12)
+        ax1.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
+        
+        # Add value labels on bars
+        for bar, value in zip(bars, values):
+            height = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{value:,.0f}',
+                    ha='center', va='bottom', fontweight='bold', fontsize=9)
+    else:
+        ax1.text(0.5, 0.5, 'Throughput data not available', 
+                ha='center', va='center', transform=ax1.transAxes)
+        ax1.set_title('Total System Throughput', fontweight='bold', fontsize=12)
+    
+    # 2. Per-GPU Throughput (Bar Chart) - in TFLOP/s
+    ax2 = axes[1]
     labels = []
     values = []
     colors_list = []
@@ -130,41 +162,9 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
                 colors_list.append(style_map[key]['color'])
     
     if values:
-        bars = ax1.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
-        ax1.set_ylabel('TFLOP/s/GPU', fontweight='bold', fontsize=11)
-        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
-        ax1.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
-        
-        # Add value labels on bars
-        for bar, value in zip(bars, values):
-            height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{value:.1f}',
-                    ha='center', va='bottom', fontweight='bold', fontsize=9)
-    else:
-        ax1.text(0.5, 0.5, 'TFLOP/s/GPU data not available', 
-                ha='center', va='center', transform=ax1.transAxes)
-        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
-    
-    # 2. GPU Memory Usage (Bar Chart)
-    ax2 = axes[1]
-    labels = []
-    values = []
-    colors_list = []
-    
-    for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks and 'raw_memory_values' in benchmarks[key]:
-            mem_values = benchmarks[key]['raw_memory_values']
-            if mem_values:
-                avg_memory = sum(mem_values) / len(mem_values)
-                labels.append(style_map[key]['label'])
-                values.append(avg_memory)
-                colors_list.append(style_map[key]['color'])
-    
-    if values:
         bars = ax2.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
-        ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
-        ax2.set_title('Average Memory Usage', fontweight='bold', fontsize=12)
+        ax2.set_ylabel('TFLOP/s/GPU', fontweight='bold', fontsize=11)
+        ax2.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
         ax2.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
         
         # Add value labels on bars
@@ -174,9 +174,9 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
                     f'{value:.1f}',
                     ha='center', va='bottom', fontweight='bold', fontsize=9)
     else:
-        ax2.text(0.5, 0.5, 'Memory data not available', 
+        ax2.text(0.5, 0.5, 'TFLOP/s/GPU data not available', 
                 ha='center', va='center', transform=ax2.transAxes)
-        ax2.set_title('Average GPU Memory Usage', fontweight='bold', fontsize=12)
+        ax2.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
     
     # 3. Training Loss over Time
     ax3 = axes[2]

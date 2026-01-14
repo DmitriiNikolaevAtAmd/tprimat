@@ -1,0 +1,163 @@
+====================================================================================================
+PEAK THROUGHPUT ANALYSIS
+====================================================================================================
+
+Found 28 benchmark file(s)
+
+🏆 PEAK THROUGHPUT BY CONFIGURATION
+====================================================================================================
+
+📊 AMD Instinct MI300X - llama
+   Configuration: 02-output
+   Peak Tokens/s: 68,875
+   Per-GPU:       8,609 tokens/s
+   Total TFLOPS:  3,306.0
+   Per-GPU:       413.2 TFLOPS
+   Step Time:     15.15s (min), 15.22s (avg)
+   HW Utilization: 31.6% of theoretical peak
+   Theoretical:   10,456 TFLOPS (8 × 1307 TFLOPS)
+
+   Other configurations:
+     • 01-output: 68,728 tokens/s (3,299.0 TFLOPS, 31.6% util)
+     • 00-output: 68,712 tokens/s (3,298.2 TFLOPS, 31.5% util)
+     • 04-output: 68,678 tokens/s (3,296.6 TFLOPS, 31.5% util)
+
+📊 AMD Instinct MI300X - qwen
+   Configuration: 01-output
+   Peak Tokens/s: 87,933
+   Per-GPU:       10,992 tokens/s
+   Total TFLOPS:  4,009.8
+   Per-GPU:       501.2 TFLOPS
+   Step Time:     14.72s (min), 14.91s (avg)
+   HW Utilization: 38.3% of theoretical peak
+   Theoretical:   10,456 TFLOPS (8 × 1307 TFLOPS)
+
+   Other configurations:
+     • 00-output: 87,928 tokens/s (4,009.5 TFLOPS, 38.3% util)
+     • 02-output: 87,768 tokens/s (4,002.2 TFLOPS, 38.3% util)
+     • 04-output: 87,767 tokens/s (4,002.2 TFLOPS, 38.3% util)
+
+📊 NVIDIA H100 80GB HBM3 - llama
+   Configuration: output-05
+   Peak Tokens/s: 59,175
+   Per-GPU:       7,397 tokens/s
+   Total TFLOPS:  2,840.4
+   Per-GPU:       355.1 TFLOPS
+   Step Time:     4.01s (min), 4.43s (avg)
+   HW Utilization: 17.9% of theoretical peak
+   Theoretical:   15,832 TFLOPS (8 × 1979 TFLOPS)
+
+   Other configurations:
+     • output-03: 48,062 tokens/s (2,307.0 TFLOPS, 14.6% util)
+     • default: 48,062 tokens/s (2,307.0 TFLOPS, 14.6% util)
+     • output-04: 18,229 tokens/s (875.0 TFLOPS, 5.5% util)
+     • 04-output: 11,296 tokens/s (542.2 TFLOPS, 3.4% util)
+     • 02-output: 11,258 tokens/s (540.4 TFLOPS, 3.4% util)
+     • 01-output: 11,114 tokens/s (533.5 TFLOPS, 3.4% util)
+     • output-01: 10,937 tokens/s (525.0 TFLOPS, 3.3% util)
+     • output-00: 10,823 tokens/s (519.5 TFLOPS, 3.3% util)
+     • 00-output: 6,275 tokens/s (301.2 TFLOPS, 1.9% util)
+
+📊 NVIDIA H100 80GB HBM3 - qwen
+   Configuration: output-03
+   Peak Tokens/s: 78,877
+   Per-GPU:       9,860 tokens/s
+   Total TFLOPS:  3,596.8
+   Per-GPU:       449.6 TFLOPS
+   Step Time:     3.28s (min), 3.32s (avg)
+   HW Utilization: 22.7% of theoretical peak
+   Theoretical:   15,832 TFLOPS (8 × 1979 TFLOPS)
+
+   Other configurations:
+     • default: 78,877 tokens/s (3,596.8 TFLOPS, 22.7% util)
+     • output-05: 38,663 tokens/s (1,763.0 TFLOPS, 11.1% util)
+     • 01-output: 19,889 tokens/s (906.9 TFLOPS, 5.7% util)
+     • output-01: 19,853 tokens/s (905.3 TFLOPS, 5.7% util)
+     • 02-output: 19,776 tokens/s (901.8 TFLOPS, 5.7% util)
+     • output-00: 19,695 tokens/s (898.1 TFLOPS, 5.7% util)
+     • output-04: 19,672 tokens/s (897.0 TFLOPS, 5.7% util)
+     • 04-output: 19,620 tokens/s (894.7 TFLOPS, 5.7% util)
+     • 00-output: 19,596 tokens/s (893.6 TFLOPS, 5.6% util)
+
+====================================================================================================
+🥇 OVERALL PEAK THROUGHPUT
+====================================================================================================
+
+Best Configuration: AMD Instinct MI300X - qwen
+Configuration:      01-output
+Peak Throughput:    87,933 tokens/s
+                    4,009.8 TFLOPS total
+                    501.2 TFLOPS per GPU
+Hardware:           8 × AMD Instinct MI300X
+HW Utilization:     38.3%
+
+----------------------------------------------------------------------------------------------------
+Best by Platform:
+
+  AMD Instinct MI300X:
+    Model:          qwen
+    Configuration:  01-output
+    Peak:           87,933 tokens/s (4,009.8 TFLOPS)
+    Per-GPU:        10,992 tokens/s (501.2 TFLOPS)
+    HW Utilization: 38.3%
+
+  NVIDIA H100 80GB HBM3:
+    Model:          qwen
+    Configuration:  output-03
+    Peak:           78,877 tokens/s (3,596.8 TFLOPS)
+    Per-GPU:        9,860 tokens/s (449.6 TFLOPS)
+    HW Utilization: 22.7%
+
+====================================================================================================
+📈 THROUGHPUT SCALING ANALYSIS
+====================================================================================================
+
+Batch Processing Capacity (at peak):
+  Tokens/second:  87,933
+  Samples/second: 42.9 (seq_len=2048)
+
+Projected Training Capacity (24h at peak):
+  Tokens:         7,597,433,417 (7.6B tokens)
+  Samples:        3,709,684
+
+Multi-Node Scaling Projection (assuming linear scaling):
+  2 nodes (16 GPUs): 175,867 tokens/s (8,020 TFLOPS)
+  4 nodes (32 GPUs): 351,733 tokens/s (16,039 TFLOPS)
+  8 nodes (64 GPUs): 703,466 tokens/s (32,078 TFLOPS)
+
+====================================================================================================
+
+📋 COMPLETE RESULTS TABLE
+====================================================================================================
+Platform                       Model      Config              Tokens/s     TFLOPS    Util%
+----------------------------------------------------------------------------------------------------
+Instinct MI300X                qwen       01-output             87,933    4,009.8    38.3%
+Instinct MI300X                qwen       00-output             87,928    4,009.5    38.3%
+Instinct MI300X                qwen       02-output             87,768    4,002.2    38.3%
+Instinct MI300X                qwen       04-output             87,767    4,002.2    38.3%
+H100                           qwen       output-03             78,877    3,596.8    22.7%
+H100                           qwen       default               78,877    3,596.8    22.7%
+Instinct MI300X                llama      02-output             68,875    3,306.0    31.6%
+Instinct MI300X                llama      01-output             68,728    3,299.0    31.6%
+Instinct MI300X                llama      00-output             68,712    3,298.2    31.5%
+Instinct MI300X                llama      04-output             68,678    3,296.6    31.5%
+H100                           llama      output-05             59,175    2,840.4    17.9%
+H100                           llama      output-03             48,062    2,307.0    14.6%
+H100                           llama      default               48,062    2,307.0    14.6%
+H100                           qwen       output-05             38,663    1,763.0    11.1%
+H100                           qwen       01-output             19,889      906.9     5.7%
+H100                           qwen       output-01             19,853      905.3     5.7%
+H100                           qwen       02-output             19,776      901.8     5.7%
+H100                           qwen       output-00             19,695      898.1     5.7%
+H100                           qwen       output-04             19,672      897.0     5.7%
+H100                           qwen       04-output             19,620      894.7     5.7%
+H100                           qwen       00-output             19,596      893.6     5.6%
+H100                           llama      output-04             18,229      875.0     5.5%
+H100                           llama      04-output             11,296      542.2     3.4%
+H100                           llama      02-output             11,258      540.4     3.4%
+H100                           llama      01-output             11,114      533.5     3.4%
+H100                           llama      output-01             10,937      525.0     3.3%
+H100                           llama      output-00             10,823      519.5     3.3%
+H100                           llama      00-output              6,275      301.2     1.9%
+====================================================================================================
+
