@@ -55,6 +55,10 @@ def run_pretrain():
     recipe.trainer.strategy.tensor_model_parallel_size = parallelism['tensor_model_parallel_size']
     recipe.trainer.strategy.pipeline_model_parallel_size = parallelism['pipeline_model_parallel_size']
     
+    # Explicitly set trainer devices to match config
+    recipe.trainer.devices = config.hardware.platforms[platform].num_gpus
+    recipe.trainer.num_nodes = 1
+    
     # 3. DATA CONFIGURATION (from config.yaml)
     recipe.data.micro_batch_size = config.training.data.micro_batch_size
     recipe.data.global_batch_size = config.training.data.global_batch_size
