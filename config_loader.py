@@ -91,8 +91,14 @@ class Config:
             return obj
     
     def get_methodology(self) -> str:
-        """Get current comparison methodology."""
-        return self.experiment.methodology
+        """
+        Get current comparison methodology (fallback/default).
+        
+        Note: Parallelism strategy should now be specified via --parallel flag
+        or TPRIMAT_PARALLEL environment variable. This method provides a default
+        fallback only.
+        """
+        return self.experiment.get('methodology', 'maximum_performance')
     
     def get_parallelism(
         self,

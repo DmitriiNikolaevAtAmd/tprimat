@@ -2,7 +2,6 @@ experiment:
   name: "tprimat_benchmark"
   description: "LLM training benchmark comparing AMD vs NVIDIA hardware"
   version: "1.0"
-  methodology: "maximum_performance"
 
 hardware:
   platforms:
@@ -117,11 +116,15 @@ parallelism:
         gradient_accumulation_steps: 128 
   
   memory_optimized: # 02
+    # Note: TP must divide attention heads evenly
+    # Llama 3.1 8B: 32 heads (divisible by 1,2,4,8,16,32)
+    # Qwen 2.5 7B: 28 heads (divisible by 1,2,4,7,14,28)
+    # Using TP=4 for compatibility with both models
     llama:
       nvidia:
-        tensor_model_parallel_size: 8    # TP=8 (aggressive model sharding)
-        pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 1            # Calculated: 8/(8*1) = 1
+        tensor_model_parallel_size: 4    # TP=4 (balanced: reduces memory, avoids excessive communication)
+        pipeline_model_parallel_size: 2  # PP=2 (further reduce memory per GPU)
+        data_parallel_size: 1            # Calculated: 8/(4*2) = 1
         gradient_accumulation_steps: 128 # Calculated: 128/(1*1) = 128
       amd:
         tensor_model_parallel_size: 2    # TP=2 (conservative given 192GB)
@@ -130,12 +133,12 @@ parallelism:
         gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
     qwen:
       nvidia:
-        tensor_model_parallel_size: 8    # TP=8 (aggressive model sharding)
-        pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 1            # Calculated: 8/(8*1) = 1
+        tensor_model_parallel_size: 4    # TP=4 (max compatible with 28 heads)
+        pipeline_model_parallel_size: 2  # PP=2 (further reduce memory per GPU)
+        data_parallel_size: 1            # Calculated: 8/(4*2) = 1
         gradient_accumulation_steps: 128 # Calculated: 128/(1*1) = 128
       amd:
-        tensor_model_parallel_size: 2    # TP=2
+        tensor_model_parallel_size: 2    # TP=2 (28 heads / 2 = 14 heads per GPU)
         pipeline_model_parallel_size: 1  # PP=1
         data_parallel_size: 4            # Calculated: 8/(2*1) = 4
         gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32

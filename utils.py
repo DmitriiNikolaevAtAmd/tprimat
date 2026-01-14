@@ -299,10 +299,38 @@ class BenchmarkCallback(Callback):
                 # Per-GPU throughput (efficiency metric)
                 tokens_per_second_per_gpu = tokens_per_second / self.num_gpus if self.num_gpus else None
             
+            # Extract parallelism configuration from trainer strategy
+            import os
+            parallelism_info = {}
+            
+            # Get strategy name from environment variable
+            parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', 'unknown')
+            parallelism_info["strategy_name"] = parallel_strategy
+            
+            try:
+                if hasattr(trainer, 'strategy') and hasattr(trainer.strategy, 'tensor_model_parallel_size'):
+                    parallelism_info.update({
+                        "tensor_model_parallel_size": trainer.strategy.tensor_model_parallel_size,
+                        "pipeline_model_parallel_size": trainer.strategy.pipeline_model_parallel_size,
+                        "data_parallel_size": self.num_gpus // (
+                            trainer.strategy.tensor_model_parallel_size * 
+                            trainer.strategy.pipeline_model_parallel_size
+                        ),
+                    })
+                    # Calculate gradient accumulation steps
+                    if self.global_batch_size and hasattr(trainer.datamodule, 'micro_batch_size'):
+                        parallelism_info["gradient_accumulation_steps"] = self.global_batch_size // (
+                            trainer.datamodule.micro_batch_size * parallelism_info["data_parallel_size"]
+                        )
+            except Exception:
+                # If extraction fails, we still have strategy_name
+                pass
+            
             results = {
                 "platform": self.platform,
                 "gpu_info": self.gpu_info,
                 "timestamp": datetime.now().isoformat(),
+                "parallelism_config": parallelism_info,
                 "training_config": {
                     "max_steps": trainer.max_steps,
                     "global_batch_size": self.global_batch_size or 'N/A',

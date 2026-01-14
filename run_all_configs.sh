@@ -40,23 +40,19 @@ run_config() {
     output_dir="output-${config_num}"
     mkdir -p "$output_dir"
     
-    # Set environment variables
-    export TPRIMAT_METHODOLOGY="$config_name"
-    export OUTPUT_DIR="$output_dir"
-    
-    # Update config.yaml to use the correct output directory
-    # (This is a temporary workaround; ideally config_loader should support this)
-    
-    # Run the training
-    if [ "$model" == "llama" ]; then
-        echo "▶ Running Llama 3.1 8B with $config_name..."
-        python3 pretrain_llama.py 2>&1 | tee "$output_dir/training_llama.log"
-    elif [ "$model" == "qwen" ]; then
-        echo "▶ Running Qwen 2.5 7B with $config_name..."
-        python3 pretrain_qwen.py 2>&1 | tee "$output_dir/training_qwen.log"
-    fi
+    # Run the training using benchmark.py with parallelism strategy argument
+    echo "▶ Running $model with $config_name..."
+    python3 benchmark.py \
+        --model "$model" \
+        --parallel "$config_name" \
+        --output-dir "$output_dir" \
+        2>&1 | tee "$output_dir/training_${model}.log"
     
     echo "✅ Configuration $config_num ($config_name) completed for $model"
+    
+    # Add cooldown period to allow GPU memory to clear
+    echo "⏳ Waiting 15 seconds for GPU memory to clear..."
+    sleep 15
 }
 
 # Function to generate comparison for a configuration

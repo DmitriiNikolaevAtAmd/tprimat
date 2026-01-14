@@ -1,0 +1,1 @@
+    python3 benchmark.py --model llama --parallel "memory_optimized" --output-dir output_04

@@ -173,7 +173,8 @@ def find_log_file(model: str) -> Optional[str]:
 
 
 def extract_metrics(log_file: str, model: str, num_gpus: int = 8, 
-                   global_batch_size: int = 128, sequence_length: int = 2048) -> bool:
+                   global_batch_size: int = 128, sequence_length: int = 2048,
+                   parallel_strategy: str = "unknown") -> bool:
     """
     Extract metrics from Primus log file.
     
@@ -183,6 +184,7 @@ def extract_metrics(log_file: str, model: str, num_gpus: int = 8,
         num_gpus: Number of GPUs
         global_batch_size: Global batch size
         sequence_length: Sequence length
+        parallel_strategy: Parallelism strategy name
         
     Returns:
         True if successful, False otherwise
@@ -194,18 +196,20 @@ def extract_metrics(log_file: str, model: str, num_gpus: int = 8,
         "--num-gpus", str(num_gpus),
         "--global-batch-size", str(global_batch_size),
         "--sequence-length", str(sequence_length),
+        "--parallel-strategy", parallel_strategy,
     ]
     
     result = subprocess.run(cmd)
     return result.returncode == 0
 
 
-def run_nemo_training(model: str) -> bool:
+def run_nemo_training(model: str, output_dir: str = "./output") -> bool:
     """
     Run NeMo training script for a model.
     
     Args:
         model: Model name (llama, qwen)
+        output_dir: Directory to save logs and results
         
     Returns:
         True if successful, False otherwise
@@ -224,7 +228,21 @@ def run_nemo_training(model: str) -> bool:
         print(f"{Colors.RED}❌ Script not found: {script}{Colors.NC}")
         return False
     
-    result = subprocess.run(["python3", script])
+    # Create output directory if it doesn't exist
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    
+    # Log file path
+    log_file = os.path.join(output_dir, f"training_{model}.log")
+    
+    # Run training and capture output to log file
+    print(f"{Colors.CYAN}→ Logging to: {log_file}{Colors.NC}")
+    with open(log_file, 'w') as log:
+        result = subprocess.run(
+            ["python3", script],
+            stdout=log,
+            stderr=subprocess.STDOUT
+        )
+    
     return result.returncode == 0
 
 
@@ -264,7 +282,10 @@ def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[
         print(f"{Colors.BLUE}→{Colors.NC} Extracting metrics from: {log_file}")
         print()
         
-        if extract_metrics(log_file, model):
+        # Get parallel strategy from environment or default to "unknown"
+        parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', 'unknown')
+        
+        if extract_metrics(log_file, model, parallel_strategy=parallel_strategy):
             successful.append(model)
             print(f"{Colors.GREEN}✅ {model} metrics extracted successfully{Colors.NC}")
         else:
@@ -276,7 +297,7 @@ def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[
     return successful, failed
 
 
-def run_nemo_benchmarks(models: List[str], runs: int, software_stack: str) -> Tuple[List[str], List[str]]:
+def run_nemo_benchmarks(models: List[str], runs: int, software_stack: str, output_dir: str = "./output") -> Tuple[List[str], List[str]]:
     """
     Run NeMo training benchmarks for all models.
     
@@ -284,6 +305,7 @@ def run_nemo_benchmarks(models: List[str], runs: int, software_stack: str) -> Tu
         models: List of model names
         runs: Number of runs per model
         software_stack: Software stack (rocm/cuda)
+        output_dir: Directory to save logs and results
         
     Returns:
         (successful_models, failed_models)
@@ -291,14 +313,14 @@ def run_nemo_benchmarks(models: List[str], runs: int, software_stack: str) -> Tu
     successful = []
     failed = []
     
-    for model in models:
+    for model_idx, model in enumerate(models):
         for run in range(1, runs + 1):
             print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
             print(f"{Colors.BLUE}Starting: {Colors.GREEN}{model}{Colors.NC} (Run {run}/{runs})")
             print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
             print()
             
-            if run_nemo_training(model):
+            if run_nemo_training(model, output_dir):
                 if run == runs:  # Only add to successful after all runs complete
                     successful.append(model)
                 print(f"{Colors.GREEN}✅ {model} run {run} completed successfully{Colors.NC}")
@@ -309,16 +331,24 @@ def run_nemo_benchmarks(models: List[str], runs: int, software_stack: str) -> Tu
             
             print()
             
-            # Cooldown between runs
+            # Cooldown between runs of the same model
             if run < runs:
-                print(f"{Colors.YELLOW}Cooling down for 10 seconds...{Colors.NC}")
+                print(f"{Colors.YELLOW}⏳ Cooling down for 10 seconds...{Colors.NC}")
                 import time
                 time.sleep(10)
+        
+        # Cooldown between different models to allow GPU memory to clear
+        if model_idx < len(models) - 1:  # Not the last model
+            print()
+            print(f"{Colors.YELLOW}⏳ Waiting 20 seconds for GPU memory to clear before next model...{Colors.NC}")
+            import time
+            time.sleep(20)
+            print()
     
     return successful, failed
 
 
-def print_summary(successful: List[str], failed: List[str], software_stack: str, is_primus: bool):
+def print_summary(successful: List[str], failed: List[str], software_stack: str, is_primus: bool, output_dir: str = "./output"):
     """Print summary of benchmark results"""
     print(f"{Colors.CYAN}╔{'='*60}╗{Colors.NC}")
     print(f"{Colors.CYAN}║{Colors.NC}{'Summary':^60}{Colors.CYAN}║{Colors.NC}")
@@ -329,7 +359,7 @@ def print_summary(successful: List[str], failed: List[str], software_stack: str,
         print(f"{Colors.GREEN}✅ Successful ({len(successful)}): {', '.join(successful)}{Colors.NC}")
         print()
         for model in successful:
-            print(f"   📄 output/benchmark_{software_stack}_{model}.json")
+            print(f"   📄 {output_dir}/benchmark_{software_stack}_{model}.json")
         print()
     
     if failed:
@@ -387,9 +417,16 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ./benchmark.py                    # Run all models
-  ./benchmark.py --model llama      # Run only llama
-  ./benchmark.py --runs 3           # Run all models 3 times
+  ./benchmark.py                                    # Run all models (default: minimal_communication)
+  ./benchmark.py --model llama                      # Run only llama
+  ./benchmark.py --runs 3                           # Run all models 3 times
+  
+  # Parallelism strategies:
+  ./benchmark.py --parallel minimal_communication # TP=1 (default, fastest if fits in memory)
+  ./benchmark.py --parallel maximum_performance  # Platform-optimized for speed
+  ./benchmark.py --parallel identical_config     # Same config on both platforms
+  ./benchmark.py --parallel memory_optimized     # TP=4,PP=2 (save memory)
+  ./benchmark.py --parallel balanced             # TP=2 (balanced)
   
   # For AMD/Primus with log files:
   LLAMA_LOG=/path/to/llama.log ./benchmark.py
@@ -410,7 +447,27 @@ Examples:
         help='Number of runs per model (default: 1)'
     )
     
+    parser.add_argument(
+        '--parallel',
+        choices=['maximum_performance', 'identical_config', 'memory_optimized', 
+                 'minimal_communication', 'balanced'],
+        default='minimal_communication',
+        help='Parallelism strategy (default: minimal_communication)'
+    )
+    
+    parser.add_argument(
+        '--output-dir',
+        default='./output',
+        help='Output directory for benchmark results (default: ./output)'
+    )
+    
     args = parser.parse_args()
+    
+    # Set parallelism strategy environment variable (always has a default)
+    os.environ['TPRIMAT_PARALLEL'] = args.parallel
+    
+    # Set output directory environment variable
+    os.environ['OUTPUT_DIR'] = args.output_dir
     
     # Determine models to run
     if args.model == 'all':
@@ -424,24 +481,30 @@ Examples:
     # Check if GPU is available
     gpu_available = platform_name != "Unknown"
     
+    # Get parallelism strategy being used (always set from args.parallel)
+    parallel_strategy = args.parallel
+    
     # Print header
     if len(models) > 1:
         print(f"{Colors.CYAN}╔{'='*60}╗{Colors.NC}")
         print(f"{Colors.CYAN}║{Colors.NC}{f'{Colors.BLUE}TensorPrimat - All Models{Colors.NC}':^68}{Colors.CYAN}║{Colors.NC}")
         print(f"{Colors.CYAN}╚{'='*60}╝{Colors.NC}")
         print()
-        print(f"Platform:  {color}{platform_name}{Colors.NC}")
-        print(f"Models:    {Colors.GREEN}{', '.join(models)}{Colors.NC}")
-        print(f"Runs each: {Colors.GREEN}{args.runs}{Colors.NC}")
+        print(f"Platform:     {color}{platform_name}{Colors.NC}")
+        print(f"Models:       {Colors.GREEN}{', '.join(models)}{Colors.NC}")
+        print(f"Runs each:    {Colors.GREEN}{args.runs}{Colors.NC}")
+        print(f"Parallelism:  {Colors.GREEN}{parallel_strategy}{Colors.NC}")
+        print(f"Output dir:   {Colors.GREEN}{args.output_dir}{Colors.NC}")
         print()
     else:
         print(f"{Colors.BLUE}{'='*60}{Colors.NC}")
         print(f"{Colors.BLUE}TensorPrimat{Colors.NC}")
         print(f"{Colors.BLUE}{'='*60}{Colors.NC}")
-        print(f"Model: {Colors.GREEN}{args.model}{Colors.NC}")
-        print(f"Runs:  {Colors.GREEN}{args.runs}{Colors.NC}")
-        print()
-        print(f"Platform: {color}{platform_name}{Colors.NC}")
+        print(f"Model:        {Colors.GREEN}{args.model}{Colors.NC}")
+        print(f"Runs:         {Colors.GREEN}{args.runs}{Colors.NC}")
+        print(f"Platform:     {color}{platform_name}{Colors.NC}")
+        print(f"Parallelism:  {Colors.GREEN}{parallel_strategy}{Colors.NC}")
+        print(f"Output dir:   {Colors.GREEN}{args.output_dir}{Colors.NC}")
         print()
     
     # If no GPU, skip training and go straight to log analysis
@@ -458,7 +521,7 @@ Examples:
             print(f"{Colors.GREEN}✓ NeMo detected - Running training mode{Colors.NC}")
             print()
             
-            successful, failed = run_nemo_benchmarks(models, args.runs, software_stack)
+            successful, failed = run_nemo_benchmarks(models, args.runs, software_stack, args.output_dir)
         else:
             print(f"{Colors.YELLOW}⚠️  NeMo not detected{Colors.NC}")
             print(f"{Colors.BLUE}→ Using Primus log extraction mode{Colors.NC}")
@@ -467,7 +530,7 @@ Examples:
             successful, failed = run_primus_extraction(models, software_stack)
     
     # Print summary
-    print_summary(successful, failed, software_stack, not has_nemo)
+    print_summary(successful, failed, software_stack, not has_nemo, args.output_dir)
     
     # Exit with appropriate code
     sys.exit(0 if len(failed) == 0 else 1)

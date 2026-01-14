@@ -344,10 +344,20 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length):
     
     steps_per_second = 1.0 / avg_step_time
     
+    # Try to extract parallelism configuration from environment or log
+    parallelism_info = {}
+    import os
+    parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', None)
+    if parallel_strategy:
+        parallelism_info["strategy_name"] = parallel_strategy
+        # Could potentially parse TP/PP/DP from Primus log if available
+        # For now, just store the strategy name
+    
     results = {
         "platform": platform,
         "gpu_info": gpu_info,
         "timestamp": datetime.now().isoformat(),
+        "parallelism_config": parallelism_info if parallelism_info else {"strategy_name": "unknown"},
         "training_config": {
             "max_steps": len(step_times),
             "global_batch_size": global_batch_size,

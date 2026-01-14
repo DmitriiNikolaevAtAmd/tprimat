@@ -26,10 +26,10 @@ def run_pretrain():
     
     # Get model name and parallelism settings from config
     model_name = "qwen"
-    # Allow overriding methodology via environment variable (for different configurations)
-    methodology = os.environ.get('TPRIMAT_METHODOLOGY', config.get_methodology())
-    print(f"🔧 Using methodology: {methodology}")
-    parallelism = config.get_parallelism(model_name, platform, methodology=methodology)
+    # Allow overriding parallelism strategy via environment variable (for different configurations)
+    parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', config.get_methodology())
+    print(f"🔧 Using parallelism strategy: {parallel_strategy}")
+    parallelism = config.get_parallelism(model_name, platform, methodology=parallel_strategy)
     platform_opts = config.get_platform_optimizations(platform)
     
     # Set PyTorch memory allocator for better fragmentation handling
@@ -103,7 +103,8 @@ def run_pretrain():
     benchmark_callback = BenchmarkCallback(
         output_dir=config.get_output_dir(),
         platform="auto",  # Auto-detects CUDA or ROCm
-        model_name=model_name
+        model_name=model_name,
+        parallel_strategy=parallel_strategy
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []
