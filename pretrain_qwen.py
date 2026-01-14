@@ -38,26 +38,29 @@ def run_pretrain():
     else:
         os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    # 1. Initialize the recipe
+    # 1. Initialize the recipe WITHOUT specifying GPU count
+    # We'll configure parallelism manually after to avoid conflicts
+    num_gpus = config.hardware.platforms[platform].num_gpus
+    
+    # Calculate the parallelism needed
+    tp_size = parallelism['tensor_model_parallel_size']
+    pp_size = parallelism['pipeline_model_parallel_size']
+    
+    # Initialize recipe with the EXACT parallelism we want
     recipe = llm.qwen25_7b.pretrain_recipe(
         name=f"{config.models.qwen.name}_pretrain",
         dir="/checkpoints",
         num_nodes=1,
-        num_gpus_per_node=config.hardware.platforms[platform].num_gpus,
+        num_gpus_per_node=num_gpus,
+        tensor_parallel_size=tp_size,
+        pipeline_parallel_size=pp_size,
     )
     
-    # 1.5. Explicitly set trainer devices BEFORE parallelism (NeMo validates on strategy changes)
-    recipe.trainer.devices = config.hardware.platforms[platform].num_gpus
-    recipe.trainer.num_nodes = 1
-    
     # 2. PARALLELISM CONFIGURATION (from config.yaml)
-    # TP * PP * DP = num_gpus
-    print(f"🔧 Parallelism: TP={parallelism['tensor_model_parallel_size']}, "
-          f"PP={parallelism['pipeline_model_parallel_size']}, "
+    print(f"🔧 Parallelism: TP={tp_size}, "
+          f"PP={pp_size}, "
           f"DP={parallelism['data_parallel_size']}, "
           f"GradAccum={parallelism['gradient_accumulation_steps']}")
-    recipe.trainer.strategy.tensor_model_parallel_size = parallelism['tensor_model_parallel_size']
-    recipe.trainer.strategy.pipeline_model_parallel_size = parallelism['pipeline_model_parallel_size']
     
     # 3. DATA CONFIGURATION (from config.yaml)
     recipe.data.micro_batch_size = config.training.data.micro_batch_size
