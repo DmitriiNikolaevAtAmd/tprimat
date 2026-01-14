@@ -38,22 +38,16 @@ def run_pretrain():
     else:
         os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    # 1. Initialize the recipe WITHOUT specifying GPU count
-    # We'll configure parallelism manually after to avoid conflicts
+    # 1. Initialize the recipe
     num_gpus = config.hardware.platforms[platform].num_gpus
-    
-    # Calculate the parallelism needed
     tp_size = parallelism['tensor_model_parallel_size']
     pp_size = parallelism['pipeline_model_parallel_size']
     
-    # Initialize recipe with the EXACT parallelism we want
     recipe = llm.qwen25_7b.pretrain_recipe(
         name=f"{config.models.qwen.name}_pretrain",
         dir="/checkpoints",
         num_nodes=1,
         num_gpus_per_node=num_gpus,
-        tensor_parallel_size=tp_size,
-        pipeline_parallel_size=pp_size,
     )
     
     # 2. PARALLELISM CONFIGURATION (from config.yaml)
@@ -61,6 +55,18 @@ def run_pretrain():
           f"PP={pp_size}, "
           f"DP={parallelism['data_parallel_size']}, "
           f"GradAccum={parallelism['gradient_accumulation_steps']}")
+    
+    # Import MegatronStrategy to properly configure parallelism
+    from nemo.lightning import MegatronStrategy
+    
+    # Create a new strategy with the desired parallelism
+    recipe.trainer.strategy = MegatronStrategy(
+        tensor_model_parallel_size=tp_size,
+        pipeline_model_parallel_size=pp_size,
+        context_parallel_size=1,
+        virtual_pipeline_model_parallel_size=None,
+        sequence_parallel=False,
+    )
     
     # 3. DATA CONFIGURATION (from config.yaml)
     recipe.data.micro_batch_size = config.training.data.micro_batch_size
