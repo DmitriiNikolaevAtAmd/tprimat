@@ -46,6 +46,10 @@ def run_pretrain():
         num_gpus_per_node=config.hardware.platforms[platform].num_gpus,
     )
     
+    # 1.5. Explicitly set trainer devices BEFORE parallelism (NeMo validates on strategy changes)
+    recipe.trainer.devices = config.hardware.platforms[platform].num_gpus
+    recipe.trainer.num_nodes = 1
+    
     # 2. PARALLELISM CONFIGURATION (from config.yaml)
     # TP * PP * DP = num_gpus
     print(f"🔧 Parallelism: TP={parallelism['tensor_model_parallel_size']}, "
@@ -54,10 +58,6 @@ def run_pretrain():
           f"GradAccum={parallelism['gradient_accumulation_steps']}")
     recipe.trainer.strategy.tensor_model_parallel_size = parallelism['tensor_model_parallel_size']
     recipe.trainer.strategy.pipeline_model_parallel_size = parallelism['pipeline_model_parallel_size']
-    
-    # Explicitly set trainer devices to match config
-    recipe.trainer.devices = config.hardware.platforms[platform].num_gpus
-    recipe.trainer.num_nodes = 1
     
     # 3. DATA CONFIGURATION (from config.yaml)
     recipe.data.micro_batch_size = config.training.data.micro_batch_size
