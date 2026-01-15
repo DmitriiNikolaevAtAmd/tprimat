@@ -43,6 +43,8 @@ PROF_ENABLED="${CONFIG_PROF_ENABLED:-false}"
 PROF_WAIT="${CONFIG_PROF_WAIT:-1}"
 PROF_WARMUP="${CONFIG_PROF_WARMUP:-1}"
 PROF_ACTIVE="${CONFIG_PROF_ACTIVE:-5}"
+PROF_START=$((PROF_WAIT + PROF_WARMUP))
+PROF_STOP=$((PROF_START + PROF_ACTIVE))
 
 # Optimizer parameters from config.yaml
 LEARNING_RATE="${CONFIG_LEARNING_RATE:-3.0e-4}"
@@ -121,14 +123,11 @@ if 'gradient_accumulation_steps' in config:
     config['gradient_accumulation_steps'] = $GACC
 
 # Add profiling settings to YAML
-if [ "$PROF_ENABLED" = "true" ]; then
-    PROF_START=$((PROF_WAIT + PROF_WARMUP))
-    PROF_STOP=$((PROF_START + PROF_ACTIVE))
+if '${PROF_ENABLED}' == 'true':
     config['profile'] = True
     config['profile_step_start'] = $PROF_START
     config['profile_step_stop'] = $PROF_STOP
     config['profile_export_path'] = '$OUTPUT_DIR'
-fi
 
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
@@ -141,8 +140,6 @@ else
     sed "s/gradient_accumulation_steps:.*/gradient_accumulation_steps: $GACC/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
     
     if [ "$PROF_ENABLED" = "true" ]; then
-        PROF_START=$((PROF_WAIT + PROF_WARMUP))
-        PROF_STOP=$((PROF_START + PROF_ACTIVE))
         echo "profile: true" >> "$PATCHED_CONFIG"
         echo "profile_step_start: $PROF_START" >> "$PATCHED_CONFIG"
         echo "profile_step_stop: $PROF_STOP" >> "$PATCHED_CONFIG"
