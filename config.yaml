@@ -310,7 +310,7 @@ logging:
     mlflow: true
 
 profiling:
-  enabled: false                    # Enable Kineto profiling
+  enabled: true                     # Enable Kineto profiling
   export_chrome_trace: true         # Export Chrome trace JSON
   profile_memory: true              # Track memory allocations
   with_stack: true                  # Include Python stack traces
