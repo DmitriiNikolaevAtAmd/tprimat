@@ -119,6 +119,17 @@ config['tensor_model_parallel_size'] = $TP
 config['pipeline_model_parallel_size'] = $PP
 if 'gradient_accumulation_steps' in config:
     config['gradient_accumulation_steps'] = $GACC
+
+# Add profiling settings to YAML
+if [ "$PROF_ENABLED" = "true" ]; then
+    PROF_START=$((PROF_WAIT + PROF_WARMUP))
+    PROF_STOP=$((PROF_START + PROF_ACTIVE))
+    config['profile'] = True
+    config['profile_step_start'] = $PROF_START
+    config['profile_step_stop'] = $PROF_STOP
+    config['profile_export_path'] = '$OUTPUT_DIR'
+fi
+
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
 "
@@ -128,6 +139,15 @@ else
     sed "s/tensor_model_parallel_size:.*/tensor_model_parallel_size: $TP/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
     sed "s/pipeline_model_parallel_size:.*/pipeline_model_parallel_size: $PP/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
     sed "s/gradient_accumulation_steps:.*/gradient_accumulation_steps: $GACC/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
+    
+    if [ "$PROF_ENABLED" = "true" ]; then
+        PROF_START=$((PROF_WAIT + PROF_WARMUP))
+        PROF_STOP=$((PROF_START + PROF_ACTIVE))
+        echo "profile: true" >> "$PATCHED_CONFIG"
+        echo "profile_step_start: $PROF_START" >> "$PATCHED_CONFIG"
+        echo "profile_step_stop: $PROF_STOP" >> "$PATCHED_CONFIG"
+        echo "profile_export_path: $OUTPUT_DIR" >> "$PATCHED_CONFIG"
+    fi
 fi
 
 export EXP="$PATCHED_CONFIG"
@@ -135,15 +155,7 @@ export EXP="$PATCHED_CONFIG"
 # Run training and capture logs
 echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --weight_decay $WEIGHT_DECAY"
 
-# Configure profiling if enabled
-PROF_ARGS=""
-if [ "$PROF_ENABLED" = "true" ]; then
-    PROF_START=$((PROF_WAIT + PROF_WARMUP))
-    PROF_STOP=$((PROF_START + PROF_ACTIVE))
-    PROF_ARGS="--profile --profile-step-start $PROF_START --profile-step-stop $PROF_STOP --profile-export-path $OUTPUT_DIR"
-    echo "📊 Profiling enabled: Steps $PROF_START to $PROF_STOP"
-fi
-
+# Configure profiling flags (removed causing unregistered keys)
 echo ""
 
 bash ./examples/run_pretrain.sh \
@@ -152,7 +164,6 @@ bash ./examples/run_pretrain.sh \
     --min_lr $MIN_LEARNING_RATE \
     --lr_warmup_iters $WARMUP_STEPS \
     --weight_decay $WEIGHT_DECAY \
-    $PROF_ARGS \
     2>&1 | tee "$LOG_FILE" "$BACKUP_LOG"
 
 EXIT_CODE=${PIPESTATUS[0]}
