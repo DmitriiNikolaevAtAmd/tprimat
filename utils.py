@@ -67,6 +67,7 @@ class BenchmarkCallback(Callback):
         self.step_times = []
         self.memory_allocated = []
         self.memory_reserved = []
+        self.memory_allocated_per_gpu = []  # Added for per-core monitoring
         self.loss_values = []
         self.learning_rates = []
         self.step_start_time = None
@@ -303,6 +304,25 @@ class BenchmarkCallback(Callback):
             mem_reserved = torch.cuda.memory_reserved() / 1e9    # GB
             self.memory_allocated.append(mem_allocated)
             self.memory_reserved.append(mem_reserved)
+            
+            # Collect memory from all ranks if in distributed mode
+            if torch.distributed.is_initialized():
+                try:
+                    # Gather allocated memory from all ranks
+                    curr_mem = torch.tensor([mem_allocated], device=f"cuda:{torch.cuda.current_device()}")
+                    world_size = torch.distributed.get_world_size()
+                    all_mems = [torch.zeros(1, device=f"cuda:{torch.cuda.current_device()}") for _ in range(world_size)]
+                    torch.distributed.all_gather(all_mems, curr_mem)
+                    
+                    # Convert tensors to list of floats
+                    per_gpu_mems = [m.item() for m in all_mems]
+                    self.memory_allocated_per_gpu.append(per_gpu_mems)
+                except Exception as e:
+                    # Fallback if gathering fails
+                    self.memory_allocated_per_gpu.append([mem_allocated])
+            else:
+                # Non-distributed mode: just one GPU
+                self.memory_allocated_per_gpu.append([mem_allocated])
         
         # Collect learning rate from optimizer/scheduler
         try:
@@ -461,6 +481,7 @@ class BenchmarkCallback(Callback):
                 "raw_step_times": self.step_times,
                 "raw_loss_values": self.loss_values if self.loss_values else [],
                 "raw_memory_values": self.memory_allocated if self.memory_allocated else [],
+                "raw_memory_per_gpu": self.memory_allocated_per_gpu if self.memory_allocated_per_gpu else [],
                 "raw_learning_rates": self.learning_rates if self.learning_rates else [],
             }
             

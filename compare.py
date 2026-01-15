@@ -233,20 +233,57 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     has_data = False
     
     for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks and 'raw_memory_values' in benchmarks[key]:
-            mem_values = benchmarks[key]['raw_memory_values']
-            if mem_values:
-                steps = range(len(mem_values))
-                style = style_map[key]
-                ax5.plot(steps, mem_values, 
-                        marker=style['marker'], 
-                        linestyle=style['linestyle'],
-                        color=style['color'], 
-                        label=style['label'], 
-                        linewidth=1.5, 
-                        markersize=2, 
-                        alpha=0.85)
-                has_data = True
+        if key in benchmarks:
+            data = benchmarks[key]
+            style = style_map[key]
+            
+            # Check for per-GPU memory data first
+            if 'raw_memory_per_gpu' in data and data['raw_memory_per_gpu']:
+                per_gpu_mems = data['raw_memory_per_gpu'] # List of [gpu0, gpu1, ...] per step
+                if per_gpu_mems:
+                    num_steps = len(per_gpu_mems)
+                    num_gpus = len(per_gpu_mems[0])
+                    steps = range(num_steps)
+                    
+                    # Transpose to get [gpu_id][step]
+                    gpu_traces = [[per_gpu_mems[s][g] for s in range(num_steps)] for g in range(num_gpus)]
+                    
+                    for g in range(num_gpus):
+                        label = f"{style['label']} (GPU {g})" if g == 0 else None
+                        ax5.plot(steps, gpu_traces[g], 
+                                linestyle=style['linestyle'],
+                                color=style['color'], 
+                                label=label if g == 0 else None,
+                                linewidth=1.0, 
+                                alpha=0.4) # Transparent individual lines
+                    
+                    # Plot the average as a thicker line
+                    avg_mem = [sum(step_mems)/len(step_mems) for step_mems in per_gpu_mems]
+                    ax5.plot(steps, avg_mem, 
+                            marker=style['marker'],
+                            linestyle=style['linestyle'],
+                            color=style['color'], 
+                            label=f"{style['label']} (Avg)", 
+                            linewidth=2.5, 
+                            markersize=4,
+                            alpha=1.0)
+                    has_data = True
+            
+            # Fallback to single memory series if per-GPU not available
+            elif 'raw_memory_values' in data and data['raw_memory_values']:
+                mem_values = data['raw_memory_values']
+                if mem_values:
+                    steps = range(len(mem_values))
+                    ax5.plot(steps, mem_values, 
+                            marker=style['marker'], 
+                            linestyle=style['linestyle'],
+                            color=style['color'], 
+                            label=style['label'], 
+                            linewidth=1.5, 
+                            markersize=2, 
+                            alpha=0.85)
+                    has_data = True
+
     
     if has_data:
         ax5.set_xlabel('Step', fontweight='bold', fontsize=10)
