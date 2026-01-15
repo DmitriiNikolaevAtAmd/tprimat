@@ -46,6 +46,10 @@ PROF_ACTIVE="${CONFIG_PROF_ACTIVE:-5}"
 PROF_START=$((PROF_WAIT + PROF_WARMUP))
 PROF_STOP=$((PROF_START + PROF_ACTIVE))
 
+# Optimization parameters
+ACT_CHECKPOINT="${CONFIG_AMD_ACT_CHECKPOINT:-false}"
+export PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True'
+
 # Optimizer parameters from config.yaml
 LEARNING_RATE="${CONFIG_LEARNING_RATE:-3.0e-4}"
 MIN_LEARNING_RATE="${CONFIG_MIN_LEARNING_RATE:-3.0e-5}"
@@ -128,6 +132,18 @@ if '${PROF_ENABLED}' == 'true':
     config['profile_step_start'] = $PROF_START
     config['profile_step_stop'] = $PROF_STOP
     config['profile_export_path'] = '$OUTPUT_DIR'
+
+# Add memory optimizations
+if '${ACT_CHECKPOINT}' == 'true':
+    config['recompute_activations'] = True
+    config['recompute_granularity'] = 'full'
+    config['recompute_method'] = 'uniform'
+    config['recompute_num_layers'] = 1
+    
+config['use_distributed_optimizer'] = True
+config['use_flash_attn'] = True
+config['use_fused_rmsnorm'] = True
+config['fp32_residual_connection'] = False
 
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)

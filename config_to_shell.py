@@ -44,6 +44,11 @@ def main():
         for platform in config.get_platforms_list():
             hw = config.get_hardware_config(platform)
             print(f"export CONFIG_{platform.upper()}_NUM_GPUS='{hw['num_gpus']}'")
+            
+            # Platform optimizations
+            opts = config.get_platform_optimizations(platform)
+            print(f"export CONFIG_{platform.upper()}_ACT_CHECKPOINT='{str(opts.get('activation_checkpointing', False)).lower()}'")
+            print(f"export CONFIG_{platform.upper()}_PRECISION='{opts.get('precision', 'bf16')}'")
         
         # Methodology
         methodology = os.environ.get('PARALLEL')
