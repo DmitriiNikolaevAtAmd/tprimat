@@ -9,6 +9,7 @@ Usage:
 """
 
 import sys
+import os
 from config_loader import load_config
 
 def main():
