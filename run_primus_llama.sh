@@ -242,7 +242,15 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo ""
         echo "Results saved to: $OUTPUT_DIR/benchmark_rocm_${MODEL}.json"
         echo ""
+        
+        # Cleanup: Remove logs and patched config after successful extraction
+        echo "🧹 Cleaning up training artifacts..."
+        rm -f "$LOG_FILE" "$BACKUP_LOG" "$PATCHED_CONFIG"
+        echo "✓ Removed logs and config from $OUTPUT_DIR"
+        echo ""
+        
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
         echo "🎯 Next Steps:"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""

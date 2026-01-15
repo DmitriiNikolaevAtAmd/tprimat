@@ -242,7 +242,16 @@ def run_nemo_training(model: str, output_dir: str = "./output") -> bool:
             stderr=subprocess.STDOUT
         )
     
+    # Cleanup: Remove log file after training if successful
+    if result.returncode == 0:
+        try:
+            os.remove(log_file)
+            print(f"{Colors.GREEN}✓{Colors.NC} Cleaned up training log: {log_file}")
+        except OSError as e:
+            print(f"{Colors.YELLOW}⚠️  Could not remove log file: {e}{Colors.NC}")
+    
     return result.returncode == 0
+
 
 
 def run_primus_training(model: str, output_dir: str = "./output") -> bool:

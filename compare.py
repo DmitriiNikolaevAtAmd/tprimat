@@ -401,6 +401,8 @@ def main():
     default_dir = os.environ.get('OUTPUT_DIR', './output')
     parser.add_argument('--results-dir', default=default_dir,
                        help='Directory containing benchmark JSON files (default: OUTPUT_DIR env var or ./output)')
+    parser.add_argument('--output', default='compare.png',
+                       help='Output filename for the comparison plot (default: compare.png)')
     
     args = parser.parse_args()
     
@@ -436,9 +438,9 @@ def main():
         print("ℹ️  Note: Generating NVIDIA-only comparison (no AMD data)")
     
     # Generate comparison plot with all models
-    print("\nGenerating comparison plot...")
+    print(f"\nGenerating comparison plot: {args.output}")
     try:
-        create_comparison_plot(benchmarks, "compare.png")
+        create_comparison_plot(benchmarks, args.output)
     except Exception as e:
         print(f"⚠️  Could not generate plot: {e}")
         import traceback
