@@ -135,10 +135,14 @@ if '${PROF_ENABLED}' == 'true':
 
 # Add memory optimizations
 if '${ACT_CHECKPOINT}' == 'true':
+    # Determine number of layers based on model
+    NLAYERS=32
+    if [[ "$MODEL" == "qwen" ]]; then NLAYERS=28; fi
+    
     config['recompute_activations'] = True
     config['recompute_granularity'] = 'full'
     config['recompute_method'] = 'uniform'
-    config['recompute_num_layers'] = 1
+    config['recompute_num_layers'] = NLAYERS
     
 config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
@@ -160,6 +164,9 @@ else
         echo "profile_step_start: $PROF_START" >> "$PATCHED_CONFIG"
         echo "profile_step_stop: $PROF_STOP" >> "$PATCHED_CONFIG"
         echo "profile_export_path: $OUTPUT_DIR" >> "$PATCHED_CONFIG"
+        # Disable heavy profiling features for AMD TP=1 to avoid OOM
+        echo "profile_record_shapes: false" >> "$PATCHED_CONFIG"
+        echo "profile_memory: false" >> "$PATCHED_CONFIG"
     fi
 fi
 
