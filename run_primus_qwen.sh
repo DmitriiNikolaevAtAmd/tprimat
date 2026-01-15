@@ -184,7 +184,7 @@ bash ./examples/run_pretrain.sh \
     --min_lr $MIN_LEARNING_RATE \
     --lr_warmup_iters $WARMUP_STEPS \
     --weight_decay $WEIGHT_DECAY \
-    2>&1 | tee "$LOG_FILE" "$BACKUP_LOG"
+    2>&1 | tee "$LOG_FILE" "$BACKUP_LOG" > /dev/null
 
 EXIT_CODE=${PIPESTATUS[0]}
 
