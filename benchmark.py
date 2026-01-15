@@ -81,23 +81,15 @@ def check_nemo() -> bool:
         return False
 
 
-def find_log_file(model: str) -> Optional[str]:
+def find_log_file(model: str, custom_output_dir: Optional[str] = None) -> Optional[str]:
     """
     Find log file for a given model.
     
     Searches for:
     1. Environment variable (LLAMA_LOG, QWEN_LOG)
-    2. Standard filenames (training_llama.log, etc.)
-    3. Pattern matching in current directory (*llama*.log)
-    4. Pattern matching in output directory
-    5. Pattern matching in /workspace/Primus (if exists)
-    6. Content-based search in all .log/.txt files
-    
-    Args:
-        model: Model name (llama, qwen)
-        
-    Returns:
-        Path to log file or None
+    2. The specified output directory
+    3. Standard filenames (training_llama.log, etc.)
+    ...
     """
     # Check environment variable
     env_var = f"{model.upper()}_LOG"
@@ -108,14 +100,16 @@ def find_log_file(model: str) -> Optional[str]:
             return log_path
     
     # Define search directories
-    search_dirs = [
+    search_dirs = []
+    if custom_output_dir:
+        search_dirs.append(custom_output_dir)
+        
+    search_dirs.extend([
         ".",                                    # Current directory
-        "output",                               # Output directory
+        "output",                               # Default output directory
         "/workspace/Primus",                    # Primus workspace
-        "/workspace/Primus/logs",               # Primus logs directory
         "/workspace/tprimat",                   # TensorPrimat workspace
-        "/workspace/tprimat/output",            # TensorPrimat output directory
-    ]
+    ])
     
     # Filter to existing directories
     search_dirs = [d for d in search_dirs if os.path.isdir(d)]
@@ -251,16 +245,31 @@ def run_nemo_training(model: str, output_dir: str = "./output") -> bool:
     return result.returncode == 0
 
 
-def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[str], List[str]]:
+def run_primus_training(model: str, output_dir: str = "./output") -> bool:
+    """
+    Run Primus training script for a model.
+    """
+    script = f"./run_primus_{model}.sh"
+    if not os.path.isfile(script):
+        print(f"{Colors.RED}❌ Primus script not found: {script}{Colors.NC}")
+        return False
+    
+    # Create output directory
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    
+    # Run the shell script which handles training and metric extraction
+    print(f"{Colors.CYAN}→ Running Primus training for {model}...{Colors.NC}")
+    
+    # Environment variables are already set in main() (PARALLEL, OUTPUT_DIR)
+    import subprocess
+    result = subprocess.run(["bash", script])
+    
+    return result.returncode == 0
+
+
+def run_primus_extraction(models: List[str], software_stack: str, output_dir: str = "./output") -> Tuple[List[str], List[str]]:
     """
     Extract metrics from Primus logs for all models.
-    
-    Args:
-        models: List of model names
-        software_stack: Software stack (rocm/cuda)
-        
-    Returns:
-        (successful_models, failed_models)
     """
     successful = []
     failed = []
@@ -268,7 +277,7 @@ def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[
     print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
     print(f"{Colors.BLUE}Primus Log Extraction Mode{Colors.NC}")
     print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
-    print(f"{Colors.YELLOW}→{Colors.NC} Automatically searching for training logs...")
+    print(f"{Colors.YELLOW}→{Colors.NC} Searching for logs in: {output_dir}")
     print()
     
     for model in models:
@@ -276,22 +285,17 @@ def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[
         print(f"{Colors.BLUE}Model: {Colors.GREEN}{model}{Colors.NC}")
         print(f"{Colors.CYAN}{'─'*60}{Colors.NC}")
         
-        log_file = find_log_file(model)
+        log_file = find_log_file(model, custom_output_dir=output_dir)
         
         if not log_file:
             print(f"{Colors.YELLOW}⚠️  No log file found for {model}{Colors.NC}")
-            print()
             failed.append(model)
             continue
         
         print(f"{Colors.BLUE}→{Colors.NC} Extracting metrics from: {log_file}")
-        print()
         
-        # Get parallel strategy from environment or default to "unknown"
+        # Parallel strategy and output dir are already in env
         parallel_strategy = os.environ.get('PARALLEL', 'unknown')
-        
-        # Get output directory from environment or default
-        output_dir = os.environ.get('OUTPUT_DIR', './output')
         
         if extract_metrics(log_file, model, parallel_strategy=parallel_strategy, output_dir=output_dir):
             successful.append(model)
@@ -299,9 +303,39 @@ def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[
         else:
             failed.append(model)
             print(f"{Colors.RED}❌ {model} extraction failed{Colors.NC}")
-        
-        print()
     
+    return successful, failed
+
+
+def run_primus_benchmarks(models: List[str], runs: int, software_stack: str, output_dir: str = "./output") -> Tuple[List[str], List[str]]:
+    """
+    Run Primus training benchmarks for all models.
+    """
+    successful = []
+    failed = []
+    import time
+    
+    for model_idx, model in enumerate(models):
+        for run in range(1, runs + 1):
+            print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+            print(f"{Colors.BLUE}Starting Primus: {Colors.GREEN}{model}{Colors.NC} (Run {run}/{runs})")
+            print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+            
+            if run_primus_training(model, output_dir):
+                if run == runs:
+                    successful.append(model)
+                print(f"{Colors.GREEN}✅ {model} Primus run {run} completed{Colors.NC}")
+            else:
+                failed.append(model)
+                print(f"{Colors.RED}❌ {model} Primus run {run} failed{Colors.NC}")
+                break
+            
+            if run < runs:
+                time.sleep(10)
+        
+        if model_idx < len(models) - 1:
+            time.sleep(20)
+            
     return successful, failed
 
 
@@ -530,12 +564,18 @@ Examples:
             print()
             
             successful, failed = run_nemo_benchmarks(models, args.runs, software_stack, args.output_dir)
-        else:
-            print(f"{Colors.YELLOW}⚠️  NeMo not detected{Colors.NC}")
-            print(f"{Colors.BLUE}→ Using Primus log extraction mode{Colors.NC}")
+        elif software_stack == "rocm":
+            print(f"{Colors.YELLOW}⚠️  NeMo not detected, but on AMD system{Colors.NC}")
+            print(f"{Colors.BLUE}→ Running Primus training mode{Colors.NC}")
             print()
             
-            successful, failed = run_primus_extraction(models, software_stack)
+            successful, failed = run_primus_benchmarks(models, args.runs, software_stack, args.output_dir)
+        else:
+            print(f"{Colors.YELLOW}⚠️  NeMo not detected and not on AMD system{Colors.NC}")
+            print(f"{Colors.BLUE}→ Using log extraction mode{Colors.NC}")
+            print()
+            
+            successful, failed = run_primus_extraction(models, software_stack, args.output_dir)
     
     # Print summary
     print_summary(successful, failed, software_stack, not has_nemo, args.output_dir)
