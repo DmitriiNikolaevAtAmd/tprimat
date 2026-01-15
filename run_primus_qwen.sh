@@ -50,6 +50,10 @@ PROF_STOP=$((PROF_START + PROF_ACTIVE))
 ACT_CHECKPOINT="${CONFIG_AMD_ACT_CHECKPOINT:-false}"
 export PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True'
 
+# Determine number of layers for activation checkpointing
+NLAYERS=32
+if [[ "$MODEL" == "qwen" ]]; then NLAYERS=28; fi
+
 # Optimizer parameters from config.yaml
 LEARNING_RATE="${CONFIG_LEARNING_RATE:-3.0e-4}"
 MIN_LEARNING_RATE="${CONFIG_MIN_LEARNING_RATE:-3.0e-5}"
@@ -135,14 +139,10 @@ if '${PROF_ENABLED}' == 'true':
 
 # Add memory optimizations
 if '${ACT_CHECKPOINT}' == 'true':
-    # Determine number of layers based on model
-    NLAYERS=32
-    if [[ "$MODEL" == "qwen" ]]; then NLAYERS=28; fi
-    
     config['recompute_activations'] = True
     config['recompute_granularity'] = 'full'
     config['recompute_method'] = 'uniform'
-    config['recompute_num_layers'] = NLAYERS
+    config['recompute_num_layers'] = $NLAYERS
     
 config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
