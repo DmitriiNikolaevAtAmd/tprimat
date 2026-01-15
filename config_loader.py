@@ -96,7 +96,7 @@ class Config:
         Get current comparison methodology (fallback/default).
         
         Note: Parallelism strategy should now be specified via --parallel flag
-        or TPRIMAT_PARALLEL environment variable. This method provides a default
+        or PARALLEL environment variable. This method provides a default
         fallback only.
         """
         return self.experiment.get('methodology', 'maximum_performance')

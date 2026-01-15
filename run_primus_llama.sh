@@ -31,6 +31,11 @@ NUM_GPUS="${CONFIG_AMD_NUM_GPUS:-8}"
 GLOBAL_BATCH_SIZE="${CONFIG_GLOBAL_BATCH_SIZE:-128}"
 SEQ_LENGTH="${CONFIG_SEQ_LENGTH:-2048}"
 
+# Parallelism parameters for AMD
+TP="${CONFIG_LLAMA_AMD_TP:-1}"
+PP="${CONFIG_LLAMA_AMD_PP:-1}"
+GACC="${CONFIG_LLAMA_AMD_GACC:-16}"
+
 # Optimizer parameters from config.yaml
 LEARNING_RATE="${CONFIG_LEARNING_RATE:-3.0e-4}"
 MIN_LEARNING_RATE="${CONFIG_MIN_LEARNING_RATE:-3.0e-5}"
@@ -67,6 +72,7 @@ echo "📁 Output: $OUTPUT_DIR"
 echo "🔧 Num GPUs: $NUM_GPUS"
 echo "📦 Global Batch Size: $GLOBAL_BATCH_SIZE"
 echo "📏 Sequence Length: $SEQ_LENGTH"
+echo "🔧 Parallelism: TP=$TP, PP=$PP, GradAccum=$GACC"
 echo "📈 Learning Rate: $LEARNING_RATE"
 echo "📉 Min Learning Rate: $MIN_LEARNING_RATE"
 echo "🔥 Warmup Steps: $WARMUP_STEPS"
@@ -90,7 +96,33 @@ echo ""
 cd "$PRIMUS_PATH"
 
 # Export config
-export EXP="$CONFIG_FILE"
+# Create a patched config in the output directory to apply parallelism settings
+PATCHED_CONFIG="$OUTPUT_DIR/$(basename "$CONFIG_FILE")"
+cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
+
+echo "🔧 Patching config with parallelism: TP=$TP, PP=$PP"
+# Use python to patch YAML reliably if possible, otherwise sed
+if python3 -c "import yaml" 2>/dev/null; then
+    python3 -c "
+import yaml
+with open('$PATCHED_CONFIG', 'r') as f:
+    config = yaml.safe_load(f)
+config['tensor_model_parallel_size'] = $TP
+config['pipeline_model_parallel_size'] = $PP
+if 'gradient_accumulation_steps' in config:
+    config['gradient_accumulation_steps'] = $GACC
+with open('$PATCHED_CONFIG', 'w') as f:
+    yaml.dump(config, f)
+"
+else
+    # Fallback to sed if pyyaml is not available
+    # Use a more portable sed approach for different OSes
+    sed "s/tensor_model_parallel_size:.*/tensor_model_parallel_size: $TP/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
+    sed "s/pipeline_model_parallel_size:.*/pipeline_model_parallel_size: $PP/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
+    sed "s/gradient_accumulation_steps:.*/gradient_accumulation_steps: $GACC/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
+fi
+
+export EXP="$PATCHED_CONFIG"
 
 # Run training and capture logs
 echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --weight_decay $WEIGHT_DECAY"
@@ -126,7 +158,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     cd "$TPRIMAT_PATH"
     
     # Get parallel strategy from environment (if set)
-    PARALLEL_STRATEGY="${TPRIMAT_PARALLEL:-unknown}"
+    PARALLEL_STRATEGY="${PARALLEL:-unknown}"
     
     python3 extract_primus_metrics.py \
         --log-file "$LOG_FILE" \

@@ -390,7 +390,7 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     import os
     # Priority: explicit argument > environment variable
     if not parallel_strategy:
-        parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', None)
+        parallel_strategy = os.environ.get('PARALLEL', None)
     
     # Load full parallelism config from config.yaml
     parallelism_config = get_parallelism_config(

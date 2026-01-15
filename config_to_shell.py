@@ -45,7 +45,26 @@ def main():
             print(f"export CONFIG_{platform.upper()}_NUM_GPUS='{hw['num_gpus']}'")
         
         # Methodology
-        print(f"export CONFIG_METHODOLOGY='{config.get_methodology()}'")
+        methodology = os.environ.get('PARALLEL')
+        if methodology:
+            print(f"export CONFIG_METHODOLOGY='{methodology}'")
+        else:
+            methodology = config.get_methodology()
+            print(f"export CONFIG_METHODOLOGY='{methodology}'")
+        
+        # Parallelism for each model and platform
+        for model in config.get_models_list():
+            for platform in config.get_platforms_list():
+                try:
+                    p_config = config.get_parallelism(model, platform, methodology=methodology)
+                    prefix = f"CONFIG_{model.upper()}_{platform.upper()}"
+                    print(f"export {prefix}_TP='{p_config.get('tensor_model_parallel_size', 1)}'")
+                    print(f"export {prefix}_PP='{p_config.get('pipeline_model_parallel_size', 1)}'")
+                    print(f"export {prefix}_DP='{p_config.get('data_parallel_size', 1)}'")
+                    print(f"export {prefix}_GACC='{p_config.get('gradient_accumulation_steps', 1)}'")
+                except Exception:
+                    # Skip if no config for this combination
+                    pass
         
     except Exception as e:
         print(f"# Error loading config: {e}", file=sys.stderr)

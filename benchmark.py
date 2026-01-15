@@ -288,7 +288,7 @@ def run_primus_extraction(models: List[str], software_stack: str) -> Tuple[List[
         print()
         
         # Get parallel strategy from environment or default to "unknown"
-        parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', 'unknown')
+        parallel_strategy = os.environ.get('PARALLEL', 'unknown')
         
         # Get output directory from environment or default
         output_dir = os.environ.get('OUTPUT_DIR', './output')
@@ -472,7 +472,7 @@ Examples:
     args = parser.parse_args()
     
     # Set parallelism strategy environment variable (always has a default)
-    os.environ['TPRIMAT_PARALLEL'] = args.parallel
+    os.environ['PARALLEL'] = args.parallel
     
     # Set output directory environment variable
     os.environ['OUTPUT_DIR'] = args.output_dir

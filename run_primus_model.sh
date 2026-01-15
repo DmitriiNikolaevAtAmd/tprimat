@@ -52,8 +52,10 @@ if [ ${#SUCCESS[@]} -gt 0 ]; then
     echo "✅ Successful (${#SUCCESS[@]}): ${SUCCESS[*]}"
     echo ""
     echo "Results saved to:"
+    # Use OUTPUT_DIR or default to output
+    RESULTS_DIR="${OUTPUT_DIR:-output}"
     for MODEL in "${SUCCESS[@]}"; do
-        echo "  📄 output/benchmark_rocm_${MODEL}.json"
+        echo "  📄 ${RESULTS_DIR}/benchmark_rocm_${MODEL}.json"
     done
     echo ""
 fi

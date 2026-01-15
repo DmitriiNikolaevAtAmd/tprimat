@@ -391,7 +391,7 @@ class BenchmarkCallback(Callback):
             parallelism_info = {}
             
             # Get strategy name from environment variable
-            parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', 'unknown')
+            parallel_strategy = os.environ.get('PARALLEL', 'unknown')
             parallelism_info["strategy_name"] = parallel_strategy
             
             try:

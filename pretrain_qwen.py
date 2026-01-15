@@ -27,7 +27,7 @@ def run_pretrain():
     # Get model name and parallelism settings from config
     model_name = "qwen"
     # Allow overriding parallelism strategy via environment variable (for different configurations)
-    parallel_strategy = os.environ.get('TPRIMAT_PARALLEL', config.get_methodology())
+    parallel_strategy = os.environ.get('PARALLEL', config.get_methodology())
     print(f"🔧 Using parallelism strategy: {parallel_strategy}")
     parallelism = config.get_parallelism(model_name, platform, methodology=parallel_strategy)
     platform_opts = config.get_platform_optimizations(platform)

@@ -101,7 +101,7 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     seq_length = config.get('sequence_length', 2048)
     num_gpus = config.get('num_gpus', 8)
     
-    # 1. Total Throughput (Bar Chart)
+    # 1. Per-GPU Throughput (Bar Chart)
     ax1 = axes[0]
     labels = []
     values = []
@@ -110,16 +110,16 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
         if key in benchmarks:
             perf = benchmarks[key]['performance_metrics']
-            tps = perf.get('tokens_per_second')
-            if tps:
+            tps_gpu = perf.get('tokens_per_second_per_gpu')
+            if tps_gpu:
                 labels.append(style_map[key]['label'])
-                values.append(tps)
+                values.append(tps_gpu)
                 colors_list.append(style_map[key]['color'])
     
     if values:
         bars = ax1.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
-        ax1.set_ylabel('Tokens/s', fontweight='bold', fontsize=11)
-        ax1.set_title('Total System Throughput', fontweight='bold', fontsize=12)
+        ax1.set_ylabel('Tokens/s/GPU', fontweight='bold', fontsize=11)
+        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
         ax1.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
         
         # Add value labels on bars
@@ -131,40 +131,27 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     else:
         ax1.text(0.5, 0.5, 'Throughput data not available', 
                 ha='center', va='center', transform=ax1.transAxes)
-        ax1.set_title('Total System Throughput', fontweight='bold', fontsize=12)
+        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
     
-    # 2. Per-GPU Throughput (Bar Chart) - in TFLOP/s
+    # 2. Average Memory Usage (Bar Chart)
     ax2 = axes[1]
     labels = []
     values = []
     colors_list = []
     
-    # Model FLOPs per token: approximately 6 × num_parameters for transformers
-    model_flops_per_token = {
-        'llama': 6 * 8.0e9,   # 48 billion FLOPs per token (Llama 3.1 8B)
-        'qwen': 6 * 7.6e9,    # 45.6 billion FLOPs per token (Qwen 2.5 7B)
-    }
-    
     for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
         if key in benchmarks:
-            perf = benchmarks[key]['performance_metrics']
-            tps_gpu = perf.get('tokens_per_second_per_gpu')
-            if tps_gpu:
-                # Determine model type from key
-                model_type = 'llama' if 'llama' in key else 'qwen'
-                flops_per_token = model_flops_per_token[model_type]
-                
-                # Convert tokens/s/GPU to TFLOP/s/GPU
-                tflops_per_gpu = (tps_gpu * flops_per_token) / 1e12
-                
+            mem_series = benchmarks[key].get('raw_memory_values', [])
+            if mem_series:
+                avg_mem = sum(mem_series) / len(mem_series)
                 labels.append(style_map[key]['label'])
-                values.append(tflops_per_gpu)
+                values.append(avg_mem)
                 colors_list.append(style_map[key]['color'])
     
     if values:
         bars = ax2.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
-        ax2.set_ylabel('TFLOP/s/GPU', fontweight='bold', fontsize=11)
-        ax2.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
+        ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
+        ax2.set_title('Average Memory Usage', fontweight='bold', fontsize=12)
         ax2.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
         
         # Add value labels on bars
@@ -174,9 +161,9 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
                     f'{value:.1f}',
                     ha='center', va='bottom', fontweight='bold', fontsize=9)
     else:
-        ax2.text(0.5, 0.5, 'TFLOP/s/GPU data not available', 
+        ax2.text(0.5, 0.5, 'Memory data not available', 
                 ha='center', va='center', transform=ax2.transAxes)
-        ax2.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
+        ax2.set_title('Average Memory Usage', fontweight='bold', fontsize=12)
     
     # 3. Training Loss over Time
     ax3 = axes[2]
@@ -337,19 +324,12 @@ def print_comparison(nvidia_data: Dict, amd_data: Dict):
     print("\n📊 Performance Metrics")
     print("-" * 80)
     
-    nvidia_tps = nvidia_perf['tokens_per_second']
-    amd_tps = amd_perf['tokens_per_second']
     nvidia_tps_gpu = nvidia_perf['tokens_per_second_per_gpu']
     amd_tps_gpu = amd_perf['tokens_per_second_per_gpu']
     nvidia_step = nvidia_perf['avg_step_time_seconds']
     amd_step = amd_perf['avg_step_time_seconds']
     
-    print(f"  Tokens per Second (Total):")
-    print(f"    NVIDIA: {nvidia_tps:10,.1f}")
-    print(f"    AMD:    {amd_tps:10,.1f}")
-    print(f"    → AMD is {amd_tps/nvidia_tps:.2f}x faster")
-    
-    print(f"\n  Tokens per Second (Per GPU):")
+    print(f"  Tokens per Second (Per GPU):")
     print(f"    NVIDIA: {nvidia_tps_gpu:10,.1f}")
     print(f"    AMD:    {amd_tps_gpu:10,.1f}")
     print(f"    → AMD is {amd_tps_gpu/nvidia_tps_gpu:.2f}x faster per GPU")
@@ -389,7 +369,6 @@ def print_comparison(nvidia_data: Dict, amd_data: Dict):
     print("="*80)
     
     metrics = [
-        ("Total Throughput (tokens/s)", nvidia_tps, amd_tps, "higher"),
         ("Per-GPU Throughput (tokens/s)", nvidia_tps_gpu, amd_tps_gpu, "higher"),
         ("Step Time (secs)", nvidia_step, amd_step, "lower"),
     ]

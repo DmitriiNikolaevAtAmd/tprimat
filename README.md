@@ -1128,7 +1128,7 @@ Instead of command-line flags, you can use environment variables:
 
 ```bash
 # Set parallelism strategy
-export TPRIMAT_PARALLEL="minimal_communication"
+export PARALLEL="minimal_communication"
 python3 pretrain_llama.py
 
 # Set output directory
@@ -1140,7 +1140,7 @@ python3 benchmark.py
 
 ```bash
 # Direct script execution
-export TPRIMAT_PARALLEL="balanced"
+export PARALLEL="balanced"
 export OUTPUT_DIR="./output"
 
 python3 pretrain_llama.py
