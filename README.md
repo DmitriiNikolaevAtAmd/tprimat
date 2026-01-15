@@ -386,11 +386,9 @@ profiling:
 
 ```
 output/
-├── profiler/                                    # Profiler traces
-│   ├── profile_cuda_llama_*.json.gz            # TensorBoard traces
-│   └── profile_cuda_qwen_*.json.gz
-├── benchmark_cuda_llama.json                    # Benchmark metrics
-└── training_llama.log                           # Training logs
+├── profile_cuda_llama_*.json                # Profiler traces
+├── benchmark_cuda_llama.json                # Benchmark metrics
+└── training_llama.log                       # Training logs
 ```
 
 ### Profiler Configuration
@@ -445,7 +443,8 @@ tensorboard --logdir=./output/profiler
 
 ```bash
 # Decompress trace file
-gunzip output/profiler/profile_cuda_llama_*.json.gz
+# No longer gzipped by default, saved directly in output/
+ls output/profile_cuda_llama_*.json
 
 # Open Chrome and navigate to: chrome://tracing
 # Click "Load" and select the .json file
@@ -463,7 +462,7 @@ gunzip output/profiler/profile_cuda_llama_*.json.gz
 import torch.profiler as profiler
 
 # Load and analyze profile
-trace_path = "output/profiler/profile_cuda_llama_*.json.gz"
+trace_path = "output/profile_cuda_llama_*.json"
 # ... analysis code ...
 
 # Print top operations by CUDA time

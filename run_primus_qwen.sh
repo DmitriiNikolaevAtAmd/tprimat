@@ -38,6 +38,12 @@ TP="${CONFIG_QWEN_AMD_TP:-1}"
 PP="${CONFIG_QWEN_AMD_PP:-1}"
 GACC="${CONFIG_QWEN_AMD_GACC:-16}"
 
+# Profiling parameters
+PROF_ENABLED="${CONFIG_PROF_ENABLED:-false}"
+PROF_WAIT="${CONFIG_PROF_WAIT:-1}"
+PROF_WARMUP="${CONFIG_PROF_WARMUP:-1}"
+PROF_ACTIVE="${CONFIG_PROF_ACTIVE:-5}"
+
 # Optimizer parameters from config.yaml
 LEARNING_RATE="${CONFIG_LEARNING_RATE:-3.0e-4}"
 MIN_LEARNING_RATE="${CONFIG_MIN_LEARNING_RATE:-3.0e-5}"
@@ -128,6 +134,16 @@ export EXP="$PATCHED_CONFIG"
 
 # Run training and capture logs
 echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --weight_decay $WEIGHT_DECAY"
+
+# Configure profiling if enabled
+PROF_ARGS=""
+if [ "$PROF_ENABLED" = "true" ]; then
+    PROF_START=$((PROF_WAIT + PROF_WARMUP))
+    PROF_STOP=$((PROF_START + PROF_ACTIVE))
+    PROF_ARGS="--profile --profile-step-start $PROF_START --profile-step-stop $PROF_STOP --profile-export-path $OUTPUT_DIR"
+    echo "📊 Profiling enabled: Steps $PROF_START to $PROF_STOP"
+fi
+
 echo ""
 
 bash ./examples/run_pretrain.sh \
@@ -136,9 +152,24 @@ bash ./examples/run_pretrain.sh \
     --min_lr $MIN_LEARNING_RATE \
     --lr_warmup_iters $WARMUP_STEPS \
     --weight_decay $WEIGHT_DECAY \
+    $PROF_ARGS \
     2>&1 | tee "$LOG_FILE" "$BACKUP_LOG"
 
 EXIT_CODE=${PIPESTATUS[0]}
+
+# Cleanup and rename profile traces for AMD
+if [ "$PROF_ENABLED" = "true" ]; then
+    echo "🧹 Cleaning up profile traces..."
+    # Primus/Megatron usually saves traces with rank/timestamp in the name
+    STRATEGY="${PARALLEL:-unknown}"
+    TARGET_NAME="profile_rocm_${MODEL}_${STRATEGY}.pt.trace.json"
+    
+    LATEST_TRACE=$(find "$OUTPUT_DIR" -name "*.json" -not -name "benchmark_*" -not -name "config.json" -newer "$LOG_FILE" | head -1)
+    if [ -n "$LATEST_TRACE" ]; then
+        mv "$LATEST_TRACE" "$OUTPUT_DIR/$TARGET_NAME"
+        echo "✓ Profile renamed to: $TARGET_NAME"
+    fi
+fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
