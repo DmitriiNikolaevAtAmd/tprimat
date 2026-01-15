@@ -55,6 +55,7 @@ class Config:
         self.comparison = DotDict(self._config.get("comparison", {}))
         self.paths = DotDict(self._config.get("paths", {}))
         self.logging_config = DotDict(self._config.get("logging", {}))
+        self.profiling = DotDict(self._config.get("profiling", {}))
         self.validation = DotDict(self._config.get("validation", {}))
     
     def _load_config(self) -> Dict[str, Any]:
@@ -245,6 +246,10 @@ class Config:
     def get_platforms_list(self) -> List[str]:
         """Get list of available platforms."""
         return list(self.hardware.platforms.keys())
+    
+    def get_profiler_config(self) -> Dict[str, Any]:
+        """Get profiler configuration."""
+        return dict(self.profiling)
     
     def print_config_summary(self, model: str, platform: str):
         """Print configuration summary for model and platform."""

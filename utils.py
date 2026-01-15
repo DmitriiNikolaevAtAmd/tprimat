@@ -39,13 +39,15 @@ def round_floats(obj: Any, precision: int = 5) -> Any:
 class BenchmarkCallback(Callback):
     """Callback to collect platform-agnostic performance metrics."""
     
-    def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, parallel_strategy: str = "unknown"):
+    def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, 
+                 parallel_strategy: str = "unknown", profiler_config: Optional[Dict] = None):
         """
         Args:
             output_dir: Directory to save benchmark results
             platform: 'cuda', 'rocm', or 'auto' for auto-detection
             model_name: Name of the model (e.g., 'llama', 'qwen')
             parallel_strategy: Parallelism strategy name (e.g., 'minimal_communication', 'balanced')
+            profiler_config: Dictionary with profiling configuration (from config.yaml)
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -75,6 +77,11 @@ class BenchmarkCallback(Callback):
         self.num_gpus = None
         self.model_name = model_name
         self.parallel_strategy = parallel_strategy
+        
+        # Profiling configuration
+        self.profiler_config = profiler_config or {}
+        self.profiler = None
+        self.profiler_enabled = self.profiler_config.get('enabled', False)
     
     def _get_gpu_core_count(self, device_name: str, device_props) -> int:
         """
@@ -193,6 +200,56 @@ class BenchmarkCallback(Callback):
                 "software_version": software_version,
             }
         
+        # Initialize profiler if enabled (only on rank 0)
+        if self.profiler_enabled and trainer.is_global_zero and torch.cuda.is_available():
+            import torch.profiler as profiler
+            
+            # Get profiler configuration
+            schedule_config = self.profiler_config.get('schedule', {})
+            wait_steps = schedule_config.get('wait', 1)
+            warmup_steps = schedule_config.get('warmup', 1)
+            active_steps = schedule_config.get('active', 5)
+            repeat_cycles = schedule_config.get('repeat', 1)
+            
+            # Setup profiler activities
+            activities = [profiler.ProfilerActivity.CPU]
+            if torch.cuda.is_available():
+                activities.append(profiler.ProfilerActivity.CUDA)
+            
+            # Create profiler output directory
+            profiler_dir = self.output_dir / "profiler"
+            profiler_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate filename with model name and timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            software_stack = self.gpu_info.get("software_stack", "unknown")
+            if self.model_name:
+                trace_prefix = f"profile_{software_stack}_{self.model_name}_{self.parallel_strategy}_{timestamp}"
+            else:
+                trace_prefix = f"profile_{software_stack}_{timestamp}"
+            
+            self.profiler = profiler.profile(
+                activities=activities,
+                schedule=profiler.schedule(
+                    wait=wait_steps,
+                    warmup=warmup_steps,
+                    active=active_steps,
+                    repeat=repeat_cycles
+                ),
+                on_trace_ready=profiler.tensorboard_trace_handler(
+                    str(profiler_dir),
+                    worker_name=trace_prefix
+                ),
+                record_shapes=self.profiler_config.get('record_shapes', True),
+                profile_memory=self.profiler_config.get('profile_memory', True),
+                with_stack=self.profiler_config.get('with_stack', True),
+                with_flops=self.profiler_config.get('with_flops', True),
+            )
+            self.profiler.__enter__()
+            
+            print(f"✓ Kineto profiler enabled (output: {profiler_dir})")
+            print(f"  Schedule: wait={wait_steps}, warmup={warmup_steps}, active={active_steps}, repeat={repeat_cycles}")
+        
         # Only print on rank 0 to avoid duplicate output in distributed training
         if trainer.is_global_zero:
             software_stack = self.gpu_info.get("software_stack", "unknown")
@@ -201,6 +258,8 @@ class BenchmarkCallback(Callback):
             print(f"{'='*60}")
             for key, value in self.gpu_info.items():
                 print(f"{key}: {value}")
+            if self.profiler_enabled:
+                print(f"profiling: enabled (Kineto)")
             print(f"{'='*60}\n")
     
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
@@ -215,6 +274,10 @@ class BenchmarkCallback(Callback):
         """Collect metrics after each training step."""
         if torch.cuda.is_available():  # Works for both CUDA and ROCm
             torch.cuda.synchronize()
+        
+        # Step profiler if enabled
+        if self.profiler is not None:
+            self.profiler.step()
         
         step_time = time.time() - self.step_start_time
         self.step_times.append(step_time)
@@ -273,6 +336,28 @@ class BenchmarkCallback(Callback):
     
     def on_train_end(self, trainer, pl_module):
         """Save benchmark results."""
+        # Finalize profiler if enabled
+        if self.profiler is not None:
+            try:
+                self.profiler.__exit__(None, None, None)
+                
+                # Export additional Chrome trace if configured
+                if self.profiler_config.get('export_chrome_trace', True):
+                    software_stack = self.gpu_info.get("software_stack", "unknown")
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    if self.model_name:
+                        chrome_trace_path = self.output_dir / f"trace_{software_stack}_{self.model_name}_{self.parallel_strategy}_{timestamp}.json"
+                    else:
+                        chrome_trace_path = self.output_dir / f"trace_{software_stack}_{timestamp}.json"
+                    
+                    # Note: TensorBoard trace handler already saves traces
+                    # This exports a standalone Chrome trace for convenience
+                    print(f"✓ Profiler traces saved to: {self.output_dir / 'profiler'}")
+                    print(f"  View in TensorBoard: tensorboard --logdir={self.output_dir / 'profiler'}")
+                    print(f"  Or Chrome: chrome://tracing (load .json.gz files)")
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to finalize profiler: {e}")
+        
         # Only save results on rank 0 to avoid duplicate files in distributed training
         if not trainer.is_global_zero:
             return

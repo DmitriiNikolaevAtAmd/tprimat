@@ -20,6 +20,9 @@
 - [Configuration](#configuration)
   - [Parallelism Strategies Explained](#parallelism-strategies-explained)
   - [Tensor Parallelism Constraints](#tensor-parallelism-constraints)
+- [Profiling](#profiling)
+  - [Enabling Kineto Profiler](#enabling-kineto-profiler)
+  - [Viewing Profile Results](#viewing-profile-results)
 - [Troubleshooting](#troubleshooting)
 - [Output Files](#output-files)
 - [Advanced Topics](#advanced-topics)
@@ -347,6 +350,216 @@ ValueError: num_attention_heads (28) must be a multiple of tensor_model_parallel
 - 2 × 2 × 2 ✅
 - 4 × 2 × 1 ✅
 - 8 × 1 × 1 ✅ (but only for Llama!)
+
+---
+
+## Profiling
+
+TPrimat includes integrated Kineto profiling for detailed GPU performance analysis. Kineto captures kernel-level traces, memory allocations, and CPU activity.
+
+### Enabling Kineto Profiler
+
+**1. Edit `config.yaml` to enable profiling:**
+
+```yaml
+profiling:
+  enabled: true                     # Enable Kineto profiling
+  export_chrome_trace: true         # Export Chrome trace JSON
+  profile_memory: true              # Track memory allocations
+  with_stack: true                  # Include Python stack traces
+  with_flops: true                  # Estimate FLOPs
+  record_shapes: true               # Record tensor shapes
+  schedule:
+    wait: 1                         # Skip first N steps (warmup)
+    warmup: 1                       # Warmup for N steps
+    active: 5                       # Profile N steps
+    repeat: 1                       # Repeat cycle N times
+```
+
+**2. Run your benchmark:**
+
+```bash
+./benchmark.py --parallel minimal_communication
+```
+
+**3. Find profiler output in your output directory:**
+
+```
+output/
+├── profiler/                                    # Profiler traces
+│   ├── profile_cuda_llama_*.json.gz            # TensorBoard traces
+│   └── profile_cuda_qwen_*.json.gz
+├── benchmark_cuda_llama.json                    # Benchmark metrics
+└── training_llama.log                           # Training logs
+```
+
+### Profiler Configuration
+
+**Schedule Settings:**
+
+- `wait`: Skip initial steps (avoid startup overhead)
+- `warmup`: Warmup steps before profiling
+- `active`: Number of steps to profile
+- `repeat`: How many times to repeat the cycle
+
+**Example schedules:**
+
+```yaml
+# Quick profile (5 steps)
+schedule: {wait: 1, warmup: 1, active: 5, repeat: 1}
+
+# Extended profile (20 steps)
+schedule: {wait: 1, warmup: 2, active: 10, repeat: 2}
+
+# Single step detail
+schedule: {wait: 2, warmup: 1, active: 1, repeat: 1}
+```
+
+**Profiler Options:**
+
+- `profile_memory`: Track GPU memory allocations (adds overhead)
+- `with_stack`: Include Python stack traces (helps identify bottlenecks)
+- `with_flops`: Estimate floating-point operations
+- `record_shapes`: Record tensor shapes (useful for debugging)
+
+### Viewing Profile Results
+
+#### Method 1: TensorBoard (Recommended)
+
+```bash
+# Start TensorBoard
+tensorboard --logdir=./output/profiler
+
+# Open browser to http://localhost:6006
+# Navigate to "PROFILE" tab
+```
+
+**What you'll see:**
+- Kernel execution timeline
+- Memory usage over time
+- Operator breakdown (forward, backward, optimizer)
+- Distributed training communication patterns
+- Per-GPU utilization
+
+#### Method 2: Chrome Trace Viewer
+
+```bash
+# Decompress trace file
+gunzip output/profiler/profile_cuda_llama_*.json.gz
+
+# Open Chrome and navigate to: chrome://tracing
+# Click "Load" and select the .json file
+```
+
+**What you'll see:**
+- GPU kernel timeline (CUDA operations)
+- CPU activity (Python, data loading)
+- Memory allocations/deallocations
+- Synchronization points
+
+#### Method 3: Command-Line Analysis
+
+```python
+import torch.profiler as profiler
+
+# Load and analyze profile
+trace_path = "output/profiler/profile_cuda_llama_*.json.gz"
+# ... analysis code ...
+
+# Print top operations by CUDA time
+print(prof.key_averages().table(
+    sort_by="cuda_time_total",
+    row_limit=20
+))
+```
+
+### Profiling Tips
+
+**1. Minimize Overhead:**
+- Only profile a few steps (5-10)
+- Use `wait=1` to skip warmup
+- Disable `with_stack` for faster profiling
+
+**2. Distributed Training:**
+- Profiling only runs on rank 0 (automatically)
+- Each rank would generate its own trace otherwise
+
+**3. Storage Considerations:**
+- Chrome traces can be large (50-200MB per model)
+- Use `.json.gz` format (10x compression)
+- Clean up old traces regularly
+
+**4. Performance Analysis:**
+```bash
+# Profile fast config
+./benchmark.py --parallel minimal_communication
+
+# Profile memory-optimized config
+./benchmark.py --parallel memory_optimized
+
+# Compare kernel execution times in TensorBoard
+```
+
+### Example: Finding Bottlenecks
+
+**1. Enable profiling and run benchmark:**
+
+```bash
+# Edit config.yaml: profiling.enabled = true
+./benchmark.py --model llama --parallel minimal_communication
+```
+
+**2. View in TensorBoard:**
+
+```bash
+tensorboard --logdir=./output/profiler
+```
+
+**3. Look for:**
+- Long-running kernels (potential optimization targets)
+- GPU idle time (data loading bottlenecks)
+- Memory spikes (potential OOM causes)
+- Communication overhead (collective operations)
+
+**4. Common bottlenecks:**
+- **Data loading**: CPU-to-GPU transfer time
+- **Attention kernels**: Flash attention vs standard
+- **All-reduce**: Gradient synchronization time
+- **Memory copies**: Host-device transfers
+
+### Disabling Profiling
+
+```yaml
+# config.yaml
+profiling:
+  enabled: false  # Disable profiling
+```
+
+Or remove profiler overhead entirely for production benchmarks.
+
+### Advanced Profiling
+
+**Profile specific training steps:**
+
+Modify `utils.py` to profile specific iterations:
+
+```python
+# In BenchmarkCallback
+def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+    # Only profile steps 10-15
+    if batch_idx == 10 and self.profiler is None:
+        self._start_profiler()
+    elif batch_idx == 15 and self.profiler is not None:
+        self._stop_profiler()
+```
+
+**Export profiles programmatically:**
+
+```python
+# After training
+prof.export_chrome_trace("custom_trace.json")
+prof.export_stacks("flame_graph.txt", "self_cuda_time_total")
+```
 
 ---
 

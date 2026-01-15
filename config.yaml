@@ -48,12 +48,12 @@ training:
     global_batch_size: 128        # Total batch size across all GPUs
     seq_length: 2048              # Sequence length in tokens
   duration:
-    max_steps: 50                 # Number of training steps
-    train_iters: 50               # Alternative name used by Primus
+    max_steps: 25                 # Number of training steps
+    train_iters: 25               # Alternative name used by Primus
   optimizer:
     type: "adam"
     learning_rate: 3.0e-4
-    warmup_steps: 10              # Warmup for 10% of training
+    warmup_steps: 5               # Warmup for 20% of training (5/25)
     weight_decay: 0.1
     beta1: 0.9
     beta2: 0.95
@@ -308,3 +308,16 @@ logging:
     tensorboard: true
     wandb: true
     mlflow: true
+
+profiling:
+  enabled: false                    # Enable Kineto profiling
+  export_chrome_trace: true         # Export Chrome trace JSON
+  profile_memory: true              # Track memory allocations
+  with_stack: true                  # Include Python stack traces
+  with_flops: true                  # Estimate FLOPs
+  record_shapes: true               # Record tensor shapes
+  schedule:
+    wait: 1                         # Skip first N steps (warmup)
+    warmup: 1                       # Warmup for N steps
+    active: 5                       # Profile N steps
+    repeat: 1                       # Repeat cycle N times

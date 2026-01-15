@@ -117,7 +117,8 @@ def run_pretrain():
         output_dir=config.get_output_dir(),
         platform="auto",  # Auto-detects CUDA or ROCm
         model_name=model_name,
-        parallel_strategy=parallel_strategy
+        parallel_strategy=parallel_strategy,
+        profiler_config=config.get_profiler_config()
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []
