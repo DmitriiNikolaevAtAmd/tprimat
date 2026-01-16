@@ -73,13 +73,21 @@ def run_pretrain():
     if hasattr(config.training.data, 'dataset_path') and config.training.data.dataset_path:
         print(f"📂 Using real data: {config.training.data.dataset_path}")
         
+        # Llama 3.1 uses tiktoken-based tokenizer (HuggingFace format)
+        # tokenizer_path can be a HuggingFace model ID (e.g., "meta-llama/Llama-3.1-8B")
+        # or a local directory containing tokenizer files
+        from transformers import AutoTokenizer
+        tokenizer_path = config.training.data.tokenizer_path
+        print(f"📂 Loading tokenizer from: {tokenizer_path}")
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+        
         # Define the real data module
         recipe.data = llm.gpt.data.PreTrainingDataModule(
             paths=[config.training.data.dataset_path],
             seq_length=config.training.data.seq_length,
             micro_batch_size=config.training.data.micro_batch_size,
             global_batch_size=config.training.data.global_batch_size,
-            tokenizer=llm.Llama3Tokenizer(config.training.data.tokenizer_path),
+            tokenizer=tokenizer,
             num_workers=2,
         )
     else:

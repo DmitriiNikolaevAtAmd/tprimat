@@ -30,23 +30,27 @@ python3 prepare_data.py \
 
 ## Step 2: Download the Tokenizer
 
-You need the `tokenizer.model` for the Llama 3.1 model. You can download it using the provided `convert_llama.py` (which also downloads the weights) or download just the tokenizer using `huggingface-cli`.
+Llama 3.1 uses a **tiktoken-based tokenizer** (not SentencePiece). Download all the tokenizer files:
 
 ```bash
-# Download just the tokenizer files
-huggingface-cli download meta-llama/Llama-3.1-8B tokenizer.model --local-dir /data
+# Download the tokenizer files (tokenizer.json, tokenizer_config.json, special_tokens_map.json)
+hf download meta-llama/Llama-3.1-8B \
+    tokenizer.json \
+    tokenizer_config.json \
+    special_tokens_map.json \
+    --local-dir /data/llama3_tokenizer
 ```
 
 ## Step 3: Convert JSONL to Megatron Binary Format
 
-Now use NeMo's built-in preprocessing script to create the `.bin` and `.idx` files. This step performs tokenization and shuffles the data for efficient disk-mapped access during training.
+Now use NeMo's built-in preprocessing script to create the `.bin` and `.idx` files. For Llama 3.1, use the `huggingface` tokenizer library:
 
 ```bash
 python /opt/NeMo/scripts/nlp_language_modeling/preprocess_data_for_megatron.py \
     --input /data/raw_data.jsonl \
     --output-prefix /data/llama_dataset \
-    --tokenizer-library sentencepiece \
-    --tokenizer-model /data/tokenizer.model \
+    --tokenizer-library huggingface \
+    --tokenizer-type meta-llama/Llama-3.1-8B \
     --dataset-impl mmap \
     --workers $(nproc)
 ```
@@ -63,7 +67,7 @@ Update your `config.yaml` to point to the newly created dataset:
 training:
   data:
     dataset_path: "/data/llama_dataset_text_document" # Prefix (without .bin/.idx)
-    tokenizer_path: "/data/tokenizer.model"
+    tokenizer_path: "meta-llama/Llama-3.1-8B"         # HuggingFace model ID for tokenizer
 ```
 
 ## Step 5: Start Training

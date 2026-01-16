@@ -10,6 +10,7 @@ pyyaml>=6.0
 # Data Preparation
 datasets>=2.10.0
 huggingface_hub>=0.13.0
+transformers>=4.30.0
 
 # Optional for advanced profiling
 tensorboard>=2.10.0

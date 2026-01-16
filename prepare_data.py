@@ -38,12 +38,12 @@ def prepare_data():
                 
     print(f"✅ Successfully saved {len(dataset)} examples to {args.output_file}")
     print("\nNext step: Run the NeMo preprocessor to convert JSONL to .bin and .idx format.")
-    print("Example command:")
+    print("Example command for Llama 3.1 (uses HuggingFace tokenizer):")
     print(f"python /opt/NeMo/scripts/nlp_language_modeling/preprocess_data_for_megatron.py \\")
     print(f"    --input {args.output_file} \\")
-    print(f"    --output-prefix /data/my_llama_dataset \\")
-    print(f"    --tokenizer-library sentencepiece \\")
-    print(f"    --tokenizer-model /data/tokenizer.model \\")
+    print(f"    --output-prefix /data/llama_dataset \\")
+    print(f"    --tokenizer-library huggingface \\")
+    print(f"    --tokenizer-type meta-llama/Llama-3.1-8B \\")
     print(f"    --dataset-impl mmap \\")
     print(f"    --workers 16")
 
