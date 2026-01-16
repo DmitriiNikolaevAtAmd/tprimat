@@ -73,8 +73,12 @@ def run_pretrain():
     if hasattr(config.training.data, 'dataset_path') and config.training.data.dataset_path:
         print(f"📂 Using real data: {config.training.data.dataset_path}")
         
-        # Get the tokenizer from the default recipe (NeMo-compatible with unique_identifiers)
-        tokenizer = recipe.data.tokenizer
+        # Use NeMo's AutoTokenizer wrapper for Llama 3.1 (has unique_identifiers attribute)
+        # The tokenizer must match what was used to preprocess the data
+        from nemo.collections.common.tokenizers.huggingface.auto_tokenizer import AutoTokenizer as NeMoAutoTokenizer
+        tokenizer_path = config.training.data.tokenizer_path
+        print(f"📂 Loading Llama 3.1 tokenizer from: {tokenizer_path}")
+        tokenizer = NeMoAutoTokenizer(tokenizer_path)
         
         # Replace MockDataModule with PreTrainingDataModule for real data
         from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
