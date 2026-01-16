@@ -69,15 +69,28 @@ def run_pretrain():
     )
     
     # 3. DATA CONFIGURATION (from config.yaml)
-    recipe.data.micro_batch_size = config.training.data.micro_batch_size
-    recipe.data.global_batch_size = config.training.data.global_batch_size
-    recipe.data.seq_length = config.training.data.seq_length
-    
-    # If real data paths are provided, update the paths on the existing data module
-    # (keeps NeMo's properly configured tokenizer with unique_identifiers)
+    # Check if real data paths are provided - need to replace MockDataModule with PreTrainingDataModule
     if hasattr(config.training.data, 'dataset_path') and config.training.data.dataset_path:
         print(f"📂 Using real data: {config.training.data.dataset_path}")
-        recipe.data.paths = [config.training.data.dataset_path]
+        
+        # Get the tokenizer from the default recipe (NeMo-compatible with unique_identifiers)
+        tokenizer = recipe.data.tokenizer
+        
+        # Replace MockDataModule with PreTrainingDataModule for real data
+        from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
+        recipe.data = PreTrainingDataModule(
+            paths=[config.training.data.dataset_path],
+            seq_length=config.training.data.seq_length,
+            micro_batch_size=config.training.data.micro_batch_size,
+            global_batch_size=config.training.data.global_batch_size,
+            tokenizer=tokenizer,
+            num_workers=2,
+        )
+    else:
+        # Use default MockDataModule for benchmarking
+        recipe.data.micro_batch_size = config.training.data.micro_batch_size
+        recipe.data.global_batch_size = config.training.data.global_batch_size
+        recipe.data.seq_length = config.training.data.seq_length
     
     # 4. OPTIMIZATIONS & DURATION (from config.yaml)
     recipe.trainer.max_steps = config.training.duration.max_steps
