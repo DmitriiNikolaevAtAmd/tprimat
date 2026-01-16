@@ -47,6 +47,8 @@ training:
     micro_batch_size: 1           # Per-GPU batch size per accumulation step
     global_batch_size: 128        # Total batch size across all GPUs
     seq_length: 2048              # Sequence length in tokens
+    dataset_path: "/data/dataset" # Path to your .bin and .idx files (prefix)
+    tokenizer_path: "/data/tokenizer.model" # Path to your Llama 3.1 tokenizer model
   duration:
     max_steps: 50                 # Number of training steps
     train_iters: 50               # Alternative name used by Primus

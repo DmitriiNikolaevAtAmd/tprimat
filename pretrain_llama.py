@@ -45,7 +45,7 @@ def run_pretrain():
     
     recipe = llm.llama31_8b.pretrain_recipe(
         name=f"{config.models.llama.name}_pretrain",
-        dir="/checkpoints",
+        dir="/data",
         num_nodes=1,
         num_gpus_per_node=num_gpus,
     )
@@ -69,9 +69,24 @@ def run_pretrain():
     )
     
     # 3. DATA CONFIGURATION (from config.yaml)
-    recipe.data.micro_batch_size = config.training.data.micro_batch_size
-    recipe.data.global_batch_size = config.training.data.global_batch_size
-    recipe.data.seq_length = config.training.data.seq_length
+    # Check if real data paths are provided in config
+    if hasattr(config.training.data, 'dataset_path') and config.training.data.dataset_path:
+        print(f"📂 Using real data: {config.training.data.dataset_path}")
+        
+        # Define the real data module
+        recipe.data = llm.gpt.data.PreTrainingDataModule(
+            paths=[config.training.data.dataset_path],
+            seq_length=config.training.data.seq_length,
+            micro_batch_size=config.training.data.micro_batch_size,
+            global_batch_size=config.training.data.global_batch_size,
+            tokenizer=llm.Llama3Tokenizer(config.training.data.tokenizer_path),
+            num_workers=2,
+        )
+    else:
+        # Fallback to current behavior (mock data)
+        recipe.data.micro_batch_size = config.training.data.micro_batch_size
+        recipe.data.global_batch_size = config.training.data.global_batch_size
+        recipe.data.seq_length = config.training.data.seq_length
     
     # 4. OPTIMIZATIONS & DURATION (from config.yaml)
     recipe.trainer.max_steps = config.training.duration.max_steps
