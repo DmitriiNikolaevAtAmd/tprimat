@@ -60,6 +60,28 @@ MIN_LEARNING_RATE="${CONFIG_MIN_LEARNING_RATE:-3.0e-5}"
 WARMUP_STEPS="${CONFIG_WARMUP_STEPS:-10}"
 WEIGHT_DECAY="${CONFIG_WEIGHT_DECAY:-0.1}"
 
+# Cleanup function to remove temporary artifacts
+cleanup() {
+    echo ""
+    echo "🧹 Cleaning up training artifacts in $OUTPUT_DIR..."
+    rm -f "$OUTPUT_DIR"/training_*.log
+    rm -f "$OUTPUT_DIR"/primus_training_*.log
+    rm -f "$OUTPUT_DIR"/*.yaml
+    # Also remove any leftover profile traces that weren't renamed
+    find "$OUTPUT_DIR" -name "*.json" -not -name "benchmark_*" -not -name "config.json" -mmin -5 -delete 2>/dev/null || true
+    echo "✓ Cleanup complete"
+}
+
+# Trap signals and exit to ensure cleanup happens
+# However, we only want to cleanup if metrics were successfully extracted
+# Or if the user wants them gone regardless. 
+# Let's keep the manual cleanup at the end for success, 
+# and maybe a broader cleanup of OLD logs at the start.
+
+# Remove any pre-existing logs in the output directory to avoid confusion
+rm -f "$OUTPUT_DIR"/training_${MODEL}.log
+rm -f "$OUTPUT_DIR"/primus_training_${MODEL}_*.log
+
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 
@@ -243,13 +265,11 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo "Results saved to: $OUTPUT_DIR/benchmark_rocm_${MODEL}.json"
         echo ""
         
-        # Cleanup: Remove logs and patched config after successful extraction
-        echo "🧹 Cleaning up training artifacts..."
-        rm -f "$LOG_FILE" "$BACKUP_LOG" "$PATCHED_CONFIG"
-        echo "✓ Removed logs and config from $OUTPUT_DIR"
-        echo ""
+        # Aggressive Cleanup: Remove ALL logs and patched configs in the output directory
+        cleanup
         
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 
         echo "🎯 Next Steps:"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
