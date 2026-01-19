@@ -2,7 +2,6 @@ experiment:
   name: "tprimat_benchmark"
   description: "LLM training benchmark comparing AMD vs NVIDIA hardware"
   version: "1.0"
-  methodology: "truly_identical"  # Default parallelism strategy (can override with PARALLEL env var)
 
 hardware:
   platforms:
@@ -28,8 +27,8 @@ models:
     num_layers: 32
     hidden_size: 4096
     num_attention_heads: 32
-    primus_config: "examples/megatron/configs/MI300X/llama3.1_8B-pretrain.yaml"
     nemo_recipe: "llama31_8b.pretrain_recipe"
+    primus_recipe: "llama3.1_8B-pretrain.yaml"
     
   qwen:
     name: "qwen2.5_7b"
@@ -43,65 +42,67 @@ models:
 
 training:
   general:
-    seed: 42                      # Random seed for reproducibility (ensures same init across runs)
+    seed: 42                        # Random seed for reproducibility
   data:
-    micro_batch_size: 1           # Per-GPU batch size per accumulation step
-    global_batch_size: 128        # Total batch size across all GPUs
-    seq_length: 2048              # Sequence length in tokens
-    dataset_path: "/data/llama_dataset_text_document" # Path to your .bin and .idx files (prefix)
-    tokenizer_path: "meta-llama/Llama-3.1-8B"        # HuggingFace model ID or local path
+    micro_batch_size: 1             # Per-GPU batch size per accumulation step
+    global_batch_size: 128          # Total batch size across all GPUs
+    seq_length: 2048                # Sequence length in tokens
+    # Path to preprocessed data (.bin and .idx files prefix)
+    dataset_path: "/data/llama_dataset_text_document"
+    # HuggingFace model ID or local path for tokenizer
+    tokenizer_path: "meta-llama/Llama-3.1-8B"
   duration:
-    max_steps: 50                 # Number of training steps
-    train_iters: 50               # Alternative name used by Primus
+    max_steps: 50                   # Number of training steps
+    train_iters: 50                 # Alternative name used by Primus
   optimizer:
     type: "adam"
     learning_rate: 3.0e-4
-    warmup_steps: 10              # Warmup for 20% of training (5/25)
+    warmup_steps: 10                # Warmup steps (20% of training)
     weight_decay: 0.1
     beta1: 0.9
     beta2: 0.95
   precision:
-    default: "bf16"               # Options: fp32, fp16, bf16, fp8
-    fp8_hybrid: false             # Enable FP8 hybrid mode (H100 specific)
-    fp8_param: false              # Store parameters in FP8
+    default: "bf16"                 # Options: fp32, fp16, bf16, fp8
+    fp8_hybrid: false               # Enable FP8 hybrid mode (H100 specific)
+    fp8_param: false                # Store parameters in FP8
   checkpointing:
     enabled: false
     save_interval: 1000
     keep_last_n: 2
 
 parallelism:
-  # Maximum Performance: Platform-specific tuning to maximize throughput:
-  # - NVIDIA: Higher TP to fit model in 80GB memory, balanced with DP for throughput
-  # - AMD: Leverages 192GB memory with TP=1 for maximum DP and minimal communication
-  # Trade-off: Different settings per platform means non-identical compute paths
+  # Maximum Performance: Platform-specific tuning to maximize throughput.
+  # NVIDIA: Higher TP to fit model in 80GB, balanced with DP for throughput.
+  # AMD: Leverages 192GB memory with TP=1 for max DP, minimal communication.
+  # Trade-off: Different settings per platform = non-identical compute paths.
   maximum_performance: # 00
     llama:
       nvidia:
         tensor_model_parallel_size: 4    # TP=4
         pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 2            # Calculated: 8/(4*1) = 2
-        gradient_accumulation_steps: 64  # Calculated: 128/(1*2) = 64
+        data_parallel_size: 2            # 8/(4*1) = 2
+        gradient_accumulation_steps: 64  # 128/(1*2) = 64
       amd:
         tensor_model_parallel_size: 1    # TP=1 (leverage 192GB memory)
         pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
-        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+        data_parallel_size: 8            # 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # 128/(1*8) = 16
     qwen:
       nvidia:
         tensor_model_parallel_size: 4    # TP=4
         pipeline_model_parallel_size: 2  # PP=2
-        data_parallel_size: 1            # Calculated: 8/(4*2) = 1
-        gradient_accumulation_steps: 128 # Calculated: 128/(1*1) = 128
+        data_parallel_size: 1            # 8/(4*2) = 1
+        gradient_accumulation_steps: 128 # 128/(1*1) = 128
       amd:
         tensor_model_parallel_size: 1    # TP=1 (leverage 192GB memory)
         pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
-        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+        data_parallel_size: 8            # 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # 128/(1*8) = 16
   
-  # Truly Identical: All platforms and models use exactly the same parallelism settings:
-  # - Ensures apples-to-apples comparison across hardware
-  # - Same TP/PP/DP means identical compute graph and communication patterns
-  # - Trade-off: May not fully utilize platform-specific advantages (e.g., AMD's larger memory)
+  # Truly Identical: All platforms use exactly the same parallelism settings.
+  # Ensures apples-to-apples comparison across hardware.
+  # Same TP/PP/DP means identical compute graph and communication patterns.
+  # Trade-off: May not fully utilize platform advantages (AMD's larger mem).
   truly_identical: # 01
     llama:
       nvidia:
@@ -126,90 +127,90 @@ parallelism:
         data_parallel_size: 2
         gradient_accumulation_steps: 64 
   
-  # Memory Optimized: Prioritizes reducing memory footprint per GPU:
-  # - Higher TP and PP to shard model weights and activations across GPUs
-  # - Enables training larger models or larger batch sizes within memory limits
-  # - Trade-off: Increased communication overhead reduces raw throughput
-  # Note: TP must divide attention heads evenly (Llama: 32 heads, Qwen: 28 heads)
+  # Memory Optimized: Prioritizes reducing memory footprint per GPU.
+  # Higher TP and PP to shard model weights and activations across GPUs.
+  # Enables training larger models or larger batch sizes within memory.
+  # Trade-off: Increased communication overhead reduces raw throughput.
+  # Note: TP must divide attention heads evenly (Llama:32, Qwen:28 heads).
   memory_optimized: # 02
     llama:
       nvidia:
-        tensor_model_parallel_size: 4    # TP=4 (balanced: reduces memory, avoids excessive communication)
+        tensor_model_parallel_size: 4    # TP=4 (reduces mem, avoids excess comm)
         pipeline_model_parallel_size: 2  # PP=2 (further reduce memory per GPU)
-        data_parallel_size: 1            # Calculated: 8/(4*2) = 1
-        gradient_accumulation_steps: 128 # Calculated: 128/(1*1) = 128
+        data_parallel_size: 1            # 8/(4*2) = 1
+        gradient_accumulation_steps: 128 # 128/(1*1) = 128
       amd:
         tensor_model_parallel_size: 2    # TP=2 (conservative given 192GB)
         pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 4            # Calculated: 8/(2*1) = 4
-        gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
+        data_parallel_size: 4            # 8/(2*1) = 4
+        gradient_accumulation_steps: 32  # 128/(1*4) = 32
     qwen:
       nvidia:
         tensor_model_parallel_size: 4    # TP=4 (max compatible with 28 heads)
         pipeline_model_parallel_size: 2  # PP=2 (further reduce memory per GPU)
-        data_parallel_size: 1            # Calculated: 8/(4*2) = 1
-        gradient_accumulation_steps: 128 # Calculated: 128/(1*1) = 128
+        data_parallel_size: 1            # 8/(4*2) = 1
+        gradient_accumulation_steps: 128 # 128/(1*1) = 128
       amd:
-        tensor_model_parallel_size: 2    # TP=2 (28 heads / 2 = 14 heads per GPU)
+        tensor_model_parallel_size: 2    # TP=2 (28 heads / 2 = 14 per GPU)
         pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 4            # Calculated: 8/(2*1) = 4
-        gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
+        data_parallel_size: 4            # 8/(2*1) = 4
+        gradient_accumulation_steps: 32  # 128/(1*4) = 32
   
-  # Minimal Communication: Eliminates model parallelism to minimize GPU communication:
-  # - TP=1, PP=1 means entire model fits on each GPU (no sharding)
-  # - Maximum DP=8 for highest data throughput with only gradient all-reduce
-  # - Trade-off: Requires sufficient GPU memory to hold full model; best for smaller models
+  # Minimal Communication: Eliminates model parallelism to minimize GPU comm.
+  # TP=1, PP=1 means entire model fits on each GPU (no sharding).
+  # Maximum DP=8 for highest data throughput with only gradient all-reduce.
+  # Trade-off: Requires sufficient GPU memory; best for smaller models.
   minimal_communication: # 03
     llama:
       nvidia:
-        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel communication)
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel comm)
         pipeline_model_parallel_size: 1  # PP=1 (no pipeline bubbles)
-        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
-        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+        data_parallel_size: 8            # 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # 128/(1*8) = 16
       amd:
-        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel communication)
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel comm)
         pipeline_model_parallel_size: 1  # PP=1 (no pipeline bubbles)
-        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
-        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+        data_parallel_size: 8            # 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # 128/(1*8) = 16
     qwen:
       nvidia:
-        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel communication)
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel comm)
         pipeline_model_parallel_size: 1  # PP=1 (no pipeline bubbles)
-        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
-        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+        data_parallel_size: 8            # 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # 128/(1*8) = 16
       amd:
-        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel communication)
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallel comm)
         pipeline_model_parallel_size: 1  # PP=1 (no pipeline bubbles)
-        data_parallel_size: 8            # Calculated: 8/(1*1) = 8
-        gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
+        data_parallel_size: 8            # 8/(1*1) = 8
+        gradient_accumulation_steps: 16  # 128/(1*8) = 16
   
-  # Balanced: Uses moderate tensor parallelism (TP=2) providing trade-off between:
+  # Balanced: Uses moderate tensor parallelism (TP=2) providing trade-off:
   # - Memory efficiency: TP=2 reduces memory per GPU by splitting weights
   # - Communication overhead: Lower TP means less all-reduce communication
-  # - Compute utilization: Not over-sharding, so each GPU has meaningful work
+  # - Compute utilization: Not over-sharding, each GPU has meaningful work
   balanced: # 04
     llama:
       nvidia:
         tensor_model_parallel_size: 2    # TP=2 (moderate sharding)
         pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 4            # Calculated: 8/(2*1) = 4
-        gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
+        data_parallel_size: 4            # 8/(2*1) = 4
+        gradient_accumulation_steps: 32  # 128/(1*4) = 32
       amd:
         tensor_model_parallel_size: 2    # TP=2 (moderate sharding)
         pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 4            # Calculated: 8/(2*1) = 4
-        gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
+        data_parallel_size: 4            # 8/(2*1) = 4
+        gradient_accumulation_steps: 32  # 128/(1*4) = 32
     qwen:
       nvidia:
         tensor_model_parallel_size: 2    # TP=2 (moderate sharding)
         pipeline_model_parallel_size: 2  # PP=2
-        data_parallel_size: 2            # Calculated: 8/(2*2) = 2
-        gradient_accumulation_steps: 64  # Calculated: 128/(1*2) = 64
+        data_parallel_size: 2            # 8/(2*2) = 2
+        gradient_accumulation_steps: 64  # 128/(1*2) = 64
       amd:
         tensor_model_parallel_size: 2    # TP=2 (moderate sharding)
         pipeline_model_parallel_size: 2  # PP=2
-        data_parallel_size: 2            # Calculated: 8/(2*2) = 2
-        gradient_accumulation_steps: 64  # Calculated: 128/(1*2) = 64
+        data_parallel_size: 2            # 8/(2*2) = 2
+        gradient_accumulation_steps: 64  # 128/(1*2) = 64
 
 platform_optimizations:
   nvidia:
@@ -279,12 +280,12 @@ benchmarking:
         tdp_watts: 750
   
   warmup:
-    skip_first_n_steps: 1         # Skip first step (warmup)
+    skip_first_n_steps: 1           # Skip first step (warmup)
     
   runs:
-    default_num_runs: 1           # For quick benchmarking
-    recommended_num_runs: 3       # For statistical significance
-    cooldown_seconds: 10          # Between runs
+    default_num_runs: 1             # For quick benchmarking
+    recommended_num_runs: 3         # For statistical significance
+    cooldown_seconds: 10            # Between runs
 
 comparison:
   metrics_to_compare:
@@ -330,14 +331,10 @@ logging:
     mlflow: true
 
 profiling:
-  enabled: false                    # Enable Kineto profiling
-  export_chrome_trace: true         # Export Chrome trace JSON
-  profile_memory: true              # Track memory allocations
-  with_stack: true                  # Include Python stack traces
-  with_flops: true                  # Estimate FLOPs
-  record_shapes: true               # Record tensor shapes
-  schedule:
-    wait: 1                         # Skip first N steps (warmup)
-    warmup: 1                       # Warmup for N steps
-    active: 5                       # Profile N steps
-    repeat: 1                       # Repeat cycle N times
+  enabled: false                    # Enable NVIDIA Nsight Systems profiling
+  trace: "cuda,nvtx,osrt,cudnn,cublas"  # What to trace
+  cuda_memory_usage: true           # Track CUDA memory allocations
+  capture_range: "cudaProfilerApi"  # Capture range method
+  stats: true                       # Generate summary statistics
+  force_overwrite: true             # Overwrite existing profiles
+  export_json: true                 # Export to JSON (Chrome tracing)

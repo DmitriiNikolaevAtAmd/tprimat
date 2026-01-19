@@ -22,6 +22,8 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from alive_progress import alive_bar
+
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -289,29 +291,35 @@ def run_primus_extraction(models: List[str], software_stack: str, output_dir: st
     print(f"{Colors.YELLOW}→{Colors.NC} Searching for logs in: {output_dir}")
     print()
     
-    for model in models:
-        print(f"{Colors.CYAN}{'─'*60}{Colors.NC}")
-        print(f"{Colors.BLUE}Model: {Colors.GREEN}{model}{Colors.NC}")
-        print(f"{Colors.CYAN}{'─'*60}{Colors.NC}")
-        
-        log_file = find_log_file(model, custom_output_dir=output_dir)
-        
-        if not log_file:
-            print(f"{Colors.YELLOW}⚠️  No log file found for {model}{Colors.NC}")
-            failed.append(model)
-            continue
-        
-        print(f"{Colors.BLUE}→{Colors.NC} Extracting metrics from: {log_file}")
-        
-        # Parallel strategy and output dir are already in env
-        parallel_strategy = os.environ.get('PARALLEL', 'unknown')
-        
-        if extract_metrics(log_file, model, parallel_strategy=parallel_strategy, output_dir=output_dir):
-            successful.append(model)
-            print(f"{Colors.GREEN}✅ {model} metrics extracted successfully{Colors.NC}")
-        else:
-            failed.append(model)
-            print(f"{Colors.RED}❌ {model} extraction failed{Colors.NC}")
+    with alive_bar(len(models), title="Log Extraction", bar="smooth", spinner="dots_waves") as bar:
+        for model in models:
+            bar.text(f"→ Extracting: {model}")
+            
+            print(f"\n{Colors.CYAN}{'─'*60}{Colors.NC}")
+            print(f"{Colors.BLUE}Model: {Colors.GREEN}{model}{Colors.NC}")
+            print(f"{Colors.CYAN}{'─'*60}{Colors.NC}")
+            
+            log_file = find_log_file(model, custom_output_dir=output_dir)
+            
+            if not log_file:
+                print(f"{Colors.YELLOW}⚠️  No log file found for {model}{Colors.NC}")
+                failed.append(model)
+                bar()
+                continue
+            
+            print(f"{Colors.BLUE}→{Colors.NC} Extracting metrics from: {log_file}")
+            
+            # Parallel strategy and output dir are already in env
+            parallel_strategy = os.environ.get('PARALLEL', 'unknown')
+            
+            if extract_metrics(log_file, model, parallel_strategy=parallel_strategy, output_dir=output_dir):
+                successful.append(model)
+                print(f"{Colors.GREEN}✅ {model} metrics extracted successfully{Colors.NC}")
+            else:
+                failed.append(model)
+                print(f"{Colors.RED}❌ {model} extraction failed{Colors.NC}")
+            
+            bar()
     
     return successful, failed
 
@@ -324,26 +332,33 @@ def run_primus_benchmarks(models: List[str], runs: int, software_stack: str, out
     failed = []
     import time
     
-    for model_idx, model in enumerate(models):
-        for run in range(1, runs + 1):
-            print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
-            print(f"{Colors.BLUE}Starting Primus: {Colors.GREEN}{model}{Colors.NC} (Run {run}/{runs})")
-            print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+    total_tasks = len(models) * runs
+    
+    with alive_bar(total_tasks, title="Primus Pipeline", bar="smooth", spinner="dots_waves") as bar:
+        for model_idx, model in enumerate(models):
+            for run in range(1, runs + 1):
+                bar.text(f"→ {model} (run {run}/{runs})")
+                
+                print(f"\n{Colors.CYAN}{'='*60}{Colors.NC}")
+                print(f"{Colors.BLUE}Starting Primus: {Colors.GREEN}{model}{Colors.NC} (Run {run}/{runs})")
+                print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+                
+                if run_primus_training(model, output_dir):
+                    if run == runs:
+                        successful.append(model)
+                    print(f"{Colors.GREEN}✅ {model} Primus run {run} completed{Colors.NC}")
+                    bar()
+                else:
+                    failed.append(model)
+                    print(f"{Colors.RED}❌ {model} Primus run {run} failed{Colors.NC}")
+                    bar()
+                    break
+                
+                if run < runs:
+                    time.sleep(10)
             
-            if run_primus_training(model, output_dir):
-                if run == runs:
-                    successful.append(model)
-                print(f"{Colors.GREEN}✅ {model} Primus run {run} completed{Colors.NC}")
-            else:
-                failed.append(model)
-                print(f"{Colors.RED}❌ {model} Primus run {run} failed{Colors.NC}")
-                break
-            
-            if run < runs:
-                time.sleep(10)
-        
-        if model_idx < len(models) - 1:
-            time.sleep(20)
+            if model_idx < len(models) - 1:
+                time.sleep(20)
             
     return successful, failed
 
@@ -363,38 +378,44 @@ def run_nemo_benchmarks(models: List[str], runs: int, software_stack: str, outpu
     """
     successful = []
     failed = []
+    import time
     
-    for model_idx, model in enumerate(models):
-        for run in range(1, runs + 1):
-            print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
-            print(f"{Colors.BLUE}Starting: {Colors.GREEN}{model}{Colors.NC} (Run {run}/{runs})")
-            print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
-            print()
+    total_tasks = len(models) * runs
+    
+    with alive_bar(total_tasks, title="NeMo Pipeline", bar="smooth", spinner="dots_waves") as bar:
+        for model_idx, model in enumerate(models):
+            for run in range(1, runs + 1):
+                bar.text(f"→ {model} (run {run}/{runs})")
+                
+                print(f"\n{Colors.CYAN}{'='*60}{Colors.NC}")
+                print(f"{Colors.BLUE}Starting: {Colors.GREEN}{model}{Colors.NC} (Run {run}/{runs})")
+                print(f"{Colors.CYAN}{'='*60}{Colors.NC}")
+                print()
+                
+                if run_nemo_training(model, output_dir):
+                    if run == runs:  # Only add to successful after all runs complete
+                        successful.append(model)
+                    print(f"{Colors.GREEN}✅ {model} run {run} completed successfully{Colors.NC}")
+                    bar()
+                else:
+                    failed.append(model)
+                    print(f"{Colors.RED}❌ {model} run {run} failed{Colors.NC}")
+                    bar()
+                    break  # Stop further runs if one fails
+                
+                print()
+                
+                # Cooldown between runs of the same model
+                if run < runs:
+                    print(f"{Colors.YELLOW}⏳ Cooling down for 10 seconds...{Colors.NC}")
+                    time.sleep(10)
             
-            if run_nemo_training(model, output_dir):
-                if run == runs:  # Only add to successful after all runs complete
-                    successful.append(model)
-                print(f"{Colors.GREEN}✅ {model} run {run} completed successfully{Colors.NC}")
-            else:
-                failed.append(model)
-                print(f"{Colors.RED}❌ {model} run {run} failed{Colors.NC}")
-                break  # Stop further runs if one fails
-            
-            print()
-            
-            # Cooldown between runs of the same model
-            if run < runs:
-                print(f"{Colors.YELLOW}⏳ Cooling down for 10 seconds...{Colors.NC}")
-                import time
-                time.sleep(10)
-        
-        # Cooldown between different models to allow GPU memory to clear
-        if model_idx < len(models) - 1:  # Not the last model
-            print()
-            print(f"{Colors.YELLOW}⏳ Waiting 20 seconds for GPU memory to clear before next model...{Colors.NC}")
-            import time
-            time.sleep(20)
-            print()
+            # Cooldown between different models to allow GPU memory to clear
+            if model_idx < len(models) - 1:  # Not the last model
+                print()
+                print(f"{Colors.YELLOW}⏳ Waiting 20 seconds for GPU memory to clear before next model...{Colors.NC}")
+                time.sleep(20)
+                print()
     
     return successful, failed
 
@@ -468,11 +489,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ./benchmark.py                                  # Run all models (uses config.yaml methodology)
+  ./benchmark.py                                  # Run all models (truly_identical)
   ./benchmark.py --model llama                    # Run only llama
   ./benchmark.py --runs 3                         # Run all models 3 times
   
-  # Override parallelism strategy (default from config.yaml):
+  # Parallelism strategies:
   ./benchmark.py --parallel truly_identical       # Same config on both platforms
   ./benchmark.py --parallel maximum_performance   # Platform-optimized for speed
   ./benchmark.py --parallel memory_optimized      # TP=4,PP=2 (save memory)
@@ -502,8 +523,8 @@ Examples:
         '--parallel',
         choices=['maximum_performance', 'truly_identical', 'memory_optimized', 
                  'minimal_communication', 'balanced'],
-        default=None,  # Will read from config.yaml
-        help='Parallelism strategy (default: from config.yaml)'
+        default='truly_identical',
+        help='Parallelism strategy (default: truly_identical)'
     )
     
     parser.add_argument(
@@ -513,15 +534,6 @@ Examples:
     )
     
     args = parser.parse_args()
-    
-    # Get parallelism strategy from args or config.yaml
-    if args.parallel is None:
-        try:
-            from config_loader import load_config
-            config = load_config()
-            args.parallel = config.get_methodology()
-        except Exception:
-            args.parallel = 'truly_identical'  # Fallback default
     
     # Set parallelism strategy environment variable
     os.environ['PARALLEL'] = args.parallel

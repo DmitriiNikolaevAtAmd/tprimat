@@ -151,5 +151,57 @@ def run_pretrain():
     run.run(recipe, direct=True)
 
 if __name__ == "__main__":
-    run_pretrain()
+    import sys
+    import shutil
+    import subprocess
+    
+    # Check if we should wrap with Nsight profiler
+    config = load_config()
+    profiler_config = config.get_profiler_config()
+    
+    # Only wrap if: profiling enabled and not already running under nsys
+    if (profiler_config.get('enabled', False) and 
+        os.environ.get('NSYS_PROFILING_SESSION_ID') is None):
+        
+        # Check if nsys is available
+        if shutil.which('nsys') is None:
+            print("⚠️  Nsight profiling enabled but 'nsys' not found in PATH")
+            print("   Running without profiling...")
+            run_pretrain()
+        else:
+            # Build profile output path
+            parallel_strategy = os.environ.get('PARALLEL', config.get_methodology())
+            output_dir = config.get_output_dir()
+            profile_output = os.path.join(output_dir, f"profile_cuda_llama_{parallel_strategy}")
+            
+            # Get nsight config
+            trace = profiler_config.get('trace', 'cuda,nvtx,osrt,cudnn,cublas')
+            cuda_memory = 'true' if profiler_config.get('cuda_memory_usage', True) else 'false'
+            capture_range = profiler_config.get('capture_range', 'cudaProfilerApi')
+            stats = 'true' if profiler_config.get('stats', True) else 'false'
+            
+            print(f"🔬 NVIDIA Nsight Systems profiling enabled")
+            print(f"   Output: {profile_output}.nsys-rep")
+            print()
+            
+            # Re-launch with nsys wrapper
+            nsys_cmd = [
+                'nsys', 'profile',
+                '-o', profile_output,
+                '--trace', trace,
+                f'--cuda-memory-usage={cuda_memory}',
+                '--capture-range', capture_range,
+                f'--stats={stats}',
+                '--force-overwrite=true',
+                '--', sys.executable, __file__
+            ]
+            
+            # Pass through environment
+            env = os.environ.copy()
+            env['NSYS_PROFILING_SESSION_ID'] = '1'  # Prevent infinite recursion
+            
+            result = subprocess.run(nsys_cmd, env=env)
+            sys.exit(result.returncode)
+    else:
+        run_pretrain()
 

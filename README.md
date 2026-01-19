@@ -21,7 +21,7 @@
   - [Parallelism Strategies Explained](#parallelism-strategies-explained)
   - [Tensor Parallelism Constraints](#tensor-parallelism-constraints)
 - [Profiling](#profiling)
-  - [Enabling Kineto Profiler](#enabling-kineto-profiler)
+  - [Enabling Nsight Profiler](#enabling-nsight-profiler)
   - [Viewing Profile Results](#viewing-profile-results)
 - [Troubleshooting](#troubleshooting)
 - [Output Files](#output-files)
@@ -355,30 +355,27 @@ ValueError: num_attention_heads (28) must be a multiple of tensor_model_parallel
 
 ## Profiling
 
-TPrimat includes integrated Kineto profiling for detailed GPU performance analysis. Kineto captures kernel-level traces, memory allocations, and CPU activity.
+TPrimat includes integrated NVIDIA Nsight Systems profiling for detailed GPU performance analysis. Nsight captures kernel-level traces, memory allocations, CUDA operations, and CPU activity.
 
-### Enabling Kineto Profiler
+### Enabling Nsight Profiler
 
 **1. Edit `config.yaml` to enable profiling:**
 
 ```yaml
 profiling:
-  enabled: true                     # Enable Kineto profiling
-  export_chrome_trace: true         # Export Chrome trace JSON
-  profile_memory: true              # Track memory allocations
-  with_stack: true                  # Include Python stack traces
-  with_flops: true                  # Estimate FLOPs
-  record_shapes: true               # Record tensor shapes
-  schedule:
-    wait: 1                         # Skip first N steps (warmup)
-    warmup: 1                       # Warmup for N steps
-    active: 5                       # Profile N steps
-    repeat: 1                       # Repeat cycle N times
+  enabled: true                           # Enable Nsight profiling
+  trace: "cuda,nvtx,osrt,cudnn,cublas"    # What to trace
+  cuda_memory_usage: true                 # Track CUDA memory allocations
+  capture_range: "cudaProfilerApi"        # Capture range method
+  stats: true                             # Generate summary statistics
+  export_json: true                       # Export to JSON for Chrome tracing
 ```
 
 **2. Run your benchmark:**
 
 ```bash
+python3 pretrain_llama.py   # Automatically wraps with nsys when profiling enabled
+# or
 ./benchmark.py --parallel minimal_communication
 ```
 
@@ -386,90 +383,61 @@ profiling:
 
 ```
 output/
-├── profile_cuda_llama_*.json                # Profiler traces
-├── benchmark_cuda_llama.json                # Benchmark metrics
-└── training_llama.log                       # Training logs
+├── profile_cuda_llama_balanced.nsys-rep    # Nsight profile (binary)
+├── benchmark_cuda_llama.json               # Benchmark metrics
 ```
 
 ### Profiler Configuration
 
-**Schedule Settings:**
+**Trace Options:**
 
-- `wait`: Skip initial steps (avoid startup overhead)
-- `warmup`: Warmup steps before profiling
-- `active`: Number of steps to profile
-- `repeat`: How many times to repeat the cycle
+- `cuda`: CUDA API calls and kernel launches
+- `nvtx`: NVIDIA Tools Extension markers
+- `osrt`: OS runtime libraries
+- `cudnn`: cuDNN operations
+- `cublas`: cuBLAS operations
 
-**Example schedules:**
+**Other Options:**
 
-```yaml
-# Quick profile (5 steps)
-schedule: {wait: 1, warmup: 1, active: 5, repeat: 1}
-
-# Extended profile (20 steps)
-schedule: {wait: 1, warmup: 2, active: 10, repeat: 2}
-
-# Single step detail
-schedule: {wait: 2, warmup: 1, active: 1, repeat: 1}
-```
-
-**Profiler Options:**
-
-- `profile_memory`: Track GPU memory allocations (adds overhead)
-- `with_stack`: Include Python stack traces (helps identify bottlenecks)
-- `with_flops`: Estimate floating-point operations
-- `record_shapes`: Record tensor shapes (useful for debugging)
+- `cuda_memory_usage`: Track GPU memory allocations
+- `capture_range`: How to control profiling (`cudaProfilerApi` uses code markers)
+- `stats`: Generate summary statistics after profiling
+- `export_json`: Export timeline to JSON format
 
 ### Viewing Profile Results
 
-#### Method 1: TensorBoard (Recommended)
+#### Method 1: Nsight Systems UI (Recommended)
 
 ```bash
-# Start TensorBoard
-tensorboard --logdir=./output/profiler
-
-# Open browser to http://localhost:6006
-# Navigate to "PROFILE" tab
+# Open profile in Nsight Systems GUI
+nsys-ui output/profile_cuda_llama_balanced.nsys-rep
 ```
 
 **What you'll see:**
-- Kernel execution timeline
-- Memory usage over time
-- Operator breakdown (forward, backward, optimizer)
-- Distributed training communication patterns
-- Per-GPU utilization
+- GPU kernel timeline with detailed timing
+- CUDA memory allocations and transfers
+- CPU thread activity
+- Distributed training communication patterns (NCCL)
+- Per-GPU utilization and occupancy
 
-#### Method 2: Chrome Trace Viewer
+#### Method 2: Export to JSON (Chrome Tracing)
 
 ```bash
-# Decompress trace file
-# No longer gzipped by default, saved directly in output/
-ls output/profile_cuda_llama_*.json
+# Export to JSON format
+nsys export --type=json output/profile_cuda_llama_balanced.nsys-rep
 
 # Open Chrome and navigate to: chrome://tracing
-# Click "Load" and select the .json file
+# Click "Load" and select the exported .json file
 ```
 
-**What you'll see:**
-- GPU kernel timeline (CUDA operations)
-- CPU activity (Python, data loading)
-- Memory allocations/deallocations
-- Synchronization points
+#### Method 3: Command-Line Statistics
 
-#### Method 3: Command-Line Analysis
+```bash
+# View profiling statistics
+nsys stats output/profile_cuda_llama_balanced.nsys-rep
 
-```python
-import torch.profiler as profiler
-
-# Load and analyze profile
-trace_path = "output/profile_cuda_llama_*.json"
-# ... analysis code ...
-
-# Print top operations by CUDA time
-print(prof.key_averages().table(
-    sort_by="cuda_time_total",
-    row_limit=20
-))
+# Export statistics to CSV
+nsys stats --report cuda_gpu_kern_sum output/profile.nsys-rep --format csv
 ```
 
 ### Profiling Tips

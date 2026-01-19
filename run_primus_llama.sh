@@ -200,15 +200,30 @@ echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $
 # Configure profiling flags (removed causing unregistered keys)
 echo ""
 
-bash ./examples/run_pretrain.sh \
-    --train_iters $TRAIN_ITERS \
-    --lr $LEARNING_RATE \
-    --min_lr $MIN_LEARNING_RATE \
-    --lr_warmup_iters $WARMUP_STEPS \
-    --weight_decay $WEIGHT_DECAY \
-    2>&1 | tee "$LOG_FILE" "$BACKUP_LOG" > /dev/null
-
-EXIT_CODE=${PIPESTATUS[0]}
+# Use progress wrapper if alive-progress is available
+if python3 -c "from alive_progress import alive_bar" 2>/dev/null; then
+    # Run with progress bar
+    TRAIN_CMD="cd $PRIMUS_PATH && bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --weight_decay $WEIGHT_DECAY"
+    
+    python3 "$TPRIMAT_PATH/primus_progress.py" \
+        --command "$TRAIN_CMD" \
+        --log-file "$LOG_FILE" \
+        --total-iters "$TRAIN_ITERS"
+    EXIT_CODE=$?
+    
+    # Copy to backup log
+    cp "$LOG_FILE" "$BACKUP_LOG" 2>/dev/null || true
+else
+    # Fallback: run without progress bar
+    bash ./examples/run_pretrain.sh \
+        --train_iters $TRAIN_ITERS \
+        --lr $LEARNING_RATE \
+        --min_lr $MIN_LEARNING_RATE \
+        --lr_warmup_iters $WARMUP_STEPS \
+        --weight_decay $WEIGHT_DECAY \
+        2>&1 | tee "$LOG_FILE" "$BACKUP_LOG" > /dev/null
+    EXIT_CODE=${PIPESTATUS[0]}
+fi
 
 # Cleanup and rename profile traces for AMD
 if [ "$PROF_ENABLED" = "true" ]; then

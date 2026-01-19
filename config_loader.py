@@ -93,13 +93,14 @@ class Config:
     
     def get_methodology(self) -> str:
         """
-        Get current comparison methodology (fallback/default).
+        Get parallelism strategy from PARALLEL env var or default.
         
-        Note: Parallelism strategy should now be specified via --parallel flag
-        or PARALLEL environment variable. This method provides a default
-        fallback only.
+        Priority: PARALLEL env var > default 'truly_identical'
+        
+        Use --parallel flag in run scripts to set the strategy.
         """
-        return self.experiment.get('methodology', 'maximum_performance')
+        import os
+        return os.environ.get('PARALLEL', 'truly_identical')
     
     def get_parallelism(
         self,
