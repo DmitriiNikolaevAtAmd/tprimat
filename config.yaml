@@ -47,9 +47,7 @@ training:
     micro_batch_size: 1             # Per-GPU batch size per accumulation step
     global_batch_size: 128          # Total batch size across all GPUs
     seq_length: 2048                # Sequence length in tokens
-    # Path to preprocessed data (.bin and .idx files prefix)
     dataset_path: "/data/llama_dataset_text_document"
-    # HuggingFace model ID or local path for tokenizer
     tokenizer_path: "meta-llama/Llama-3.1-8B"
   duration:
     max_steps: 50                   # Number of training steps
@@ -331,7 +329,7 @@ logging:
     mlflow: true
 
 profiling:
-  enabled: false                    # Enable NVIDIA Nsight Systems profiling
+  enabled: true                    # Enable NVIDIA Nsight Systems profiling
   trace: "cuda,nvtx,osrt,cudnn,cublas"  # What to trace
   cuda_memory_usage: true           # Track CUDA memory allocations
   capture_range: "cudaProfilerApi"  # Capture range method

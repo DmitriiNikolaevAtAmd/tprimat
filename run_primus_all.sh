@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run all Primus models (Llama, Qwen) in sequence with progress tracking
+# Run all Primus models (Llama, Qwen) in sequence
 #
 # Usage:
 #   ./run_primus_all.sh                           # Default: truly_identical
@@ -36,13 +36,29 @@ done
 export PARALLEL
 export OUTPUT_DIR
 
-# Check if alive-progress is available for Python-based progress
-if python3 -c "from alive_progress import alive_bar" 2>/dev/null; then
-    # Use Python wrapper with alive-progress
-    python3 "$SCRIPT_DIR/run_primus_pipeline.py" \
-        --parallel "$PARALLEL" \
-        --output-dir "$OUTPUT_DIR"
-else
-    # Fallback to shell-only version
-    "$SCRIPT_DIR/run_primus_model.sh"
-fi
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║           Primus Training: All Models                      ║"
+echo "╚════════════════════════════════════════════════════════════╝"
+echo ""
+echo "Strategy: $PARALLEL"
+echo "Output: $OUTPUT_DIR"
+echo ""
+
+# Run Llama
+echo "═══════════════════════════════════════════════════════════"
+echo "Running Llama..."
+echo "═══════════════════════════════════════════════════════════"
+"$SCRIPT_DIR/run_primus_llama.sh"
+
+echo ""
+echo "Cooling down for 30 seconds..."
+sleep 30
+
+# Run Qwen
+echo "═══════════════════════════════════════════════════════════"
+echo "Running Qwen..."
+echo "═══════════════════════════════════════════════════════════"
+"$SCRIPT_DIR/run_primus_qwen.sh"
+
+echo ""
+echo "✅ All Primus models completed!"
