@@ -370,19 +370,12 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     max_step_time = max(step_times_no_warmup)
     
     # Calculate token-based throughput
-    # Prefer Primus native metrics if available, otherwise calculate
-    if tokens_per_gpu_values:
-        # Use Primus reported tokens/s/GPU (skip warmup)
-        tokens_per_gpu_no_warmup = tokens_per_gpu_values[1:] if len(tokens_per_gpu_values) > 1 else tokens_per_gpu_values
-        tokens_per_second_per_gpu = sum(tokens_per_gpu_no_warmup) / len(tokens_per_gpu_no_warmup)
-        tokens_per_second = tokens_per_second_per_gpu * num_gpus
-        print(f"📊 Using Primus native tokens/s/GPU: {tokens_per_second_per_gpu:.1f}")
-    else:
-        # Calculate from batch size and sequence length
-        tokens_per_step = global_batch_size * seq_length
-        tokens_per_second = tokens_per_step / avg_step_time
-        tokens_per_second_per_gpu = tokens_per_second / num_gpus
-        print(f"📊 Calculated tokens/s/GPU: {tokens_per_second_per_gpu:.1f}")
+    # Always calculate from batch size and step time for consistency with NeMo/NVIDIA
+    # Note: Primus native metrics report per-microbatch throughput, not per-training-step
+    tokens_per_step = global_batch_size * seq_length
+    tokens_per_second = tokens_per_step / avg_step_time
+    tokens_per_second_per_gpu = tokens_per_second / num_gpus
+    print(f"📊 Calculated tokens/s/GPU: {tokens_per_second_per_gpu:.1f} (consistent with NeMo)")
     
     steps_per_second = 1.0 / avg_step_time
     
