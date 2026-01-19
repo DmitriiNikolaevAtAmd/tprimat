@@ -2,6 +2,7 @@ experiment:
   name: "tprimat_benchmark"
   description: "LLM training benchmark comparing AMD vs NVIDIA hardware"
   version: "1.0"
+  methodology: "truly_identical"  # Default parallelism strategy (can override with PARALLEL env var)
 
 hardware:
   platforms:
@@ -69,6 +70,10 @@ training:
     keep_last_n: 2
 
 parallelism:
+  # Maximum Performance: Platform-specific tuning to maximize throughput:
+  # - NVIDIA: Higher TP to fit model in 80GB memory, balanced with DP for throughput
+  # - AMD: Leverages 192GB memory with TP=1 for maximum DP and minimal communication
+  # Trade-off: Different settings per platform means non-identical compute paths
   maximum_performance: # 00
     llama:
       nvidia:
@@ -93,7 +98,11 @@ parallelism:
         data_parallel_size: 8            # Calculated: 8/(1*1) = 8
         gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
   
-  identical_config: # 01
+  # Truly Identical: All platforms and models use exactly the same parallelism settings:
+  # - Ensures apples-to-apples comparison across hardware
+  # - Same TP/PP/DP means identical compute graph and communication patterns
+  # - Trade-off: May not fully utilize platform-specific advantages (e.g., AMD's larger memory)
+  truly_identical: # 01
     llama:
       nvidia:
         tensor_model_parallel_size: 4
@@ -101,27 +110,28 @@ parallelism:
         data_parallel_size: 2
         gradient_accumulation_steps: 64
       amd:
-        tensor_model_parallel_size: 4    
-        pipeline_model_parallel_size: 1  
-        data_parallel_size: 2            
-        gradient_accumulation_steps: 64  
+        tensor_model_parallel_size: 4
+        pipeline_model_parallel_size: 1
+        data_parallel_size: 2
+        gradient_accumulation_steps: 64
     qwen:
       nvidia:
         tensor_model_parallel_size: 4
-        pipeline_model_parallel_size: 2
-        data_parallel_size: 1
-        gradient_accumulation_steps: 128
+        pipeline_model_parallel_size: 1
+        data_parallel_size: 2
+        gradient_accumulation_steps: 64
       amd:
-        tensor_model_parallel_size: 4    
-        pipeline_model_parallel_size: 2  
-        data_parallel_size: 1            
-        gradient_accumulation_steps: 128 
+        tensor_model_parallel_size: 4
+        pipeline_model_parallel_size: 1
+        data_parallel_size: 2
+        gradient_accumulation_steps: 64 
   
+  # Memory Optimized: Prioritizes reducing memory footprint per GPU:
+  # - Higher TP and PP to shard model weights and activations across GPUs
+  # - Enables training larger models or larger batch sizes within memory limits
+  # - Trade-off: Increased communication overhead reduces raw throughput
+  # Note: TP must divide attention heads evenly (Llama: 32 heads, Qwen: 28 heads)
   memory_optimized: # 02
-    # Note: TP must divide attention heads evenly
-    # Llama 3.1 8B: 32 heads (divisible by 1,2,4,8,16,32)
-    # Qwen 2.5 7B: 28 heads (divisible by 1,2,4,7,14,28)
-    # Using TP=4 for compatibility with both models
     llama:
       nvidia:
         tensor_model_parallel_size: 4    # TP=4 (balanced: reduces memory, avoids excessive communication)
@@ -145,6 +155,10 @@ parallelism:
         data_parallel_size: 4            # Calculated: 8/(2*1) = 4
         gradient_accumulation_steps: 32  # Calculated: 128/(1*4) = 32
   
+  # Minimal Communication: Eliminates model parallelism to minimize GPU communication:
+  # - TP=1, PP=1 means entire model fits on each GPU (no sharding)
+  # - Maximum DP=8 for highest data throughput with only gradient all-reduce
+  # - Trade-off: Requires sufficient GPU memory to hold full model; best for smaller models
   minimal_communication: # 03
     llama:
       nvidia:
@@ -169,6 +183,10 @@ parallelism:
         data_parallel_size: 8            # Calculated: 8/(1*1) = 8
         gradient_accumulation_steps: 16  # Calculated: 128/(1*8) = 16
   
+  # Balanced: Uses moderate tensor parallelism (TP=2) providing trade-off between:
+  # - Memory efficiency: TP=2 reduces memory per GPU by splitting weights
+  # - Communication overhead: Lower TP means less all-reduce communication
+  # - Compute utilization: Not over-sharding, so each GPU has meaningful work
   balanced: # 04
     llama:
       nvidia:

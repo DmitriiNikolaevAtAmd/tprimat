@@ -15,7 +15,7 @@ echo ""
 # Configuration names
 declare -A CONFIGS
 CONFIGS["00"]="maximum_performance"
-CONFIGS["01"]="identical_config"
+CONFIGS["01"]="truly_identical"
 CONFIGS["02"]="memory_optimized"
 CONFIGS["03"]="minimal_communication"
 CONFIGS["04"]="balanced"
@@ -99,9 +99,9 @@ for config_num in "${available_configs[@]}"; do
             echo "  Qwen (NVIDIA):  TP=4, PP=2, DP=1" >> "$summary_file"
             echo "  Qwen (AMD):     TP=1, PP=1, DP=8" >> "$summary_file"
             ;;
-        "identical_config")
-            echo "  Llama: TP=4, PP=1, DP=2 (both platforms)" >> "$summary_file"
-            echo "  Qwen:  TP=4, PP=2, DP=1 (both platforms)" >> "$summary_file"
+        "truly_identical")
+            echo "  Llama: TP=4, PP=1, DP=2 (both platforms and models)" >> "$summary_file"
+            echo "  Qwen:  TP=4, PP=1, DP=2 (both platforms and models)" >> "$summary_file"
             ;;
         "memory_optimized")
             echo "  Llama (NVIDIA): TP=8, PP=1, DP=1" >> "$summary_file"

@@ -113,7 +113,7 @@ class Config:
         Args:
             model: Model name (llama, qwen)
             platform: Platform name (nvidia, amd)
-            methodology: Override methodology (maximum_performance or identical_config)
+            methodology: Override methodology (e.g., truly_identical, maximum_performance)
         
         Returns:
             Dictionary with TP, PP, DP, and gradient accumulation steps
@@ -373,7 +373,10 @@ if __name__ == "__main__":
         print("Available Methodologies:")
         print("=" * 60)
         print("1. maximum_performance - Each platform uses optimal settings")
-        print("2. identical_config - Both platforms use identical settings")
+        print("2. truly_identical - All platforms and models use identical settings")
+        print("3. memory_optimized - Conservative settings to reduce memory usage")
+        print("4. minimal_communication - TP=1, PP=1 for minimal communication overhead")
+        print("5. balanced - Moderate parallelism for balanced performance")
         print()
         
         # Example: Get specific configuration

@@ -164,7 +164,7 @@ TPrimat supports 5 different parallelism configurations:
 ./benchmark.py --parallel maximum_performance
 
 # TP=4, PP=1/2 - Same on both platforms (fair comparison)
-./benchmark.py --parallel identical_config
+./benchmark.py --parallel truly_identical
 
 # TP=4, PP=2 - Minimize memory per GPU
 ./benchmark.py --parallel memory_optimized
@@ -192,7 +192,7 @@ TPrimat supports 5 different parallelism configurations:
 ./benchmark.py --parallel balanced --output-dir ./tp2
 
 # Test TP=4
-./benchmark.py --parallel identical_config --output-dir ./tp4
+./benchmark.py --parallel truly_identical --output-dir ./tp4
 
 # Generate comparison plots
 python3 compare.py --results-dir ./tp1
@@ -204,10 +204,10 @@ python3 compare.py --results-dir ./tp4
 
 ```bash
 # On NVIDIA machine
-./benchmark.py --parallel identical_config --output-dir ./nvidia-results
+./benchmark.py --parallel truly_identical --output-dir ./nvidia-results
 
 # On AMD machine (or later)
-./benchmark.py --parallel identical_config --output-dir ./amd-results
+./benchmark.py --parallel truly_identical --output-dir ./amd-results
 
 # Both use IDENTICAL settings for fair comparison
 ```
@@ -220,7 +220,7 @@ python3 compare.py --results-dir ./tp4
 
 # Results in:
 #   output-00/ (maximum_performance)
-#   output-01/ (identical_config)
+#   output-01/ (truly_identical)
 #   output-02/ (memory_optimized)
 #   output-03/ (minimal_communication)
 #   output-04/ (balanced)
@@ -299,7 +299,7 @@ Each strategy offers different trade-offs between memory, speed, and communicati
 | Config | Name | Llama (NVIDIA) | Qwen (NVIDIA) | Use Case |
 |--------|------|----------------|---------------|----------|
 | 00 | maximum_performance | TP=4, PP=1, DP=2 | TP=4, PP=2, DP=1 | Best performance |
-| 01 | identical_config | TP=4, PP=1, DP=2 | TP=4, PP=2, DP=1 | Fair comparison |
+| 01 | truly_identical | TP=4, PP=1, DP=2 | TP=4, PP=2, DP=1 | Fair comparison |
 | 02 | memory_optimized | TP=4, PP=2, DP=1 | TP=4, PP=2, DP=1 | Save memory |
 | 03 | minimal_communication | TP=1, PP=1, DP=8 | TP=1, PP=1, DP=8 | Fastest |
 | 04 | balanced | TP=2, PP=1, DP=4 | TP=2, PP=2, DP=2 | Balanced |
@@ -630,7 +630,7 @@ ValueError: num_attention_heads (28) must be a multiple of tensor_model_parallel
 # These work for both models
 ./benchmark.py --parallel balanced  # Uses TP=2
 ./benchmark.py --parallel minimal_communication  # Uses TP=1
-./benchmark.py --parallel identical_config  # Uses TP=4
+./benchmark.py --parallel truly_identical  # Uses TP=4
 ```
 
 ### Memory Issues
@@ -814,7 +814,7 @@ output/  (or --output-dir path)
     "pipeline_model_parallel_size": 1,
     "data_parallel_size": 2,
     "gradient_accumulation_steps": 64,
-    "strategy_name": "identical_config"
+    "strategy_name": "truly_identical"
   },
   "training_config": {
     "global_batch_size": 128,
@@ -1253,7 +1253,7 @@ Options:
 ### Parallelism Strategies
 
 - `maximum_performance` - Platform-optimized settings
-- `identical_config` - Same settings for fair comparison
+- `truly_identical` - Same settings for fair comparison
 - `memory_optimized` - TP=4, PP=2 (saves memory)
 - `minimal_communication` - TP=1 (fastest)
 - `balanced` - TP=2 (middle ground)
@@ -1323,7 +1323,7 @@ training:                      # Training hyperparameters
   optimizer:                   # Learning rate, warmup
 parallelism:                   # 5 parallelism strategies
   maximum_performance:         # Config 00
-  identical_config:            # Config 01
+  truly_identical:            # Config 01
   memory_optimized:            # Config 02
   minimal_communication:       # Config 03
   balanced:                    # Config 04
@@ -1406,7 +1406,7 @@ rocm-smi    # AMD
 |----------|----|----|-------------|
 | `minimal_communication` | 1 | 1 | Fastest (if fits) |
 | `balanced` | 2 | 1-2 | General purpose |
-| `identical_config` | 4 | 1-2 | Fair comparison |
+| `truly_identical` | 4 | 1-2 | Fair comparison |
 | `memory_optimized` | 4 | 2 | Save memory |
 | `maximum_performance` | Platform-specific | Best performance |
 

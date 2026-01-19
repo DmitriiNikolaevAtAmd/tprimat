@@ -468,16 +468,16 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ./benchmark.py                                    # Run all models (default: minimal_communication)
-  ./benchmark.py --model llama                      # Run only llama
-  ./benchmark.py --runs 3                           # Run all models 3 times
+  ./benchmark.py                                  # Run all models (uses config.yaml methodology)
+  ./benchmark.py --model llama                    # Run only llama
+  ./benchmark.py --runs 3                         # Run all models 3 times
   
-  # Parallelism strategies:
-  ./benchmark.py --parallel minimal_communication # TP=1 (default, fastest if fits in memory)
-  ./benchmark.py --parallel maximum_performance  # Platform-optimized for speed
-  ./benchmark.py --parallel identical_config     # Same config on both platforms
-  ./benchmark.py --parallel memory_optimized     # TP=4,PP=2 (save memory)
-  ./benchmark.py --parallel balanced             # TP=2 (balanced)
+  # Override parallelism strategy (default from config.yaml):
+  ./benchmark.py --parallel truly_identical       # Same config on both platforms
+  ./benchmark.py --parallel maximum_performance   # Platform-optimized for speed
+  ./benchmark.py --parallel memory_optimized      # TP=4,PP=2 (save memory)
+  ./benchmark.py --parallel minimal_communication # TP=1 (fastest if fits in memory)
+  ./benchmark.py --parallel balanced              # TP=2 (balanced)
   
   # For AMD/Primus with log files:
   LLAMA_LOG=/path/to/llama.log ./benchmark.py
@@ -500,10 +500,10 @@ Examples:
     
     parser.add_argument(
         '--parallel',
-        choices=['maximum_performance', 'identical_config', 'memory_optimized', 
+        choices=['maximum_performance', 'truly_identical', 'memory_optimized', 
                  'minimal_communication', 'balanced'],
-        default='minimal_communication',
-        help='Parallelism strategy (default: minimal_communication)'
+        default=None,  # Will read from config.yaml
+        help='Parallelism strategy (default: from config.yaml)'
     )
     
     parser.add_argument(
@@ -514,7 +514,16 @@ Examples:
     
     args = parser.parse_args()
     
-    # Set parallelism strategy environment variable (always has a default)
+    # Get parallelism strategy from args or config.yaml
+    if args.parallel is None:
+        try:
+            from config_loader import load_config
+            config = load_config()
+            args.parallel = config.get_methodology()
+        except Exception:
+            args.parallel = 'truly_identical'  # Fallback default
+    
+    # Set parallelism strategy environment variable
     os.environ['PARALLEL'] = args.parallel
     
     # Set output directory environment variable
