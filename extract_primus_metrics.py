@@ -498,7 +498,8 @@ Examples:
         
         # Try to find backup logs in the same directory
         log_dir = log_file.parent
-        log_pattern = f"primus_training_{args.model_name}_*.log" if args.model_name else "primus_training_*.log"
+        # Look for backup logs with new naming (primus_training_MODEL.log) and old naming (primus_training_MODEL_*.log)
+        log_pattern = f"primus_training_{args.model_name}*.log" if args.model_name else "primus_training*.log"
         
         backup_logs = sorted(log_dir.glob(log_pattern), key=lambda p: p.stat().st_mtime, reverse=True)
         

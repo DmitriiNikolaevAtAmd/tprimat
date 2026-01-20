@@ -64,21 +64,21 @@ MIN_LEARNING_RATE="${CONFIG_MIN_LEARNING_RATE:-3.0e-5}"
 WARMUP_STEPS="${CONFIG_WARMUP_STEPS:-10}"
 WEIGHT_DECAY="${CONFIG_WEIGHT_DECAY:-0.1}"
 
-# Cleanup function to remove temporary artifacts
+# Cleanup function to remove temporary artifacts (DISABLED - logs are kept)
 cleanup() {
     echo ""
-    echo "[-] Cleaning up training artifacts in $OUTPUT_DIR..."
-    rm -f "$OUTPUT_DIR"/training_*.log
-    rm -f "$OUTPUT_DIR"/primus_training_*.log
-    rm -f "$OUTPUT_DIR"/*.yaml
-    # Also remove any leftover profile traces that weren't renamed
-    find "$OUTPUT_DIR" -name "*.json" -not -name "benchmark_*" -not -name "config.json" -mmin -5 -delete 2>/dev/null || true
-    echo "[+] Cleanup complete"
+    echo "[i] Cleanup disabled - all logs and artifacts are preserved"
+    # Uncomment below to enable cleanup:
+    # rm -f "$OUTPUT_DIR"/training_main_*.log
+    # rm -f "$OUTPUT_DIR"/primus_training_*.log
+    # rm -f "$OUTPUT_DIR"/*.yaml
+    # find "$OUTPUT_DIR" -name "*.json" -not -name "benchmark_*" -not -name "config.json" -mmin -5 -delete 2>/dev/null || true
 }
 
-# Remove any pre-existing logs in the output directory to avoid confusion
-rm -f "$OUTPUT_DIR"/training_${MODEL}.log
-rm -f "$OUTPUT_DIR"/primus_training_${MODEL}_*.log
+# Note: Pre-existing log deletion is disabled to preserve all training history
+# Uncomment the lines below if you want to remove old logs before each run:
+# rm -f "$OUTPUT_DIR"/training_main_${MODEL}.log
+# rm -f "$OUTPUT_DIR"/primus_training_${MODEL}.log
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
@@ -116,10 +116,12 @@ echo "[v] Min Learning Rate: $MIN_LEARNING_RATE"
 echo "[~] Warmup Steps: $WARMUP_STEPS"
 echo ""
 
-# Log file (use absolute paths to avoid issues when changing directories)
-LOG_FILE="$(cd "$OUTPUT_DIR" && pwd)/training_${MODEL}.log"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_LOG="$(cd "$OUTPUT_DIR" && pwd)/primus_training_${MODEL}_${TIMESTAMP}.log"
+# Log file configuration (use absolute paths to avoid issues when changing directories)
+# To customize log file name/path, set LOG_FILE and BACKUP_LOG environment variables before running:
+#   export LOG_FILE="/custom/path/my_training.log"
+#   export BACKUP_LOG="/custom/path/my_training_backup.log"
+LOG_FILE="${LOG_FILE:-$(cd "$OUTPUT_DIR" && pwd)/training_main_${MODEL}.log}"
+BACKUP_LOG="${BACKUP_LOG:-$(cd "$OUTPUT_DIR" && pwd)/primus_training_${MODEL}.log}"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "[>>] Starting training..."
@@ -256,8 +258,9 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo "Results saved to: $OUTPUT_DIR/benchmark_rocm_${MODEL}.json"
         echo ""
         
-        # Aggressive Cleanup: Remove ALL logs and patched configs in the output directory
-        cleanup
+        # Note: Cleanup is disabled - all logs are preserved
+        # Uncomment the line below to enable cleanup after successful extraction:
+        # cleanup
         
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
