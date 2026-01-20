@@ -333,7 +333,7 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"[OK] Comparison plot saved to: {output_file}")
+    print(f"  + Comparison plot saved to: {output_file}")
     
     return fig
 
@@ -358,7 +358,7 @@ def print_comparison(nvidia_data: Dict, amd_data: Dict):
     amd_gpu = amd_data['gpu_info']
     
     # 1. Performance Metrics
-    print("\n[#] Performance Metrics")
+    print("\n  * Performance Metrics")
     print("-" * 80)
     
     nvidia_tps_gpu = nvidia_perf['tokens_per_second_per_gpu']
@@ -447,7 +447,7 @@ def main():
     benchmarks = load_all_benchmark_results(args.results_dir)
     
     if not benchmarks:
-        print("[X] No benchmark results found!")
+        print("  x No benchmark results found!")
         print(f"Expected files in {args.results_dir}/:")
         print("  - benchmark_cuda_llama.json, benchmark_cuda_qwen.json (for NVIDIA)")
         print("  - benchmark_rocm_llama.json, benchmark_rocm_qwen.json (for AMD)")
@@ -457,15 +457,15 @@ def main():
     has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
     has_amd = any(key.startswith('amd-') for key in benchmarks.keys())
     
-    print(f"\n[#] Found {len(benchmarks)} benchmark(s):")
+    print(f"\n  * Found {len(benchmarks)} benchmark(s):")
     for key in sorted(benchmarks.keys()):
         data = benchmarks[key]
         print(f"  {key}: {data['gpu_info']['device_name']} ({data['timestamp']})")
     
     # Show platform availability
-    print(f"\n[@] Platform availability:")
-    print(f"  NVIDIA: {'[+] Available' if has_nvidia else '[X] Not available'}")
-    print(f"  AMD:    {'[+] Available' if has_amd else '[X] Not available'}")
+    print(f"\n  * Platform availability:")
+    print(f"  NVIDIA: {'+ Available' if has_nvidia else 'x Not available'}")
+    print(f"  AMD:    {'+ Available' if has_amd else 'x Not available'}")
     
     if not has_nvidia and not has_amd:
         print("[!] Warning: No recognized platform data found")

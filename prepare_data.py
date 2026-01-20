@@ -36,7 +36,7 @@ def prepare_data():
                 json.dump({"text": text}, f, ensure_ascii=False)
                 f.write("\n")
                 
-    print(f"[OK] Successfully saved {len(dataset)} examples to {args.output_file}")
+    print(f"  + Successfully saved {len(dataset)} examples to {args.output_file}")
     print("\nNext step: Run the NeMo preprocessor to convert JSONL to .bin and .idx format.")
     print("Example command for Llama 3.1 (uses HuggingFace tokenizer):")
     print(f"python /opt/NeMo/scripts/nlp_language_modeling/preprocess_data_for_megatron.py \\")

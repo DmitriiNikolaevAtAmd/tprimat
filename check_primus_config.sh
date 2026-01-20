@@ -15,33 +15,33 @@ if [ ! -d "$PRIMUS_PATH" ]; then
     exit 1
 fi
 
-echo "[/] Searching for Llama 3.1 8B configuration..."
+echo "  * Searching for Llama 3.1 8B configuration..."
 echo ""
 
 # Find Llama config files
 LLAMA_CONFIGS=$(find "$CONFIG_DIR" -name "*llama*8b*.yaml" -o -name "*llama*8B*.yaml" 2>/dev/null)
 
 if [ -z "$LLAMA_CONFIGS" ]; then
-    echo "[X] No Llama 8B config found in $CONFIG_DIR"
+    echo "  x No Llama 8B config found in $CONFIG_DIR"
     echo ""
     echo "Available configs:"
     ls -1 "$CONFIG_DIR" 2>/dev/null || echo "Directory not accessible"
     exit 1
 fi
 
-echo "[OK] Found configuration files:"
+echo "  + Found configuration files:"
 echo "$LLAMA_CONFIGS"
 echo ""
 echo "════════════════════════════════════════════════════════════"
 
 for CONFIG in $LLAMA_CONFIGS; do
     echo ""
-    echo "[.] File: $(basename $CONFIG)"
+    echo "  * File: $(basename $CONFIG)"
     echo "────────────────────────────────────────────────────────────"
     
     # Extract key parameters
     echo ""
-    echo "[>] Critical Parameters:"
+    echo "  * Critical Parameters:"
     echo ""
     
     # Tensor Parallelism
@@ -68,7 +68,7 @@ for CONFIG in $LLAMA_CONFIGS; do
     echo "  Sequence Length: $SEQ"
     
     echo ""
-    echo "[#] Memory & Optimization:"
+    echo "  * Memory & Optimization:"
     echo ""
     
     # Activation checkpointing
@@ -84,7 +84,7 @@ for CONFIG in $LLAMA_CONFIGS; do
 done
 
 echo ""
-echo "[i] Comparison with NeMo (NVIDIA H100):"
+echo "  * Comparison with NeMo (NVIDIA H100):"
 echo "────────────────────────────────────────────────────────────"
 echo "  NVIDIA TP: 4 (model split across 4 GPUs)"
 echo "  NVIDIA PP: 1"

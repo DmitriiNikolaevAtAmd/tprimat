@@ -315,19 +315,19 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
         print("\n     Expected format: 'elapsed time per iteration (ms): X/Y'")
         return None
     
-    print(f"[OK] Found {len(step_times)} step timing entries")
+    print(f"  + Found {len(step_times)} step timing entries")
     
     if tokens_per_gpu_values:
-        print(f"[OK] Found {len(tokens_per_gpu_values)} tokens/GPU entries (using Primus native metrics)")
+        print(f"  + Found {len(tokens_per_gpu_values)} tokens/GPU entries (using Primus native metrics)")
     
     if loss_values:
-        print(f"[OK] Found {len(loss_values)} loss values")
+        print(f"  + Found {len(loss_values)} loss values")
     
     # Extract memory (optional)
     memory_values = extract_memory_from_log(log_file)
     
     if memory_values:
-        print(f"[OK] Found {len(memory_values)} memory usage entries")
+        print(f"  + Found {len(memory_values)} memory usage entries")
     
     # Auto-detect GPU info
     gpu_info = detect_gpu_info()
@@ -375,7 +375,7 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     tokens_per_step = global_batch_size * seq_length
     tokens_per_second = tokens_per_step / avg_step_time
     tokens_per_second_per_gpu = tokens_per_second / num_gpus
-    print(f"[#] Calculated tokens/s/GPU: {tokens_per_second_per_gpu:.1f} (consistent with NeMo)")
+    print(f"  * Calculated tokens/s/GPU: {tokens_per_second_per_gpu:.1f} (consistent with NeMo)")
     
     steps_per_second = 1.0 / avg_step_time
     
@@ -509,7 +509,7 @@ Examples:
             print(f"  Using most recent backup from: {datetime.fromtimestamp(log_file.stat().st_mtime)}")
             print()
         else:
-            print(f"[X] No backup logs found matching pattern: {log_pattern}")
+            print(f"  x No backup logs found matching pattern: {log_pattern}")
             print(f"   Searched in: {log_dir}")
             return 1
     
@@ -542,7 +542,7 @@ Examples:
         with open(output_path, 'w') as f:
             json.dump(results_rounded, f, indent=2)
         
-        print(f"[OK] Metrics saved to: {output_path}")
+        print(f"  + Metrics saved to: {output_path}")
         
         # Print summary
         print_summary(results)
@@ -554,7 +554,7 @@ Examples:
         print()
         
     else:
-        print("[X] Failed to extract metrics from log file")
+        print("  x Failed to extract metrics from log file")
         print("\nTroubleshooting:")
         print("  1. Check log file format")
         print("  2. Verify log contains timing information")

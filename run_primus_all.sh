@@ -28,10 +28,10 @@ for MODEL in "${MODELS[@]}"; do
     
     if "$SCRIPT_DIR/run_primus_${MODEL}.sh"; then
         SUCCESS+=("$MODEL")
-        echo "[OK] $MODEL completed successfully"
+        echo "  + $MODEL completed successfully"
     else
         FAILED+=("$MODEL")
-        echo "[X] $MODEL failed (continuing with next model...)"
+        echo "  x $MODEL failed (continuing with next model...)"
     fi
     
     # Cooldown between models
@@ -49,25 +49,25 @@ echo "════════════════════════�
 echo ""
 
 if [ ${#SUCCESS[@]} -gt 0 ]; then
-    echo "[OK] Successful (${#SUCCESS[@]}): ${SUCCESS[*]}"
+    echo "  + Successful (${#SUCCESS[@]}): ${SUCCESS[*]}"
     echo ""
     echo "Results saved to:"
     # Use OUTPUT_DIR or default to output
     RESULTS_DIR="${OUTPUT_DIR:-output}"
     for MODEL in "${SUCCESS[@]}"; do
-        echo "  [.] ${RESULTS_DIR}/benchmark_rocm_${MODEL}.json"
+        echo "    * ${RESULTS_DIR}/benchmark_rocm_${MODEL}.json"
     done
     echo ""
 fi
 
 if [ ${#FAILED[@]} -gt 0 ]; then
-    echo "[X] Failed (${#FAILED[@]}): ${FAILED[*]}"
+    echo "  x Failed (${#FAILED[@]}): ${FAILED[*]}"
     echo ""
 fi
 
 if [ ${#SUCCESS[@]} -gt 0 ]; then
     echo "════════════════════════════════════════════════════════════"
-    echo "[=>] Next Steps:"
+    echo "  * Next Steps:"
     echo "════════════════════════════════════════════════════════════"
     echo ""
     echo "1. Run on NVIDIA system (if not done):"

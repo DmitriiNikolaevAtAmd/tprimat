@@ -144,7 +144,7 @@ def analyze_peak_throughput(show_all: bool = False):
     files = find_all_benchmark_files()
     
     if not files:
-        print("[X] No benchmark files found!")
+        print("  x No benchmark files found!")
         return
     
     print(f"Found {len(files)} benchmark file(s)")
@@ -158,7 +158,7 @@ def analyze_peak_throughput(show_all: bool = False):
             results.append(result)
     
     if not results:
-        print("[X] No valid benchmark data found!")
+        print("  x No valid benchmark data found!")
         return
     
     # Group by platform and model
@@ -180,7 +180,7 @@ def analyze_peak_throughput(show_all: bool = False):
         peak = max(configs, key=lambda x: x['tokens_per_second'])
         peak_results.append(peak)
         
-        print(f"[#] {key}")
+        print(f"  * {key}")
         print(f"   Configuration: {peak['config_name']}")
         print(f"   Peak Tokens/s: {peak['tokens_per_second']:,.0f}")
         print(f"   Per-GPU:       {peak['tokens_per_second_per_gpu']:,.0f} tokens/s")
@@ -246,7 +246,7 @@ def analyze_peak_throughput(show_all: bool = False):
     
     # Scaling comparison
     print("="*100)
-    print("[^] THROUGHPUT SCALING ANALYSIS")
+    print("  * THROUGHPUT SCALING ANALYSIS")
     print("="*100)
     print()
     
@@ -276,7 +276,7 @@ def analyze_peak_throughput(show_all: bool = False):
     
     # Summary table
     print()
-    print("[*] COMPLETE RESULTS TABLE")
+    print("  * COMPLETE RESULTS TABLE")
     print("="*100)
     print(f"{'Platform':<30} {'Model':<10} {'Config':<15} {'Tokens/s':>12} {'TFLOPS':>10} {'Util%':>8}")
     print("-"*100)
