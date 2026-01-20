@@ -124,6 +124,7 @@ datasets/
 # *.bin
 # models/
 
-# Environment variables
+# Environment variables and secrets
 .env
 .env.local
+secrets.env
