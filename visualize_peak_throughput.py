@@ -98,7 +98,7 @@ def create_peak_throughput_visualization():
             results.append(result)
     
     if not results:
-        print("❌ No benchmark data found!")
+        print("[X] No benchmark data found!")
         return
     
     # Group by platform and model
@@ -379,7 +379,7 @@ def create_peak_throughput_visualization():
                 fontsize=16, fontweight='bold', y=0.995)
     
     plt.savefig('peak_throughput_analysis.png', dpi=300, bbox_inches='tight')
-    print(f"✅ Visualization saved to: peak_throughput_analysis.png")
+    print(f"[OK] Visualization saved to: peak_throughput_analysis.png")
     
     return fig
 

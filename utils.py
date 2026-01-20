@@ -49,7 +49,7 @@ class BenchmarkCallback(Callback):
             parallel_strategy: Parallelism strategy name (e.g., 'minimal_communication', 'balanced')
             profiler_config: Dictionary with profiling configuration (from config.yaml)
         """
-        self.output_dir = Path(output_dir)
+        self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Detect platform
@@ -204,7 +204,7 @@ class BenchmarkCallback(Callback):
         # Initialize NVIDIA Nsight Systems profiler if enabled (only on rank 0)
         if self.profiler_enabled and trainer.is_global_zero and torch.cuda.is_available():
             # NVIDIA Nsight Systems profiling - handled via nsys wrapper in pretrain scripts
-            print(f"✓ NVIDIA Nsight Systems profiling mode")
+            print(f"[+] NVIDIA Nsight Systems profiling mode")
             print(f"  Output directory: {self.output_dir}")
             # Start CUDA profiler range for Nsight capture
             try:
@@ -323,12 +323,12 @@ class BenchmarkCallback(Callback):
         if self.profiler_enabled and hasattr(self, '_nsight_profiler_started') and self._nsight_profiler_started:
             try:
                 torch.cuda.cudart().cudaProfilerStop()
-                print(f"✓ CUDA profiler range stopped")
-                print(f"✓ Nsight profile saved by nsys wrapper")
+                print(f"[+] CUDA profiler range stopped")
+                print(f"[+] Nsight profile saved by nsys wrapper")
                 print(f"  View with: nsys-ui <profile>.nsys-rep")
                 print(f"  Or export: nsys export --type=json <profile>.nsys-rep")
             except Exception as e:
-                print(f"⚠️  Warning: Failed to stop CUDA profiler: {e}")
+                print(f"[!] Warning: Failed to stop CUDA profiler: {e}")
         
         # Only save results on rank 0 to avoid duplicate files in distributed training
         if not trainer.is_global_zero:
@@ -506,7 +506,7 @@ def compare_benchmarks(results_dir: str = "./output") -> Dict:
             amd_results.append(data)
     
     if not nvidia_results or not amd_results:
-        print("⚠️  Need results from both NVIDIA and AMD platforms for comparison")
+        print("[!] Need results from both NVIDIA and AMD platforms for comparison")
         return {}
     
     # Use most recent results

@@ -19,17 +19,17 @@ def analyze_tensorboard_events(log_dir: str):
     try:
         from tensorboard.backend.event_processing import event_accumulator
     except ImportError:
-        print("⚠️  TensorBoard not installed. Install with: pip install tensorboard")
+        print("[!] TensorBoard not installed. Install with: pip install tensorboard")
         return None
     
     log_path = Path(log_dir)
     event_files = list(log_path.rglob("events.out.tfevents.*"))
     
     if not event_files:
-        print(f"⚠️  No TensorBoard event files found in {log_dir}")
+        print(f"[!] No TensorBoard event files found in {log_dir}")
         return None
     
-    print(f"📊 Analyzing {len(event_files)} event file(s)...")
+    print(f"[#] Analyzing {len(event_files)} event file(s)...")
     
     results = {}
     for event_file in event_files:
@@ -56,7 +56,7 @@ def analyze_tensorboard_events(log_dir: str):
                         'count': len(values)
                     }
             except Exception as e:
-                print(f"    ⚠️ Error reading {tag}: {e}")
+                print(f"    [!] Error reading {tag}: {e}")
     
     return results
 
@@ -68,7 +68,7 @@ def analyze_amd_profiling_logs(amd_logs_dir: str = "../amd-logs"):
     amd_path = Path(amd_logs_dir)
     
     if not amd_path.exists():
-        print(f"⚠️  AMD logs directory not found: {amd_logs_dir}")
+        print(f"[!] AMD logs directory not found: {amd_logs_dir}")
         return
     
     print(f"\n{'='*60}")
@@ -80,7 +80,7 @@ def analyze_amd_profiling_logs(amd_logs_dir: str = "../amd-logs"):
         if not model_dir.is_dir():
             continue
         
-        print(f"📁 {model_dir.name.upper()}")
+        print(f"[:] {model_dir.name.upper()}")
         print("-" * 60)
         
         excel_files = list(model_dir.glob("*.xlsx"))
@@ -100,7 +100,7 @@ def analyze_amd_profiling_logs(amd_logs_dir: str = "../amd-logs"):
         
         print()
     
-    print("💡 Note: AMD profiling reports are in Excel format (.xlsx)")
+    print("[i] Note: AMD profiling reports are in Excel format (.xlsx)")
     print("   You can open them in Excel/LibreOffice to view detailed metrics")
     print()
 
@@ -112,7 +112,7 @@ def analyze_nvidia_logs(nvi_logs_dir: str = "../nvi-logs"):
     nvi_path = Path(nvi_logs_dir)
     
     if not nvi_path.exists():
-        print(f"⚠️  NVIDIA logs directory not found: {nvi_logs_dir}")
+        print(f"[!] NVIDIA logs directory not found: {nvi_logs_dir}")
         return
     
     print(f"\n{'='*60}")
@@ -124,7 +124,7 @@ def analyze_nvidia_logs(nvi_logs_dir: str = "../nvi-logs"):
         if not exp_dir.is_dir():
             continue
         
-        print(f"📁 {exp_dir.name.upper()}")
+        print(f"[:] {exp_dir.name.upper()}")
         print("-" * 60)
         
         # Analyze TensorBoard events
@@ -142,7 +142,7 @@ def analyze_nvidia_logs(nvi_logs_dir: str = "../nvi-logs"):
         # Check for hparams
         hparams_file = exp_dir / "hparams.yaml"
         if hparams_file.exists():
-            print(f"\n  ✅ Hyperparameters: {hparams_file}")
+            print(f"\n  [OK] Hyperparameters: {hparams_file}")
         
         print()
 
@@ -154,7 +154,7 @@ def compare_with_new_benchmarks(benchmark_dir: str = "./output"):
     benchmark_path = Path(benchmark_dir)
     
     if not benchmark_path.exists() or not list(benchmark_path.glob("*.json")):
-        print("💡 No new benchmark results found yet.")
+        print("[i] No new benchmark results found yet.")
         print("   Run your training scripts to generate new benchmarks.")
         return
     
@@ -175,7 +175,7 @@ def compare_with_new_benchmarks(benchmark_dir: str = "./output"):
         avg_time = data['performance_metrics']['avg_step_time_seconds']
         throughput = data['performance_metrics']['throughput_steps_per_second']
         
-        print(f"📊 {platform} - {device}")
+        print(f"[#] {platform} - {device}")
         print(f"   Timestamp: {timestamp}")
         print(f"   Avg Step Time: {avg_time:.4f}s")
         print(f"   Throughput: {throughput:.3f} steps/s")
@@ -205,20 +205,20 @@ def main():
     print("SUMMARY")
     print("="*60)
     print()
-    print("📁 Existing Logs:")
+    print("[:] Existing Logs:")
     print("   - AMD:    ../amd-logs/    (Excel profiling reports)")
     print("   - NVIDIA: ../nvi-logs/    (TensorBoard event files)")
     print()
-    print("🆕 New Benchmarks:")
+    print("[+] New Benchmarks:")
     print("   - Location: ./output/")
     print("   - Run training scripts to generate new benchmarks")
     print("   - Use compare_results.py to create visual comparisons")
     print()
-    print("💡 The new benchmark system provides:")
-    print("   ✅ Unified metrics across AMD and NVIDIA")
-    print("   ✅ Automated comparison reports")
-    print("   ✅ Visual comparison charts")
-    print("   ✅ Statistical analysis")
+    print("[i] The new benchmark system provides:")
+    print("   [OK] Unified metrics across AMD and NVIDIA")
+    print("   [OK] Automated comparison reports")
+    print("   [OK] Visual comparison charts")
+    print("   [OK] Statistical analysis")
     print()
 
 

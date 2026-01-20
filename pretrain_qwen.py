@@ -28,7 +28,7 @@ def run_pretrain():
     model_name = "qwen"
     # Allow overriding parallelism strategy via environment variable (for different configurations)
     parallel_strategy = os.environ.get('PARALLEL', config.get_methodology())
-    print(f"🔧 Using parallelism strategy: {parallel_strategy}")
+    print(f"[>] Using parallelism strategy: {parallel_strategy}")
     parallelism = config.get_parallelism(model_name, platform, methodology=parallel_strategy)
     platform_opts = config.get_platform_optimizations(platform)
     
@@ -51,7 +51,7 @@ def run_pretrain():
     )
     
     # 2. PARALLELISM CONFIGURATION (from config.yaml)
-    print(f"🔧 Parallelism: TP={tp_size}, "
+    print(f"[>] Parallelism: TP={tp_size}, "
           f"PP={pp_size}, "
           f"DP={parallelism['data_parallel_size']}, "
           f"GradAccum={parallelism['gradient_accumulation_steps']}")
@@ -142,7 +142,7 @@ if __name__ == "__main__":
         
         # Check if nsys is available
         if shutil.which('nsys') is None:
-            print("⚠️  Nsight profiling enabled but 'nsys' not found in PATH")
+            print("[!] Nsight profiling enabled but 'nsys' not found in PATH")
             print("   Running without profiling...")
             run_pretrain()
         else:
@@ -157,7 +157,7 @@ if __name__ == "__main__":
             capture_range = profiler_config.get('capture_range', 'cudaProfilerApi')
             stats = 'true' if profiler_config.get('stats', True) else 'false'
             
-            print(f"🔬 NVIDIA Nsight Systems profiling enabled")
+            print(f"[@] NVIDIA Nsight Systems profiling enabled")
             print(f"   Output: {profile_output}.nsys-rep")
             print()
             

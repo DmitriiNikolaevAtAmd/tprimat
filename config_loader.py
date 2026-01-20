@@ -388,8 +388,8 @@ if __name__ == "__main__":
         print(f"Parallelism config: {parallelism}")
         print()
         
-        print("✅ Configuration loaded successfully!")
+        print("[OK] Configuration loaded successfully!")
         
     except Exception as e:
-        print(f"❌ Error loading configuration: {e}", file=sys.stderr)
+        print(f"[X] Error loading configuration: {e}", file=sys.stderr)
         sys.exit(1)

@@ -12,12 +12,12 @@ echo ""
 TPRIMAT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load configuration from config.yaml
-echo "📋 Loading configuration from config.yaml..."
+echo "[*] Loading configuration from config.yaml..."
 if [ -f "$TPRIMAT_PATH/config_to_shell.py" ]; then
     eval "$(python3 "$TPRIMAT_PATH/config_to_shell.py")"
-    echo "✓ Configuration loaded"
+    echo "[+] Configuration loaded"
 else
-    echo "⚠️  config_to_shell.py not found, using defaults"
+    echo "[!] config_to_shell.py not found, using defaults"
 fi
 echo ""
 
@@ -27,8 +27,12 @@ MODEL="qwen"
 CONFIG_FILE="${CONFIG_QWEN_PRIMUS_CONFIG:-examples/megatron/configs/MI300X/qwen2.5_7B-pretrain.yaml}"
 TRAIN_ITERS="${TRAIN_ITERS:-${CONFIG_TRAIN_ITERS:-10}}"
 OUTPUT_DIR="${CONFIG_OUTPUT_DIR:-$TPRIMAT_PATH/output}"
-# Ensure OUTPUT_DIR is absolute
-[[ "$OUTPUT_DIR" != /* ]] && OUTPUT_DIR="$TPRIMAT_PATH/$OUTPUT_DIR"
+# Ensure OUTPUT_DIR is absolute and normalized
+if [[ "$OUTPUT_DIR" != /* ]]; then
+    OUTPUT_DIR="$TPRIMAT_PATH/$OUTPUT_DIR"
+fi
+# Normalize the path to remove ./ and ../ components
+OUTPUT_DIR="$(cd "$(dirname "$OUTPUT_DIR")" 2>/dev/null && pwd)/$(basename "$OUTPUT_DIR")" || OUTPUT_DIR="$TPRIMAT_PATH/output"
 NUM_GPUS="${CONFIG_AMD_NUM_GPUS:-8}"
 GLOBAL_BATCH_SIZE="${CONFIG_GLOBAL_BATCH_SIZE:-128}"
 SEQ_LENGTH="${CONFIG_SEQ_LENGTH:-2048}"
@@ -63,13 +67,13 @@ WEIGHT_DECAY="${CONFIG_WEIGHT_DECAY:-0.1}"
 # Cleanup function to remove temporary artifacts
 cleanup() {
     echo ""
-    echo "🧹 Cleaning up training artifacts in $OUTPUT_DIR..."
+    echo "[-] Cleaning up training artifacts in $OUTPUT_DIR..."
     rm -f "$OUTPUT_DIR"/training_*.log
     rm -f "$OUTPUT_DIR"/primus_training_*.log
     rm -f "$OUTPUT_DIR"/*.yaml
     # Also remove any leftover profile traces that weren't renamed
     find "$OUTPUT_DIR" -name "*.json" -not -name "benchmark_*" -not -name "config.json" -mmin -5 -delete 2>/dev/null || true
-    echo "✓ Cleanup complete"
+    echo "[+] Cleanup complete"
 }
 
 # Remove any pre-existing logs in the output directory to avoid confusion
@@ -81,7 +85,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # Check if Primus exists
 if [ ! -d "$PRIMUS_PATH" ]; then
-    echo "❌ Primus not found at $PRIMUS_PATH"
+    echo "[X] Primus not found at $PRIMUS_PATH"
     echo ""
     echo "Please set PRIMUS_PATH environment variable:"
     echo "  export PRIMUS_PATH=/path/to/Primus"
@@ -91,7 +95,7 @@ fi
 
 # Check if config exists
 if [ ! -f "$PRIMUS_PATH/$CONFIG_FILE" ]; then
-    echo "❌ Config file not found: $PRIMUS_PATH/$CONFIG_FILE"
+    echo "[X] Config file not found: $PRIMUS_PATH/$CONFIG_FILE"
     echo ""
     echo "Available configs:"
     ls -1 "$PRIMUS_PATH/examples/megatron/configs/MI300X/" 2>/dev/null | grep -i qwen || echo "  (none found)"
@@ -99,17 +103,17 @@ if [ ! -f "$PRIMUS_PATH/$CONFIG_FILE" ]; then
     exit 1
 fi
 
-echo "📂 Primus Path: $PRIMUS_PATH"
-echo "📄 Config: $CONFIG_FILE"
-echo "📊 Training Iterations: $TRAIN_ITERS"
-echo "📁 Output: $OUTPUT_DIR"
-echo "🔧 Num GPUs: $NUM_GPUS"
-echo "📦 Global Batch Size: $GLOBAL_BATCH_SIZE"
-echo "📏 Sequence Length: $SEQ_LENGTH"
-echo "🔧 Parallelism: TP=$TP, PP=$PP, GradAccum=$GACC"
-echo "📈 Learning Rate: $LEARNING_RATE"
-echo "📉 Min Learning Rate: $MIN_LEARNING_RATE"
-echo "🔥 Warmup Steps: $WARMUP_STEPS"
+echo "[/] Primus Path: $PRIMUS_PATH"
+echo "[.] Config: $CONFIG_FILE"
+echo "[#] Training Iterations: $TRAIN_ITERS"
+echo "[:] Output: $OUTPUT_DIR"
+echo "[>] Num GPUs: $NUM_GPUS"
+echo "[o] Global Batch Size: $GLOBAL_BATCH_SIZE"
+echo "[|] Sequence Length: $SEQ_LENGTH"
+echo "[>] Parallelism: TP=$TP, PP=$PP, GradAccum=$GACC"
+echo "[^] Learning Rate: $LEARNING_RATE"
+echo "[v] Min Learning Rate: $MIN_LEARNING_RATE"
+echo "[~] Warmup Steps: $WARMUP_STEPS"
 echo ""
 
 # Log file (use absolute paths to avoid issues when changing directories)
@@ -118,7 +122,7 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_LOG="$(cd "$OUTPUT_DIR" && pwd)/primus_training_${MODEL}_${TIMESTAMP}.log"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 Starting training..."
+echo "[>>] Starting training..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "Log files:"
@@ -134,7 +138,7 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$OUTPUT_DIR/$(basename "$CONFIG_FILE")"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-echo "🔧 Patching config with parallelism: TP=$TP, PP=$PP"
+echo "[>] Patching config with parallelism: TP=$TP, PP=$PP"
 # Use python to patch YAML reliably if possible, otherwise sed
 if python3 -c "import yaml" 2>/dev/null; then
     python3 -c "
@@ -202,7 +206,7 @@ EXIT_CODE=${PIPESTATUS[0]}
 
 # Cleanup and rename profile traces for AMD
 if [ "$PROF_ENABLED" = "true" ]; then
-    echo "🧹 Cleaning up profile traces..."
+    echo "[-] Cleaning up profile traces..."
     # Primus/Megatron usually saves traces with rank/timestamp in the name
     STRATEGY="${PARALLEL:-unknown}"
     TARGET_NAME="profile_rocm_${MODEL}_${STRATEGY}.pt.trace.json"
@@ -210,7 +214,7 @@ if [ "$PROF_ENABLED" = "true" ]; then
     LATEST_TRACE=$(find "$OUTPUT_DIR" -name "*.json" -not -name "benchmark_*" -not -name "config.json" -newer "$LOG_FILE" | head -1)
     if [ -n "$LATEST_TRACE" ]; then
         mv "$LATEST_TRACE" "$OUTPUT_DIR/$TARGET_NAME"
-        echo "✓ Profile renamed to: $TARGET_NAME"
+        echo "[+] Profile renamed to: $TARGET_NAME"
     fi
 fi
 
@@ -218,7 +222,7 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 if [ $EXIT_CODE -eq 0 ]; then
-    echo "✅ Training completed successfully!"
+    echo "[OK] Training completed successfully!"
     echo ""
     echo "Log saved to:"
     echo "  $LOG_FILE"
@@ -227,7 +231,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     
     # Automatically extract metrics
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "📊 Extracting metrics..."
+    echo "[#] Extracting metrics..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     
@@ -247,7 +251,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     
     if [ $? -eq 0 ]; then
         echo ""
-        echo "✅ Metrics extracted successfully!"
+        echo "[OK] Metrics extracted successfully!"
         echo ""
         echo "Results saved to: $OUTPUT_DIR/benchmark_rocm_${MODEL}.json"
         echo ""
@@ -258,7 +262,7 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 
-        echo "🎯 Next Steps:"
+        echo "[=>] Next Steps:"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
         echo "1. Run on NVIDIA system (if not done):"
@@ -271,11 +275,11 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo "   python3 compare_with_enhanced_metrics.py"
         echo ""
     else
-        echo "❌ Metric extraction failed"
+        echo "[X] Metric extraction failed"
         echo "   Check the log file manually: $LOG_FILE"
     fi
 else
-    echo "❌ Training failed with exit code $EXIT_CODE"
+    echo "[X] Training failed with exit code $EXIT_CODE"
     echo ""
     echo "Check the log file for errors:"
     echo "  $LOG_FILE"

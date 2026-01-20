@@ -50,9 +50,9 @@ def load_all_benchmark_results(results_dir: str) -> Dict[str, Dict]:
                 data['platform_key'] = platform
                 benchmarks[key] = data
                 
-                print(f"✓ Loaded: {key}")
+                print(f"[+] Loaded: {key}")
         except Exception as e:
-            print(f"⚠️  Error loading {json_file}: {e}")
+            print(f"[!] Error loading {json_file}: {e}")
     
     return benchmarks
 
@@ -333,7 +333,7 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    print(f"✅ Comparison plot saved to: {output_file}")
+    print(f"[OK] Comparison plot saved to: {output_file}")
     
     return fig
 
@@ -358,7 +358,7 @@ def print_comparison(nvidia_data: Dict, amd_data: Dict):
     amd_gpu = amd_data['gpu_info']
     
     # 1. Performance Metrics
-    print("\n📊 Performance Metrics")
+    print("\n[#] Performance Metrics")
     print("-" * 80)
     
     nvidia_tps_gpu = nvidia_perf['tokens_per_second_per_gpu']
@@ -447,7 +447,7 @@ def main():
     benchmarks = load_all_benchmark_results(args.results_dir)
     
     if not benchmarks:
-        print("❌ No benchmark results found!")
+        print("[X] No benchmark results found!")
         print(f"Expected files in {args.results_dir}/:")
         print("  - benchmark_cuda_llama.json, benchmark_cuda_qwen.json (for NVIDIA)")
         print("  - benchmark_rocm_llama.json, benchmark_rocm_qwen.json (for AMD)")
@@ -457,18 +457,18 @@ def main():
     has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
     has_amd = any(key.startswith('amd-') for key in benchmarks.keys())
     
-    print(f"\n📊 Found {len(benchmarks)} benchmark(s):")
+    print(f"\n[#] Found {len(benchmarks)} benchmark(s):")
     for key in sorted(benchmarks.keys()):
         data = benchmarks[key]
         print(f"  {key}: {data['gpu_info']['device_name']} ({data['timestamp']})")
     
     # Show platform availability
-    print(f"\n🔍 Platform availability:")
-    print(f"  NVIDIA: {'✓ Available' if has_nvidia else '✗ Not available'}")
-    print(f"  AMD:    {'✓ Available' if has_amd else '✗ Not available'}")
+    print(f"\n[@] Platform availability:")
+    print(f"  NVIDIA: {'[+] Available' if has_nvidia else '[X] Not available'}")
+    print(f"  AMD:    {'[+] Available' if has_amd else '[X] Not available'}")
     
     if not has_nvidia and not has_amd:
-        print("⚠️  Warning: No recognized platform data found")
+        print("[!] Warning: No recognized platform data found")
     elif not has_nvidia:
         print("ℹ️  Note: Generating AMD-only comparison (no NVIDIA data)")
     elif not has_amd:
@@ -479,7 +479,7 @@ def main():
     try:
         create_comparison_plot(benchmarks, args.output)
     except Exception as e:
-        print(f"⚠️  Could not generate plot: {e}")
+        print(f"[!] Could not generate plot: {e}")
         import traceback
         traceback.print_exc()
     

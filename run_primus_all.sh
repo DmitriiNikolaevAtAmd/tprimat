@@ -14,7 +14,7 @@ MODELS=("llama" "qwen")
 SUCCESS=()
 FAILED=()
 
-echo "📋 Training Plan:"
+echo "[*] Training Plan:"
 echo "  1. Llama 3.1 8B"
 echo "  2. Qwen 2.5 7B"
 echo ""
@@ -28,17 +28,17 @@ for MODEL in "${MODELS[@]}"; do
     
     if "$SCRIPT_DIR/run_primus_${MODEL}.sh"; then
         SUCCESS+=("$MODEL")
-        echo "✅ $MODEL completed successfully"
+        echo "[OK] $MODEL completed successfully"
     else
         FAILED+=("$MODEL")
-        echo "❌ $MODEL failed (continuing with next model...)"
+        echo "[X] $MODEL failed (continuing with next model...)"
     fi
     
     # Cooldown between models
     if [ "$MODEL" != "${MODELS[-1]}" ]; then
         echo ""
-        echo "Cooling down for 30 seconds..."
-        sleep 30
+        echo "Cooling down for 5 seconds..."
+        sleep 5
     fi
 done
 
@@ -49,25 +49,25 @@ echo "════════════════════════�
 echo ""
 
 if [ ${#SUCCESS[@]} -gt 0 ]; then
-    echo "✅ Successful (${#SUCCESS[@]}): ${SUCCESS[*]}"
+    echo "[OK] Successful (${#SUCCESS[@]}): ${SUCCESS[*]}"
     echo ""
     echo "Results saved to:"
     # Use OUTPUT_DIR or default to output
     RESULTS_DIR="${OUTPUT_DIR:-output}"
     for MODEL in "${SUCCESS[@]}"; do
-        echo "  📄 ${RESULTS_DIR}/benchmark_rocm_${MODEL}.json"
+        echo "  [.] ${RESULTS_DIR}/benchmark_rocm_${MODEL}.json"
     done
     echo ""
 fi
 
 if [ ${#FAILED[@]} -gt 0 ]; then
-    echo "❌ Failed (${#FAILED[@]}): ${FAILED[*]}"
+    echo "[X] Failed (${#FAILED[@]}): ${FAILED[*]}"
     echo ""
 fi
 
 if [ ${#SUCCESS[@]} -gt 0 ]; then
     echo "════════════════════════════════════════════════════════════"
-    echo "🎯 Next Steps:"
+    echo "[=>] Next Steps:"
     echo "════════════════════════════════════════════════════════════"
     echo ""
     echo "1. Run on NVIDIA system (if not done):"

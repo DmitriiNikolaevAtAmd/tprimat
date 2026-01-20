@@ -29,7 +29,7 @@ for config_num in 00 01 02 03 04; do
 done
 
 if [ ${#available_configs[@]} -eq 0 ]; then
-    echo "❌ No configuration directories found!"
+    echo "[X] No configuration directories found!"
     echo "   Expected: output-00/, output-01/, output-02/, output-03/, output-04/"
     echo ""
     echo "   Run benchmarks first using:"
@@ -37,7 +37,7 @@ if [ ${#available_configs[@]} -eq 0 ]; then
     exit 1
 fi
 
-echo "📂 Found ${#available_configs[@]} configuration(s): ${available_configs[@]}"
+echo "[/] Found ${#available_configs[@]} configuration(s): ${available_configs[@]}"
 echo ""
 
 # Generate comparison plot for each configuration
@@ -47,14 +47,14 @@ for config_num in "${available_configs[@]}"; do
     output_file="${OUTPUT_BASE}/compare-${config_num}.png"
     
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "📊 Configuration ${config_num}: ${config_name}"
+    echo "[#] Configuration ${config_num}: ${config_name}"
     echo "   Input:  ${config_dir}/"
     echo "   Output: ${output_file}"
     
     # Check if benchmark files exist
     benchmark_count=$(find "$config_dir" -name "benchmark_*.json" 2>/dev/null | wc -l)
     if [ "$benchmark_count" -eq 0 ]; then
-        echo "   ⚠️  No benchmark files found in ${config_dir}/, skipping..."
+        echo "   [!] No benchmark files found in ${config_dir}/, skipping..."
         continue
     fi
     
@@ -66,9 +66,9 @@ for config_num in "${available_configs[@]}"; do
     # Move to output directory
     if [ -f "compare.png" ]; then
         mv compare.png "$output_file"
-        echo "   ✅ Generated: ${output_file}"
+        echo "   [OK] Generated: ${output_file}"
     else
-        echo "   ❌ Failed to generate plot"
+        echo "   [X] Failed to generate plot"
     fi
     echo ""
 done
@@ -77,7 +77,7 @@ echo "╔═══════════════════════�
 echo "║                    PLOTS GENERATED                         ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
-echo "📊 Comparison plots saved to: ${OUTPUT_BASE}/"
+echo "[#] Comparison plots saved to: ${OUTPUT_BASE}/"
 ls -lh "${OUTPUT_BASE}"/compare-*.png 2>/dev/null || echo "   (No plots generated)"
 echo ""
 
@@ -120,11 +120,11 @@ for config_num in "${available_configs[@]}"; do
     echo "" >> "$summary_file"
 done
 
-echo "📄 Configuration summary saved to: ${summary_file}"
+echo "[.] Configuration summary saved to: ${summary_file}"
 cat "$summary_file"
 echo ""
 
-echo "🔍 To view the comparison plots:"
+echo "[@] To view the comparison plots:"
 echo "   open ${OUTPUT_BASE}/compare-*.png"
 echo ""
 echo "   Or on Linux:"

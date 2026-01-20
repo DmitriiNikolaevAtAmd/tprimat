@@ -22,14 +22,14 @@ try:
     CONFIG_LOADER_AVAILABLE = True
 except ImportError:
     CONFIG_LOADER_AVAILABLE = False
-    print("⚠️  config_loader not available - parallelism details will be limited")
+    print("[!] config_loader not available - parallelism details will be limited")
 
 try:
     import torch
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    print("⚠️  PyTorch not available - running in log-only mode")
+    print("[!] PyTorch not available - running in log-only mode")
 
 
 def round_floats(obj: Any, precision: int = 5) -> Any:
@@ -296,7 +296,7 @@ def get_parallelism_config(strategy: str, model: str, platform: str) -> Dict[str
             "gradient_accumulation_steps": params.get("gradient_accumulation_steps", 1),
         }
     except Exception as e:
-        print(f"⚠️  Could not load parallelism config: {e}")
+        print(f"[!] Could not load parallelism config: {e}")
         return {"strategy": strategy or "unknown"}
 
 
@@ -309,25 +309,25 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     step_times, tokens_per_gpu_values, loss_values, learning_rates = extract_step_times_from_log(log_file)
     
     if not step_times:
-        print("⚠️  No timing data found in log file")
+        print("[!] No timing data found in log file")
         print("     Log file might use different format.")
         print("     Check the log manually and adjust regex patterns.")
         print("\n     Expected format: 'elapsed time per iteration (ms): X/Y'")
         return None
     
-    print(f"✅ Found {len(step_times)} step timing entries")
+    print(f"[OK] Found {len(step_times)} step timing entries")
     
     if tokens_per_gpu_values:
-        print(f"✅ Found {len(tokens_per_gpu_values)} tokens/GPU entries (using Primus native metrics)")
+        print(f"[OK] Found {len(tokens_per_gpu_values)} tokens/GPU entries (using Primus native metrics)")
     
     if loss_values:
-        print(f"✅ Found {len(loss_values)} loss values")
+        print(f"[OK] Found {len(loss_values)} loss values")
     
     # Extract memory (optional)
     memory_values = extract_memory_from_log(log_file)
     
     if memory_values:
-        print(f"✅ Found {len(memory_values)} memory usage entries")
+        print(f"[OK] Found {len(memory_values)} memory usage entries")
     
     # Auto-detect GPU info
     gpu_info = detect_gpu_info()
@@ -375,7 +375,7 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     tokens_per_step = global_batch_size * seq_length
     tokens_per_second = tokens_per_step / avg_step_time
     tokens_per_second_per_gpu = tokens_per_second / num_gpus
-    print(f"📊 Calculated tokens/s/GPU: {tokens_per_second_per_gpu:.1f} (consistent with NeMo)")
+    print(f"[#] Calculated tokens/s/GPU: {tokens_per_second_per_gpu:.1f} (consistent with NeMo)")
     
     steps_per_second = 1.0 / avg_step_time
     
@@ -494,7 +494,7 @@ Examples:
     # Check if log file exists, fallback to backup logs if needed
     log_file = Path(args.log_file)
     if not log_file.exists():
-        print(f"⚠️  Primary log file not found: {log_file}")
+        print(f"[!] Primary log file not found: {log_file}")
         
         # Try to find backup logs in the same directory
         log_dir = log_file.parent
@@ -504,11 +504,11 @@ Examples:
         
         if backup_logs:
             log_file = backup_logs[0]
-            print(f"✓ Found backup log: {log_file}")
+            print(f"[+] Found backup log: {log_file}")
             print(f"  Using most recent backup from: {datetime.fromtimestamp(log_file.stat().st_mtime)}")
             print()
         else:
-            print(f"❌ No backup logs found matching pattern: {log_pattern}")
+            print(f"[X] No backup logs found matching pattern: {log_pattern}")
             print(f"   Searched in: {log_dir}")
             return 1
     
@@ -525,12 +525,12 @@ Examples:
     if results:
         # Determine output path
         if args.output:
-            output_path = Path(args.output)
+            output_path = Path(args.output).resolve()
         else:
             # Auto-generate filename with model name
             software_stack = results['gpu_info'].get('software_stack', 'unknown')
             model_suffix = f"_{args.model_name}" if args.model_name else ""
-            output_path = Path(f"./output/benchmark_{software_stack}{model_suffix}.json")
+            output_path = Path(f"./output/benchmark_{software_stack}{model_suffix}.json").resolve()
         
         # Save results (round all floats to 3 decimal places)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -541,7 +541,7 @@ Examples:
         with open(output_path, 'w') as f:
             json.dump(results_rounded, f, indent=2)
         
-        print(f"✅ Metrics saved to: {output_path}")
+        print(f"[OK] Metrics saved to: {output_path}")
         
         # Print summary
         print_summary(results)
@@ -553,7 +553,7 @@ Examples:
         print()
         
     else:
-        print("❌ Failed to extract metrics from log file")
+        print("[X] Failed to extract metrics from log file")
         print("\nTroubleshooting:")
         print("  1. Check log file format")
         print("  2. Verify log contains timing information")

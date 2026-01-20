@@ -8,7 +8,7 @@ set -e
 OUTPUT_DIRS=($(find . -maxdepth 2 -type d -name "output-*" | sort))
 
 if [ ${#OUTPUT_DIRS[@]} -eq 0 ]; then
-    echo "❌ No output-XX directories found!"
+    echo "[X] No output-XX directories found!"
     exit 1
 fi
 
@@ -34,13 +34,13 @@ for DIR in "${OUTPUT_DIRS[@]}"; do
         # Ensure the output parent directory exists
         mkdir -p "output"
         
-        echo "📊 Generating chart: $OUTPUT_FILE from $DIR"
+        echo "[#] Generating chart: $OUTPUT_FILE from $DIR"
         python3 compare.py --results-dir "$DIR" --output "$OUTPUT_FILE"
-        echo "✅ Created $OUTPUT_FILE"
+        echo "[OK] Created $OUTPUT_FILE"
 
         echo ""
     else
-        echo "⚠️  Directory $DIR not found, skipping..."
+        echo "[!] Directory $DIR not found, skipping..."
     fi
 done
 

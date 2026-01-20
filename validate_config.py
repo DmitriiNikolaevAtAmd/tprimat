@@ -34,10 +34,10 @@ def validate_tensor_parallelism(model: str, tp: int) -> tuple[bool, str]:
     num_heads = specs['num_attention_heads']
     
     if num_heads % tp != 0:
-        return False, f"❌ {specs['name']}: {num_heads} heads cannot be divided by TP={tp} (result: {num_heads/tp:.2f})"
+        return False, f"[X] {specs['name']}: {num_heads} heads cannot be divided by TP={tp} (result: {num_heads/tp:.2f})"
     else:
         heads_per_gpu = num_heads // tp
-        return True, f"✅ {specs['name']}: TP={tp} → {heads_per_gpu} heads per GPU"
+        return True, f"[OK] {specs['name']}: TP={tp} → {heads_per_gpu} heads per GPU"
 
 def validate_parallelism_product(tp: int, pp: int, dp: int, num_gpus: int) -> tuple[bool, str]:
     """
@@ -48,9 +48,9 @@ def validate_parallelism_product(tp: int, pp: int, dp: int, num_gpus: int) -> tu
     """
     product = tp * pp * dp
     if product != num_gpus:
-        return False, f"❌ TP({tp}) × PP({pp}) × DP({dp}) = {product} ≠ {num_gpus} GPUs"
+        return False, f"[X] TP({tp}) × PP({pp}) × DP({dp}) = {product} ≠ {num_gpus} GPUs"
     else:
-        return True, f"✅ TP({tp}) × PP({pp}) × DP({dp}) = {product} GPUs"
+        return True, f"[OK] TP({tp}) × PP({pp}) × DP({dp}) = {product} GPUs"
 
 def validate_configuration(config, methodology: str, model: str, platform: str) -> list[tuple[bool, str]]:
     """
@@ -65,7 +65,7 @@ def validate_configuration(config, methodology: str, model: str, platform: str) 
     try:
         parallelism = config.get_parallelism(model, platform, methodology=methodology)
     except ValueError as e:
-        results.append((False, f"❌ Configuration not found: {e}"))
+        results.append((False, f"[X] Configuration not found: {e}"))
         return results
     
     tp = parallelism['tensor_model_parallel_size']
@@ -96,7 +96,7 @@ def main():
     try:
         config = load_config()
     except Exception as e:
-        print(f"❌ Failed to load config: {e}")
+        print(f"[X] Failed to load config: {e}")
         sys.exit(1)
     
     # Get all methodologies
@@ -127,12 +127,12 @@ def main():
     print(f"\n{'=' * 80}")
     
     if all_valid:
-        print("✅ All configurations are valid!")
+        print("[OK] All configurations are valid!")
         sys.exit(0)
     else:
-        print("❌ Some configurations have issues. Please fix config.yaml.")
+        print("[X] Some configurations have issues. Please fix config.yaml.")
         print()
-        print("💡 Tip: For tensor parallelism, use TP values that divide both:")
+        print("[i] Tip: For tensor parallelism, use TP values that divide both:")
         print(f"   - Llama: {MODEL_SPECS['llama']['num_attention_heads']} heads → Valid TP: 1, 2, 4, 8, 16, 32")
         print(f"   - Qwen:  {MODEL_SPECS['qwen']['num_attention_heads']} heads → Valid TP: 1, 2, 4, 7, 14, 28")
         print(f"   - Common valid TP values: 1, 2, 4")
