@@ -254,7 +254,8 @@ if [ $EXIT_CODE -eq 0 ]; then
         --sequence-length "$SEQ_LENGTH" \
         --parallel-strategy "$PARALLEL_STRATEGY"
     
-    if [ $? -eq 0 ]; then
+    EXTRACT_EXIT=$?
+    if [ $EXTRACT_EXIT -eq 0 ]; then
         echo ""
         echo "  + Metrics extracted successfully!"
         echo ""
@@ -283,6 +284,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     else
         echo "  x Metric extraction failed"
         echo "   Check the log file manually: $LOG_FILE"
+        EXIT_CODE=$EXTRACT_EXIT
     fi
 else
     echo "  x Training failed with exit code $EXIT_CODE"
@@ -293,3 +295,6 @@ else
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Exit with the training exit code to properly propagate success/failure
+exit $EXIT_CODE
