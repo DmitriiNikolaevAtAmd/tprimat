@@ -24,7 +24,7 @@ echo ""
 # Configuration (with fallbacks to environment or defaults from config.yaml)
 PRIMUS_PATH="${PRIMUS_PATH:-${CONFIG_PRIMUS_PATH:-/workspace/Primus}}"
 MODEL="qwen"
-CONFIG_FILE="${CONFIG_QWEN_PRIMUS_CONFIG:-examples/megatron/configs/MI300X/qwen2.5_7B-pretrain.yaml}"
+CONFIG_FILE="${CONFIG_QWEN_PRIMUS_CONFIG:-examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml}"
 TRAIN_ITERS="${TRAIN_ITERS:-${CONFIG_TRAIN_ITERS:-10}}"
 OUTPUT_DIR="${CONFIG_OUTPUT_DIR:-$TPRIMAT_PATH/output}"
 # Ensure OUTPUT_DIR is absolute and normalized
