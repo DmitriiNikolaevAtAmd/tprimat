@@ -131,7 +131,7 @@ def main():
     parser = argparse.ArgumentParser(description="TensorPrimat - LLM Benchmark Suite")
     parser.add_argument('--model', choices=['llama', 'qwen', 'all'], default='all')
     parser.add_argument('--runs', type=int, default=1)
-    parser.add_argument('--parallel', choices=['maximum_performance', 'truly_identical', 'memory_optimized', 'minimal_communication', 'balanced'], default='truly_identical')
+    parser.add_argument('--parallel', choices=['maximum_performance', 'truly_identical', 'memory_optimized', 'minimal_communication', 'balanced'], default='minimal_communication')
     parser.add_argument('--output-dir', default='./output')
     args = parser.parse_args()
     
