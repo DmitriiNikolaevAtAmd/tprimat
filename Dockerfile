@@ -13,8 +13,7 @@ ENV HSA_ENABLE_SDMA=1
 ENV TRACELENS_ENABLED=1
 ENV PROFILE_ITERS="0,500"
 
-RUN cd /workspace/Primus
-RUN git pull
-WORKDIR /workspace
+RUN mkdir -p /workspace/tprimat
+WORKDIR /workspace/tprimat
 
 CMD ["/bin/bash"]
