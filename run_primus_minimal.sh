@@ -56,6 +56,14 @@ echo ""
 
 cd "$PRIMUS_PATH"
 
+# Export environment variables required by Primus
+export EXP="$CONFIG"
+export GPUS_PER_NODE="$NUM_GPUS"
+export NNODES=1
+export NODE_RANK=0
+export MASTER_ADDR=localhost
+export MASTER_PORT=6000
+
 bash ./examples/run_pretrain.sh \
     --train_iters "$TRAIN_ITERS" \
     --lr "$LR" \

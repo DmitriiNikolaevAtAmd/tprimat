@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     ranger \
     zip \
     tmux \
+    fish \
     && rm -rf /var/lib/apt/lists/*
 
 ENV HSA_NO_SCRATCH_RECLAIM=1
@@ -16,4 +17,5 @@ ENV PROFILE_ITERS="0,500"
 RUN mkdir -p /workspace/tprimat
 WORKDIR /workspace/tprimat
 
-CMD ["/bin/bash"]
+SHELL ["/usr/bin/fish", "-c"]
+CMD ["/usr/bin/fish"]
