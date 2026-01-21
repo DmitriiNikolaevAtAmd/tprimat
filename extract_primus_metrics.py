@@ -241,8 +241,10 @@ def extract_memory_from_log(log_file):
     """
     Extract GPU memory usage from log.
     
-    Primus (ROCm) format:
-    hip mem usage/free/total/usage_ratio: 117.99GB/74.00GB/191.98GB/61.46%
+    Supports multiple formats:
+    - Primus/Megatron: hip mem usage/free/total/usage_ratio: 117.99GB/74.00GB/191.98GB/61.46%
+    - Megatron-LM: allocated: 60.2GB, max allocated: 60.3GB, reserved: 62.1GB
+    - Generic: memory usage: 60.5 GB
     
     Note: "hip" refers to AMD's HIP (Heterogeneous Interface for Portability),
     which provides CUDA compatibility on ROCm.
@@ -251,16 +253,38 @@ def extract_memory_from_log(log_file):
     
     with open(log_file, 'r') as f:
         for line in f:
-            # Primus format: hip mem usage/free/total/usage_ratio: 117.99GB/...
-            # "hip" = AMD's Heterogeneous Interface for Portability (ROCm)
-            match = re.search(r'hip mem usage[^:]*:\s*([0-9.]+)GB', line)
+            # Format 1: Primus/ROCm - hip mem usage/free/total/usage_ratio: 117.99GB/...
+            match = re.search(r'hip mem (?:usage|allocated)[^:]*:\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
             if match:
                 try:
                     memory_gb = float(match.group(1))
                     if 0 < memory_gb < 1000:  # Sanity check
                         memory_values.append(memory_gb)
+                        continue
                 except (ValueError, IndexError):
-                    continue
+                    pass
+            
+            # Format 2: Megatron-LM - allocated: 60.2GB or max allocated: 60.3GB
+            match = re.search(r'(?:max )?allocated:\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
+            if match:
+                try:
+                    memory_gb = float(match.group(1))
+                    if 0 < memory_gb < 1000:  # Sanity check
+                        memory_values.append(memory_gb)
+                        continue
+                except (ValueError, IndexError):
+                    pass
+            
+            # Format 3: Generic - memory usage: 60.5 GB or memory: 60.5GB
+            match = re.search(r'memory\s+(?:usage)?:?\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
+            if match:
+                try:
+                    memory_gb = float(match.group(1))
+                    if 0 < memory_gb < 1000:  # Sanity check
+                        memory_values.append(memory_gb)
+                        continue
+                except (ValueError, IndexError):
+                    pass
     
     return memory_values
 

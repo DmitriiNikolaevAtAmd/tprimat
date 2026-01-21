@@ -230,10 +230,10 @@ platform_optimizations:
     gradient_checkpointing: false
     
   amd:
-    precision: "bf16"
-    fp8_hybrid: false
-    fp8_param: false
-    activation_checkpointing: false
+    precision: "fp8"
+    fp8_hybrid: true
+    fp8_param: true
+    activation_checkpointing: true
     gradient_checkpointing: false
 
 benchmarking:

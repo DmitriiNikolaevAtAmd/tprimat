@@ -140,7 +140,11 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$OUTPUT_DIR/$(basename "$CONFIG_FILE")"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-echo "  * Patching config with parallelism: TP=$TP, PP=$PP"
+echo "  * Patching config with:"
+echo "    - Parallelism: TP=$TP, PP=$PP, GradAccum=$GACC"
+echo "    - Memory logging: enabled"
+echo "    - FP8 precision: hybrid mode"
+echo "    - Activation checkpointing: $ACT_CHECKPOINT"
 # Use python to patch YAML reliably if possible, otherwise sed
 if python3 -c "import yaml" 2>/dev/null; then
     python3 -c "
@@ -171,6 +175,14 @@ config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
 
+# Enable memory logging (for benchmarking)
+config['log_memory_usage'] = True
+config['log_interval'] = 1  # Log every step
+
+# Enable FP8 precision (from config.yaml platform_optimizations.amd)
+config['fp8'] = 'hybrid'
+config['fp8_param'] = True
+
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
 "
@@ -195,13 +207,15 @@ fi
 export EXP="$PATCHED_CONFIG"
 
 # Run training and capture logs
-echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --weight_decay $WEIGHT_DECAY"
+echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --lr_decay_style cosine --lr_decay_iters $TRAIN_ITERS --weight_decay $WEIGHT_DECAY"
 
 bash ./examples/run_pretrain.sh \
     --train_iters $TRAIN_ITERS \
     --lr $LEARNING_RATE \
     --min_lr $MIN_LEARNING_RATE \
     --lr_warmup_iters $WARMUP_STEPS \
+    --lr_decay_style cosine \
+    --lr_decay_iters $TRAIN_ITERS \
     --weight_decay $WEIGHT_DECAY \
     2>&1 | tee "$LOG_FILE" "$BACKUP_LOG" > /dev/null
 EXIT_CODE=${PIPESTATUS[0]}

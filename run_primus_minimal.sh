@@ -69,6 +69,8 @@ bash ./examples/run_pretrain.sh \
     --lr "$LR" \
     --min_lr "$MIN_LR" \
     --lr_warmup_iters "$WARMUP" \
+    --lr_decay_style cosine \
+    --lr_decay_iters "$TRAIN_ITERS" \
     --weight_decay "$WEIGHT_DECAY" \
     2>&1 | tee "$LOG_FILE"
 
