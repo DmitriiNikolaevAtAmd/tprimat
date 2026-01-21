@@ -1,4 +1,5 @@
 #!/bin/bash
+# Run AMD/ROCm Docker container
 
 # Load secrets if available
 if [ -f secrets.env ]; then
@@ -12,4 +13,4 @@ docker run -it --rm \
     -v $HOME:$HOME -v $HOME/tprimat:/workspace/tprimat \
     -w /workspace/tprimat --shm-size 128G --name primat \
     -e HF_TOKEN="${HF_TOKEN}" \
-    primat:latest "$@"
+    primat:amd "$@"

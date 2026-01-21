@@ -1,47 +1,10 @@
-# Git
-.git
-.gitignore
-
-# Python
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg
-*.egg-info
-dist
-build
-.pytest_cache
-.mypy_cache
-
-# Output and logs
+secrets.env
 output/
-logs/
 *.log
-
-# Checkpoints and models
-checkpoints/
-*.ckpt
-*.safetensors
-*.bin
-
-# Data
-data/
-
-# IDE
-.vscode
-.idea
-*.swp
-*.swo
-*~
-
-# Docker
-Dockerfile
-.dockerignore
-docker-run.sh
-
-# Misc
-.DS_Store
-*.bak
+*.pyc
+__pycache__/
+venv/
+.git/
+.gitignore
+*.md
+changes.diff

@@ -111,36 +111,53 @@ The `secrets.env` file is git-ignored and will not be tracked.
 
 #### 2. Build the Docker image
 
+**For AMD ROCm (MI300X):**
 ```bash
-docker build -t primat:latest .
+docker build -f Dockerfile.amd -t primat:amd .
+```
+
+**For NVIDIA CUDA (H100):**
+```bash
+docker build -f Dockerfile.nvidia -t primat:nvidia .
 ```
 
 #### 3. Run the container
 
+**For AMD:**
 ```bash
-./run_docker.sh
+./run_docker_amd.sh
 ```
 
-The script automatically loads your HF token from `secrets.env`.
+**For NVIDIA:**
+```bash
+./run_docker_nvidia.sh
+```
 
-**What's included in the Docker image:**
+The scripts automatically load your HF token from `secrets.env`.
+
+**What's included in both Docker images:**
+- **fish** - Modern shell with syntax highlighting
 - **neovim** - Text editor
 - **ranger** - File manager
 - **zip** - Archive utility
-- AMD ROCm optimizations pre-configured
+- **tmux** - Terminal multiplexer
+- Platform-specific optimizations (ROCm or CUDA)
 - Profiling tools enabled
 
 **Docker usage examples:**
 
 ```bash
-# Interactive shell
-./run_docker.sh
+# Interactive shell (AMD)
+./run_docker_amd.sh
+
+# Interactive shell (NVIDIA)
+./run_docker_nvidia.sh
 
 # Run training directly
-./run_docker.sh ./run_primus_all.sh
+./run_docker_amd.sh ./run_primus_all.sh
 
 # Override HF token
-HF_TOKEN=another_token ./run_docker.sh
+HF_TOKEN=another_token ./run_docker_amd.sh
 ```
 
 ### Install Dependencies (Local)
