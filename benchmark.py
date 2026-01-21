@@ -17,18 +17,24 @@ def detect_platform() -> Tuple[str, str]:
     try:
         import torch
         if not torch.cuda.is_available():
+            print("⚠️  No CUDA/GPU available")
             return "Unknown", "rocm"
         is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-        return ("rocm" if is_rocm else "cuda"), ("rocm" if is_rocm else "cuda")
+        platform = "rocm" if is_rocm else "cuda"
+        print(f"✓ Detected platform: {platform.upper()}")
+        return (platform, platform)
     except ImportError:
+        print("⚠️  PyTorch not found")
         return "Unknown", "rocm"
 
 
 def check_nemo() -> bool:
     try:
         import nemo
+        print("✓ NeMo framework detected")
         return True
     except ImportError:
+        print("ℹ️  NeMo framework not found")
         return False
 
 
@@ -36,6 +42,7 @@ def find_log_file(model: str, output_dir: str = "./output") -> Optional[str]:
     """Find log file for a model."""
     env_var = f"{model.upper()}_LOG"
     if env_var in os.environ and os.path.isfile(os.environ[env_var]):
+        print(f"  Using log file from ${env_var}: {os.environ[env_var]}")
         return os.environ[env_var]
     
     search_dirs = [d for d in [output_dir, ".", "output", "/workspace/Primus", "/workspace/tprimat"] if os.path.isdir(d)]
@@ -45,13 +52,16 @@ def find_log_file(model: str, output_dir: str = "./output") -> Optional[str]:
         for pattern in patterns:
             matches = sorted(glob.glob(os.path.join(search_dir, pattern)), key=os.path.getmtime, reverse=True)
             if matches:
+                print(f"  Found log file: {matches[0]}")
                 return matches[0]
+    print(f"  ⚠️  No log file found for {model}")
     return None
 
 
 def extract_metrics(log_file: str, model: str, parallel_strategy: str, output_dir: str) -> bool:
     """Extract metrics from Primus log file."""
     output_path = os.path.join(output_dir, f"benchmark_rocm_{model}.json")
+    print(f"  Extracting metrics to: {output_path}")
     cmd = [
         "python3", "extract_primus_metrics.py",
         "--log-file", log_file,
@@ -59,15 +69,22 @@ def extract_metrics(log_file: str, model: str, parallel_strategy: str, output_di
         "--output", output_path,
         "--parallel-strategy", parallel_strategy,
     ]
-    return subprocess.run(cmd).returncode == 0
+    result = subprocess.run(cmd)
+    if result.returncode == 0:
+        print(f"  ✓ Metrics extracted successfully")
+    else:
+        print(f"  ✗ Metrics extraction failed")
+    return result.returncode == 0
 
 
 def run_nemo_training(model: str, output_dir: str) -> bool:
     """Run NeMo training script."""
     script = {"llama": "pretrain_llama.py", "qwen": "pretrain_qwen.py"}.get(model)
     if not script or not os.path.isfile(script):
+        print(f"  ✗ Training script not found: {script}")
         return False
     
+    print(f"  Running NeMo training script: {script}")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     log_file = os.path.join(output_dir, f"training_{model}.log")
     
@@ -75,10 +92,13 @@ def run_nemo_training(model: str, output_dir: str) -> bool:
         result = subprocess.run(["python3", script], stdout=log, stderr=subprocess.STDOUT)
     
     if result.returncode == 0:
+        print(f"  ✓ Training completed successfully")
         try:
             os.remove(log_file)
         except OSError:
             pass
+    else:
+        print(f"  ✗ Training failed (exit code: {result.returncode})")
     return result.returncode == 0
 
 
@@ -86,17 +106,33 @@ def run_primus_training(model: str, output_dir: str) -> bool:
     """Run Primus training script."""
     script = f"./run_primus_{model}.sh"
     if not os.path.isfile(script):
+        print(f"  ✗ Primus script not found: {script}")
         return False
+    
+    print(f"  Running Primus training script: {script}")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    return subprocess.run(["bash", script]).returncode == 0
+    result = subprocess.run(["bash", script])
+    
+    if result.returncode == 0:
+        print(f"  ✓ Training completed successfully")
+    else:
+        print(f"  ✗ Training failed (exit code: {result.returncode})")
+    return result.returncode == 0
 
 
 def run_benchmarks(models: List[str], runs: int, output_dir: str, use_nemo: bool) -> Tuple[List[str], List[str]]:
     """Run training benchmarks."""
     successful, failed = [], []
+    framework = "NeMo" if use_nemo else "Primus"
+    
+    print(f"\n{'='*60}")
+    print(f"Running {framework} Training Benchmarks")
+    print(f"{'='*60}")
     
     for model_idx, model in enumerate(models):
+        print(f"\n[{model_idx + 1}/{len(models)}] Model: {model.upper()}")
         for run in range(1, runs + 1):
+            print(f"  Run {run}/{runs}:")
             if use_nemo:
                 ok = run_nemo_training(model, output_dir)
             else:
@@ -117,7 +153,12 @@ def run_extraction(models: List[str], output_dir: str) -> Tuple[List[str], List[
     successful, failed = [], []
     parallel_strategy = os.environ.get('PARALLEL', 'unknown')
     
-    for model in models:
+    print(f"\n{'='*60}")
+    print(f"Extracting Metrics from Logs")
+    print(f"{'='*60}")
+    
+    for model_idx, model in enumerate(models):
+        print(f"\n[{model_idx + 1}/{len(models)}] Model: {model.upper()}")
         log_file = find_log_file(model, output_dir)
         if log_file and extract_metrics(log_file, model, parallel_strategy, output_dir):
             successful.append(model)
@@ -135,6 +176,15 @@ def main():
     parser.add_argument('--output-dir', default='./output')
     args = parser.parse_args()
     
+    print("=" * 60)
+    print("TensorPrimat - LLM Benchmark Suite")
+    print("=" * 60)
+    print(f"Models: {args.model}")
+    print(f"Runs: {args.runs}")
+    print(f"Parallel Strategy: {args.parallel}")
+    print(f"Output Directory: {args.output_dir}")
+    print()
+    
     os.environ['PARALLEL'] = args.parallel
     os.environ['OUTPUT_DIR'] = args.output_dir
     
@@ -144,13 +194,28 @@ def main():
     has_nemo = check_nemo() if gpu_available else False
     
     if not gpu_available:
+        print("\nMode: Metrics extraction (no GPU detected)")
         successful, failed = run_extraction(models, args.output_dir)
     elif has_nemo:
+        print("\nMode: NeMo training benchmarks")
         successful, failed = run_benchmarks(models, args.runs, args.output_dir, use_nemo=True)
     elif software_stack == "rocm":
+        print("\nMode: Primus/ROCm training benchmarks")
         successful, failed = run_benchmarks(models, args.runs, args.output_dir, use_nemo=False)
     else:
+        print("\nMode: Metrics extraction (CUDA without NeMo)")
         successful, failed = run_extraction(models, args.output_dir)
+    
+    print(f"\n{'='*60}")
+    print("Summary")
+    print(f"{'='*60}")
+    print(f"✓ Successful: {len(successful)}")
+    if successful:
+        print(f"  Models: {', '.join(successful)}")
+    print(f"✗ Failed: {len(failed)}")
+    if failed:
+        print(f"  Models: {', '.join(failed)}")
+    print()
     
     sys.exit(0 if len(failed) == 0 else 1)
 
