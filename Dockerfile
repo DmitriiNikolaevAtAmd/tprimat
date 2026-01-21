@@ -13,7 +13,7 @@ ENV TRACELENS_ENABLED=1
 ENV PROFILE_ITERS="0,50"
 
 WORKDIR /workspace
-RUN mkdir -p /workspace/tprimat
-RUN cd /workspace/tprimat
+RUN cd /workspace/Primus
+RUN git pull
 
 CMD ["/bin/bash"]
