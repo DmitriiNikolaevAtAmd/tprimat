@@ -45,7 +45,7 @@ def run_pretrain():
     
     recipe = llm.qwen25_7b.pretrain_recipe(
         name=f"{config.models.qwen.name}_pretrain",
-        dir="/checkpoints",
+        dir=config.paths.nemo.data_dir,
         num_nodes=1,
         num_gpus_per_node=num_gpus,
     )

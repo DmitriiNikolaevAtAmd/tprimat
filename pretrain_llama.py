@@ -45,7 +45,7 @@ def run_pretrain():
     
     recipe = llm.llama31_8b.pretrain_recipe(
         name=f"{config.models.llama.name}_pretrain",
-        dir="/data",
+        dir=config.paths.nemo.data_dir,
         num_nodes=1,
         num_gpus_per_node=num_gpus,
     )

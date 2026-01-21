@@ -60,14 +60,32 @@ def find_log_file(model: str, output_dir: str = "./output") -> Optional[str]:
 
 def extract_metrics(log_file: str, model: str, parallel_strategy: str, output_dir: str) -> bool:
     """Extract metrics from Primus log file."""
+    from config_loader import load_config
+    config = load_config()
+    
     output_path = os.path.join(output_dir, f"benchmark_rocm_{model}.json")
     print(f"  Extracting metrics to: {output_path}")
+    
+    # Get num_gpus based on detected platform (default to nvidia if detection fails)
+    platform = "nvidia"
+    try:
+        import torch
+        is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+        platform = "amd" if is_rocm else "nvidia"
+    except ImportError:
+        pass  # Default to nvidia if torch not available
+    
+    num_gpus = config.hardware.platforms[platform].num_gpus
+    
     cmd = [
         "python3", "extract_primus_metrics.py",
         "--log-file", log_file,
         "--model-name", model,
         "--output", output_path,
         "--parallel-strategy", parallel_strategy,
+        "--num-gpus", str(num_gpus),
+        "--global-batch-size", str(config.training.data.global_batch_size),
+        "--sequence-length", str(config.training.data.seq_length),
     ]
     result = subprocess.run(cmd)
     if result.returncode == 0:
