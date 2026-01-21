@@ -2,6 +2,8 @@ experiment:
   name: "tprimat_benchmark"
   description: "LLM training benchmark comparing AMD vs NVIDIA hardware"
   version: "1.0"
+  profiling: false                    # Enable NVIDIA Nsight Systems profiling
+  logging: true                       # Enable detailed logging (console + file)
 
 hardware:
   platforms:
@@ -29,6 +31,9 @@ models:
     num_attention_heads: 32
     nemo_recipe: "llama31_8b.pretrain_recipe"
     primus_recipe: "llama3.1_8B-BF16-pretrain.yaml"
+    # Model-specific data paths (optional, overrides global training.data)
+    dataset_path: "/data/llama_dataset_text_document"
+    tokenizer_path: "meta-llama/Llama-3.1-8B"
     
   qwen:
     name: "qwen2.5_7b"
@@ -39,6 +44,9 @@ models:
     num_attention_heads: 28
     primus_config: "examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml"
     nemo_recipe: "qwen25_7b.pretrain_recipe"
+    # Model-specific data paths (optional, overrides global training.data)
+    dataset_path: "/data/qwen_dataset_text_document"
+    tokenizer_path: "Qwen/Qwen2.5-7B"
 
 training:
   general:
@@ -47,8 +55,9 @@ training:
     micro_batch_size: 1             # Per-GPU batch size per accumulation step
     global_batch_size: 128          # Total batch size across all GPUs
     seq_length: 2048                # Sequence length in tokens
-    dataset_path: "/data/llama_dataset_text_document"
-    tokenizer_path: "meta-llama/Llama-3.1-8B"
+    # Global dataset paths (optional, can be overridden by model-specific paths)
+    # dataset_path: "/data/dataset_text_document"
+    # tokenizer_path: "model/tokenizer"
   duration:
     max_steps: 500                    # Number of training steps
     train_iters: 500                  # Alternative name used by Primus
@@ -308,31 +317,10 @@ paths:
     config_dir: "examples/megatron/configs/MI300X"
     run_script: "./examples/run_pretrain.sh"
   nemo:
+    data_dir: "/data"
     checkpoint_dir: "/checkpoints"
   tprimat:
     base_dir: "."
     output_dir: "./output"
     logs_dir: "./output"
 
-logging:
-  console:
-    enabled: true
-    level: "INFO"
-    colored: true
-  file:
-    enabled: true
-    capture_stdout: true
-    capture_stderr: true
-  disable:
-    tensorboard: true
-    wandb: true
-    mlflow: true
-
-profiling:
-  enabled: true                    # Enable NVIDIA Nsight Systems profiling
-  trace: "cuda,nvtx,osrt,cudnn,cublas"  # What to trace
-  cuda_memory_usage: true           # Track CUDA memory allocations
-  capture_range: "cudaProfilerApi"  # Capture range method
-  stats: true                       # Generate summary statistics
-  force_overwrite: true             # Overwrite existing profiles
-  export_json: true                 # Export to JSON (Chrome tracing)

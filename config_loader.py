@@ -54,8 +54,6 @@ class Config:
         self.benchmarking = DotDict(self._config.get("benchmarking", {}))
         self.comparison = DotDict(self._config.get("comparison", {}))
         self.paths = DotDict(self._config.get("paths", {}))
-        self.logging_config = DotDict(self._config.get("logging", {}))
-        self.profiling = DotDict(self._config.get("profiling", {}))
         self.validation = DotDict(self._config.get("validation", {}))
     
     def _load_config(self) -> Dict[str, Any]:
@@ -249,8 +247,49 @@ class Config:
         return list(self.hardware.platforms.keys())
     
     def get_profiler_config(self) -> Dict[str, Any]:
-        """Get profiler configuration."""
-        return dict(self.profiling)
+        """
+        Get profiler configuration with hardcoded defaults.
+        Only experiment.profiling (bool) is configurable in config.yaml.
+        """
+        enabled = self.experiment.get('profiling', False)
+        
+        # Return profiling config with fixed defaults
+        return {
+            'enabled': enabled,
+            'trace': 'cuda,nvtx,osrt,cudnn,cublas',
+            'cuda_memory_usage': True,
+            'capture_range': 'cudaProfilerApi',
+            'stats': True,
+            'force_overwrite': True,
+            'export_json': True,
+        }
+    
+    def get_logging_config(self) -> Dict[str, Any]:
+        """
+        Get logging configuration with hardcoded defaults.
+        Only experiment.logging (bool) is configurable in config.yaml.
+        """
+        enabled = self.experiment.get('logging', True)
+        
+        # Return logging config with fixed defaults
+        return {
+            'enabled': enabled,
+            'console': {
+                'enabled': enabled,
+                'level': 'INFO',
+                'colored': True,
+            },
+            'file': {
+                'enabled': enabled,
+                'capture_stdout': True,
+                'capture_stderr': True,
+            },
+            'disable': {
+                'tensorboard': True,
+                'wandb': True,
+                'mlflow': True,
+            }
+        }
     
     def print_config_summary(self, model: str, platform: str):
         """Print configuration summary for model and platform."""

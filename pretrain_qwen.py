@@ -69,9 +69,44 @@ def run_pretrain():
     )
     
     # 3. DATA CONFIGURATION (from config.yaml)
-    recipe.data.micro_batch_size = config.training.data.micro_batch_size
-    recipe.data.global_batch_size = config.training.data.global_batch_size
-    recipe.data.seq_length = config.training.data.seq_length
+    # Check for model-specific data paths first, then fall back to global paths
+    dataset_path = None
+    tokenizer_path = None
+    
+    # Priority 1: Model-specific paths
+    if hasattr(config.models.qwen, 'dataset_path') and config.models.qwen.dataset_path:
+        dataset_path = config.models.qwen.dataset_path
+        tokenizer_path = config.models.qwen.tokenizer_path
+    # Priority 2: Global training data paths
+    elif hasattr(config.training.data, 'dataset_path') and config.training.data.dataset_path:
+        dataset_path = config.training.data.dataset_path
+        tokenizer_path = config.training.data.tokenizer_path
+    
+    # Check if real data paths are provided - need to replace MockDataModule with PreTrainingDataModule
+    if dataset_path and tokenizer_path:
+        print(f"  * Using real data: {dataset_path}")
+        
+        # Use NeMo's AutoTokenizer wrapper for Qwen 2.5 (has unique_identifiers attribute)
+        # The tokenizer must match what was used to preprocess the data
+        from nemo.collections.common.tokenizers.huggingface.auto_tokenizer import AutoTokenizer as NeMoAutoTokenizer
+        print(f"  * Loading Qwen 2.5 tokenizer from: {tokenizer_path}")
+        tokenizer = NeMoAutoTokenizer(tokenizer_path)
+        
+        # Replace MockDataModule with PreTrainingDataModule for real data
+        from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
+        recipe.data = PreTrainingDataModule(
+            paths=[dataset_path],
+            seq_length=config.training.data.seq_length,
+            micro_batch_size=config.training.data.micro_batch_size,
+            global_batch_size=config.training.data.global_batch_size,
+            tokenizer=tokenizer,
+            num_workers=2,
+        )
+    else:
+        # Use default MockDataModule for benchmarking
+        recipe.data.micro_batch_size = config.training.data.micro_batch_size
+        recipe.data.global_batch_size = config.training.data.global_batch_size
+        recipe.data.seq_length = config.training.data.seq_length
     
     # 4. OPTIMIZATIONS & DURATION (from config.yaml)
     recipe.trainer.max_steps = config.training.duration.max_steps

@@ -69,21 +69,33 @@ def run_pretrain():
     )
     
     # 3. DATA CONFIGURATION (from config.yaml)
+    # Check for model-specific data paths first, then fall back to global paths
+    dataset_path = None
+    tokenizer_path = None
+    
+    # Priority 1: Model-specific paths
+    if hasattr(config.models.llama, 'dataset_path') and config.models.llama.dataset_path:
+        dataset_path = config.models.llama.dataset_path
+        tokenizer_path = config.models.llama.tokenizer_path
+    # Priority 2: Global training data paths
+    elif hasattr(config.training.data, 'dataset_path') and config.training.data.dataset_path:
+        dataset_path = config.training.data.dataset_path
+        tokenizer_path = config.training.data.tokenizer_path
+    
     # Check if real data paths are provided - need to replace MockDataModule with PreTrainingDataModule
-    if hasattr(config.training.data, 'dataset_path') and config.training.data.dataset_path:
-        print(f"  * Using real data: {config.training.data.dataset_path}")
+    if dataset_path and tokenizer_path:
+        print(f"  * Using real data: {dataset_path}")
         
         # Use NeMo's AutoTokenizer wrapper for Llama 3.1 (has unique_identifiers attribute)
         # The tokenizer must match what was used to preprocess the data
         from nemo.collections.common.tokenizers.huggingface.auto_tokenizer import AutoTokenizer as NeMoAutoTokenizer
-        tokenizer_path = config.training.data.tokenizer_path
         print(f"  * Loading Llama 3.1 tokenizer from: {tokenizer_path}")
         tokenizer = NeMoAutoTokenizer(tokenizer_path)
         
         # Replace MockDataModule with PreTrainingDataModule for real data
         from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
         recipe.data = PreTrainingDataModule(
-            paths=[config.training.data.dataset_path],
+            paths=[dataset_path],
             seq_length=config.training.data.seq_length,
             micro_batch_size=config.training.data.micro_batch_size,
             global_batch_size=config.training.data.global_batch_size,
