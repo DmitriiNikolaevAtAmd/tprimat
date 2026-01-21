@@ -13,6 +13,11 @@
 - [Overview](#overview)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
+- [Remote Server Deployment](#remote-server-deployment)
+  - [Method 1: Docker Detached Mode](#method-1-docker-detached-mode-recommended)
+  - [Method 2: Tmux Inside Container](#method-2-tmux-inside-container)
+  - [Method 3: Host Tmux + Docker](#method-3-host-tmux--docker)
+  - [Monitoring & Logs](#monitoring--logs)
 - [Usage](#usage)
   - [Basic Commands](#basic-commands)
   - [Parallelism Strategies](#parallelism-strategies)
@@ -170,6 +175,243 @@ pip install -r requirements.txt
 - PyTorch (with CUDA or ROCm)
 - NeMo (NVIDIA) or Primus (AMD)
 - PyYAML, matplotlib, numpy
+
+---
+
+## Remote Server Deployment
+
+Run long-running benchmarks on remote servers without interruption when SSH disconnects.
+
+### Prerequisites
+
+1. **Build the Docker image** (do this once):
+   ```bash
+   # For NVIDIA
+   docker build -f Dockerfile.nvidia -t primat:nvidia .
+   
+   # For AMD
+   docker build -f Dockerfile.amd -t primat:amd .
+   ```
+
+2. **Set up secrets** (optional, if using HuggingFace):
+   ```bash
+   echo "export HF_TOKEN=your_token_here" > secrets.env
+   ```
+
+### Method 1: Docker Detached Mode ⭐ (RECOMMENDED)
+
+**Best for:** Fully automated runs with no interaction needed. The container runs in the background and survives SSH disconnection.
+
+#### Start the benchmark:
+
+**For NVIDIA:**
+```bash
+./run_docker_nvidia_detached.sh
+```
+
+**For AMD:**
+```bash
+./run_docker_amd_detached.sh
+```
+
+#### Monitor progress:
+
+```bash
+# View live logs
+docker logs -f primat
+
+# Check container status
+docker ps | grep primat
+
+# Execute commands inside running container
+docker exec -it primat /bin/bash
+
+# View output files
+docker exec primat ls -lh /workspace/tprimat/output/
+
+# Stop and cleanup
+docker stop primat && docker rm primat
+```
+
+**Advantages:**
+- ✅ Survives SSH disconnection
+- ✅ Automatic logging
+- ✅ No manual interaction needed
+- ✅ Easy to monitor remotely
+
+### Method 2: Tmux Inside Container
+
+**Best for:** Interactive debugging and monitoring with the ability to detach/reattach.
+
+#### Start container with interactive session:
+
+```bash
+# For NVIDIA
+./run_docker_nvidia_tmux.sh
+
+# For AMD
+./run_docker_amd_tmux.sh
+```
+
+#### Inside container:
+
+```bash
+# Create tmux session
+tmux new -s benchmark
+
+# Run your benchmark
+./run_nemo_all.sh  # or ./run_primus_all.sh
+
+# Detach from tmux: Press Ctrl+B, then D
+# Exit container: exit
+```
+
+#### Reconnect later:
+
+```bash
+# Reattach to container
+docker exec -it primat /bin/bash
+
+# Reattach to tmux session
+tmux attach -t benchmark
+
+# List all tmux sessions
+tmux ls
+```
+
+**Advantages:**
+- ✅ Interactive control
+- ✅ Can detach and reattach anytime
+- ✅ Multiple windows/panes for monitoring
+- ✅ Great for debugging
+
+### Method 3: Host Tmux + Docker
+
+**Best for:** Maximum flexibility and control from the host system.
+
+#### On remote server:
+
+```bash
+# Create host tmux session
+tmux new -s docker-benchmark
+
+# Inside tmux, run container
+./run_docker_nvidia.sh  # or ./run_docker_amd.sh
+
+# Inside container, run benchmark
+./run_nemo_all.sh  # or ./run_primus_all.sh
+
+# Detach from tmux: Press Ctrl+B, then D
+# Now you can safely disconnect from SSH
+```
+
+#### Reconnect:
+
+```bash
+# SSH back to server
+ssh your-server
+
+# Reattach to tmux session
+tmux attach -t docker-benchmark
+
+# Or list all sessions first
+tmux ls
+```
+
+**Advantages:**
+- ✅ Control from host level
+- ✅ Can manage multiple containers
+- ✅ Easiest to debug
+- ✅ No Docker-specific commands needed
+
+### Monitoring & Logs
+
+#### Check Container Status:
+```bash
+# List running containers
+docker ps | grep primat
+
+# Detailed container info
+docker inspect primat
+
+# Container resource usage
+docker stats primat
+```
+
+#### View Logs:
+```bash
+# Docker logs
+docker logs primat
+docker logs -f primat --tail 100
+
+# Application logs
+docker exec primat cat /workspace/tprimat/output/training_llama.log
+docker exec primat tail -f /workspace/tprimat/output/training_llama.log
+
+# Benchmark output
+docker exec primat cat /workspace/tprimat/output/benchmark_rocm_llama.json
+```
+
+#### Monitor Resources:
+```bash
+# GPU usage (NVIDIA)
+nvidia-smi -l 1
+watch -n 1 nvidia-smi
+
+# GPU usage (AMD)
+rocm-smi -l 1
+watch -n 1 rocm-smi
+
+# Inside container
+docker exec -it primat nvidia-smi  # or rocm-smi
+```
+
+### Troubleshooting Remote Runs
+
+**Container exited unexpectedly:**
+```bash
+# Check exit code and logs
+docker ps -a | grep primat
+docker logs primat
+```
+
+**Out of memory:**
+```bash
+# Increase shared memory in run script
+# Edit --shm-size parameter (default is 64g)
+```
+
+**Port/name already in use:**
+```bash
+# Remove existing container
+docker rm -f primat
+```
+
+**GPU not available:**
+```bash
+# Verify GPU access (NVIDIA)
+docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi
+
+# Verify GPU access (AMD)
+docker run --rm --device=/dev/kfd --device=/dev/dri rocm/pytorch:latest rocm-smi
+```
+
+### Best Practices
+
+1. **Always use detached mode or tmux** for long-running jobs
+2. **Monitor disk space** in `/workspace/tprimat/output/`
+3. **Set up alerts** for job completion or failures
+4. **Back up checkpoints** regularly to external storage
+5. **Use meaningful container names** when running multiple benchmarks
+6. **Check logs periodically** to catch errors early
+
+### Quick Reference
+
+| Method | Survives SSH Drop | Easy Monitoring | Auto-Restart | Best For |
+|--------|------------------|-----------------|--------------|----------|
+| Detached Docker | ✅ | ✅ | ❌ | Automated runs |
+| Tmux (Container) | ✅ | ⭐⭐⭐ | ❌ | Interactive debugging |
+| Tmux (Host) | ✅ | ⭐⭐ | ❌ | Development |
 
 ---
 
