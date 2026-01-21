@@ -45,7 +45,8 @@ models:
     primus_config: "examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml"
     nemo_recipe: "qwen25_7b.pretrain_recipe"
     # Model-specific data paths (optional, overrides global training.data)
-    dataset_path: "/data/qwen_dataset_text_document"
+    # Using same dataset as Llama for benchmarking (computational workload is what matters)
+    dataset_path: "/data/llama_dataset_text_document"
     tokenizer_path: "Qwen/Qwen2.5-7B"
 
 training:
