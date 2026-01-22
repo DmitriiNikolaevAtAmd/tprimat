@@ -174,7 +174,10 @@ def main():
             train_qwen()
     else:
         import subprocess
+        import time
+        
         subprocess.run([sys.executable, __file__, "llama"])
+        time.sleep(10)
         subprocess.run([sys.executable, __file__, "qwen"])
 
 
