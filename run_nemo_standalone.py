@@ -46,11 +46,11 @@ def train_llama():
     )
     
     recipe.trainer.strategy = MegatronStrategy(
-        tensor_model_parallel_size=1,
+        tensor_model_parallel_size=2,
         pipeline_model_parallel_size=1,
         context_parallel_size=1,
         virtual_pipeline_model_parallel_size=None,
-        sequence_parallel=False,
+        sequence_parallel=True,
     )
     
     dataset_path = "/data/llama_dataset_text_document"
@@ -128,11 +128,11 @@ def train_qwen():
     )
     
     recipe.trainer.strategy = MegatronStrategy(
-        tensor_model_parallel_size=1,
+        tensor_model_parallel_size=2,
         pipeline_model_parallel_size=1,
         context_parallel_size=1,
         virtual_pipeline_model_parallel_size=None,
-        sequence_parallel=False,
+        sequence_parallel=True,
     )
     
     dataset_path = "/data/llama_dataset_text_document"
