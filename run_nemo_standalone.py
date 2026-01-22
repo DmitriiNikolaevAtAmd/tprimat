@@ -63,9 +63,9 @@ def train_llama():
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.model.config.fp8 = "hybrid"
     recipe.model.config.fp8_param = True
-    recipe.model.config.activations_checkpoint_granularity = "selective"
-    recipe.model.config.activations_checkpoint_method = "uniform"
-    recipe.model.config.activations_checkpoint_num_layers = 1
+    recipe.model.config.recompute_granularity = "selective"
+    recipe.model.config.recompute_method = "uniform"
+    recipe.model.config.recompute_num_layers = 1
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
@@ -141,9 +141,9 @@ def train_qwen():
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.model.config.fp8 = "hybrid"
     recipe.model.config.fp8_param = True
-    recipe.model.config.activations_checkpoint_granularity = "selective"
-    recipe.model.config.activations_checkpoint_method = "uniform"
-    recipe.model.config.activations_checkpoint_num_layers = 1
+    recipe.model.config.recompute_granularity = "selective"
+    recipe.model.config.recompute_method = "uniform"
+    recipe.model.config.recompute_num_layers = 1
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
