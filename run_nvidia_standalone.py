@@ -166,15 +166,16 @@ def main():
     if not torch.cuda.is_available():
         sys.exit(1)
     
-    try:
-        train_llama()
-    except Exception as e:
-        print(f"Llama training failed: {e}")
-    
-    try:
-        train_qwen()
-    except Exception as e:
-        print(f"Qwen training failed: {e}")
+    if len(sys.argv) > 1:
+        model = sys.argv[1]
+        if model == "llama":
+            train_llama()
+        elif model == "qwen":
+            train_qwen()
+    else:
+        import subprocess
+        subprocess.run([sys.executable, __file__, "llama"])
+        subprocess.run([sys.executable, __file__, "qwen"])
 
 
 if __name__ == "__main__":
