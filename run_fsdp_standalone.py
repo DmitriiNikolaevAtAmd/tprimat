@@ -5,6 +5,12 @@ Native PyTorch distributed training with FSDP for memory-efficient training
 """
 import os
 import sys
+
+# Force unbuffered output
+os.environ['PYTHONUNBUFFERED'] = '1'
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
 import torch
 import torch.distributed as dist
 from torch.distributed.fsdp import (
@@ -18,6 +24,7 @@ from torch.distributed.fsdp.wrap import (
 )
 import random
 import numpy as np
+import logging
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -27,6 +34,19 @@ from torch.utils.data import Dataset, DataLoader, DistributedSampler
 from torch.optim import AdamW
 import time
 from functools import partial
+import json
+from pathlib import Path
+from datetime import datetime
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - [Rank %(rank)s] - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ],
+    force=True
+)
 
 
 class PretrainingDataset(Dataset):
@@ -74,8 +94,90 @@ def cleanup_distributed():
         dist.destroy_process_group()
 
 
+def save_fsdp_benchmark_results(model_short_name, step_times, total_time, num_gpus, 
+                                 global_batch_size, sequence_length, total_steps, output_dir):
+    """Save FSDP benchmark results in the same format as other frameworks"""
+    
+    # Detect platform
+    if torch.cuda.is_available():
+        is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+        platform = "amd" if is_rocm else "nvd"
+        device_name = torch.cuda.get_device_name(0)
+        device_props = torch.cuda.get_device_properties(0)
+        total_memory_gb = device_props.total_memory / 1e9
+        software_stack = "primus" if is_rocm else "nemo"
+        software_version = torch.version.hip if is_rocm else torch.version.cuda
+    else:
+        platform = "cpu"
+        device_name = "CPU"
+        total_memory_gb = 0
+        software_stack = "cpu"
+        software_version = "N/A"
+    
+    # Calculate metrics
+    if len(step_times) > 0:
+        avg_step_time = sum(step_times) / len(step_times)
+        steps_per_second = len(step_times) / sum(step_times)
+        tokens_per_step = global_batch_size * sequence_length
+        tokens_per_second = tokens_per_step / avg_step_time
+        tokens_per_second_per_gpu = tokens_per_second / num_gpus
+    else:
+        avg_step_time = 0
+        steps_per_second = 0
+        tokens_per_second = 0
+        tokens_per_second_per_gpu = 0
+    
+    results = {
+        "platform": platform,
+        "gpu_info": {
+            "device_count": num_gpus,
+            "device_name": device_name,
+            "total_memory_gb": total_memory_gb,
+            "pytorch_version": torch.__version__,
+            "software_stack": software_stack,
+            "software_version": software_version,
+        },
+        "timestamp": datetime.now().isoformat(),
+        "training_config": {
+            "max_steps": total_steps,
+            "global_batch_size": global_batch_size,
+            "sequence_length": sequence_length,
+            "num_gpus": num_gpus,
+            "parallel_strategy": "fsdp",
+        },
+        "performance_metrics": {
+            "total_steps": len(step_times) + 1,  # +1 for warmup step
+            "total_time_seconds": total_time,
+            "avg_step_time_seconds": avg_step_time,
+            "min_step_time_seconds": min(step_times) if step_times else 0,
+            "max_step_time_seconds": max(step_times) if step_times else 0,
+            "steps_per_second": steps_per_second,
+            "tokens_per_second": tokens_per_second,
+            "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
+        },
+    }
+    
+    # Save to file with format: train_fsdp_<model>.json
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    filename = f"train_fsdp_{model_short_name}.json"
+    filepath = output_path / filename
+    
+    with open(filepath, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Benchmark results saved to: {filepath}")
+    logger.info(f"Avg step time: {avg_step_time:.3f}s")
+    logger.info(f"Throughput: {tokens_per_second:,.0f} tokens/sec ({tokens_per_second_per_gpu:,.0f} tokens/sec/GPU)")
+
+
 def train_model(model_name, model_short_name):
     rank, world_size, local_rank = setup_distributed()
+    
+    # Setup logger with rank information
+    logger = logging.getLogger(__name__)
+    logger = logging.LoggerAdapter(logger, {'rank': rank})
     
     # Set seeds
     torch.manual_seed(42)
@@ -86,8 +188,8 @@ def train_model(model_name, model_short_name):
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
     if rank == 0:
-        print(f"Loading model: {model_name}")
-        print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
+        logger.info(f"Loading model: {model_name}")
+        logger.info(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
     
     # Load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
@@ -175,7 +277,7 @@ def train_model(model_name, model_short_name):
     
     # Training loop
     if rank == 0:
-        print("Starting training...")
+        logger.info("Starting training...")
     
     model.train()
     gradient_accumulation_steps = 8  # 64 / 8 GPUs
@@ -183,6 +285,9 @@ def train_model(model_name, model_short_name):
     step = 0
     total_loss = 0.0
     start_time = time.time()
+    step_times_no_warmup = []
+    first_step = True
+    step_start_time = time.time()
     
     for batch_idx, batch in enumerate(dataloader):
         if step >= total_steps:
@@ -202,23 +307,45 @@ def train_model(model_name, model_short_name):
         
         # Optimizer step
         if (batch_idx + 1) % gradient_accumulation_steps == 0:
+            step_end_time = time.time()
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
             
             step += 1
             
+            # Track step times (skip first step for warmup)
+            if first_step:
+                first_step = False
+            else:
+                step_time = step_end_time - step_start_time
+                step_times_no_warmup.append(step_time)
+            
+            step_start_time = time.time()
+            
             if rank == 0:
                 avg_loss = total_loss / step
                 elapsed = time.time() - start_time
-                print(f"Step {step}/{total_steps}, Loss: {avg_loss:.4f}, Time: {elapsed:.2f}s")
+                logger.info(f"Step {step}/{total_steps}, Loss: {avg_loss:.4f}, Time: {elapsed:.2f}s")
             
             if step >= total_steps:
                 break
     
     if rank == 0:
         total_time = time.time() - start_time
-        print(f"Training completed! Total time: {total_time:.2f}s")
+        logger.info(f"Training completed! Total time: {total_time:.2f}s")
+        
+        # Save benchmark results
+        save_fsdp_benchmark_results(
+            model_short_name=model_short_name,
+            step_times=step_times_no_warmup if len(step_times_no_warmup) > 0 else [0],
+            total_time=total_time,
+            num_gpus=world_size,
+            global_batch_size=64,
+            sequence_length=2048,
+            total_steps=total_steps,
+            output_dir="./output"
+        )
     
     cleanup_distributed()
 
@@ -232,11 +359,14 @@ def train_qwen():
 
 
 def main():
+    logger = logging.getLogger(__name__)
     os.makedirs("./output", exist_ok=True)
     
     if not torch.cuda.is_available():
-        print("CUDA is not available!")
+        logger.error("CUDA is not available!")
         sys.exit(1)
+    
+    logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
     
     if len(sys.argv) > 1:
         model = sys.argv[1]
@@ -245,15 +375,17 @@ def main():
         elif model == "qwen":
             train_qwen()
         else:
-            print(f"Unknown model: {model}")
+            logger.error(f"Unknown model: {model}")
             sys.exit(1)
     else:
         import subprocess
         import time
         
-        subprocess.run([sys.executable, __file__, "llama"])
+        logger.info("Running Llama training...")
+        subprocess.run([sys.executable, "-u", __file__, "llama"])
         time.sleep(10)
-        subprocess.run([sys.executable, __file__, "qwen"])
+        logger.info("Running Qwen training...")
+        subprocess.run([sys.executable, "-u", __file__, "qwen"])
 
 
 if __name__ == "__main__":

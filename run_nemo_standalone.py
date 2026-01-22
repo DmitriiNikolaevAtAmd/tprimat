@@ -1,16 +1,35 @@
 #!/usr/bin/env python3
 import os
 import sys
+
+# Force unbuffered output
+os.environ['PYTHONUNBUFFERED'] = '1'
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
 import torch
 import random
 import numpy as np
+import logging
 from nemo.collections import llm
 import nemo_run as run
 from nemo.lightning import MegatronStrategy
 from utils import BenchmarkCallback
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ],
+    force=True
+)
+logger = logging.getLogger(__name__)
+
 
 def train_llama():
+    logger.info("Setting up Llama training...")
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
     np.random.seed(42)
@@ -18,6 +37,7 @@ def train_llama():
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
+    logger.info("Creating Llama training recipe...")
     recipe = llm.llama31_8b.pretrain_recipe(
         name="llama31_8b_pretrain",
         dir="/data",
@@ -78,16 +98,20 @@ def train_llama():
         platform="auto",
         model_name="llama",
         parallel_strategy="minimal_communication",
-        profiler_config={"enabled": False}
+        profiler_config={"enabled": False},
+        framework="nemo"
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []
     recipe.trainer.callbacks.append(benchmark_callback)
     
+    logger.info("Starting Llama training...")
     run.run(recipe, direct=True)
+    logger.info("Llama training completed!")
 
 
 def train_qwen():
+    logger.info("Setting up Qwen training...")
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
     np.random.seed(42)
@@ -95,6 +119,7 @@ def train_qwen():
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
+    logger.info("Creating Qwen training recipe...")
     recipe = llm.qwen25_7b.pretrain_recipe(
         name="qwen25_7b_pretrain",
         dir="/data",
@@ -155,34 +180,47 @@ def train_qwen():
         platform="auto",
         model_name="qwen",
         parallel_strategy="minimal_communication",
-        profiler_config={"enabled": False}
+        profiler_config={"enabled": False},
+        framework="nemo"
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []
     recipe.trainer.callbacks.append(benchmark_callback)
     
+    logger.info("Starting Qwen training...")
     run.run(recipe, direct=True)
+    logger.info("Qwen training completed!")
 
 
 def main():
     os.makedirs("./output", exist_ok=True)
     
     if not torch.cuda.is_available():
+        logger.error("CUDA is not available!")
         sys.exit(1)
+    
+    logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
     
     if len(sys.argv) > 1:
         model = sys.argv[1]
+        logger.info(f"Training model: {model}")
         if model == "llama":
             train_llama()
         elif model == "qwen":
             train_qwen()
+        else:
+            logger.error(f"Unknown model: {model}")
+            sys.exit(1)
     else:
+        logger.info("Running all models sequentially...")
         import subprocess
         import time
         
-        subprocess.run([sys.executable, __file__, "llama"])
+        logger.info("Running Llama training...")
+        subprocess.run([sys.executable, "-u", __file__, "llama"])
         time.sleep(10)
-        subprocess.run([sys.executable, __file__, "qwen"])
+        logger.info("Running Qwen training...")
+        subprocess.run([sys.executable, "-u", __file__, "qwen"])
 
 
 if __name__ == "__main__":

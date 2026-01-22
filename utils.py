@@ -40,7 +40,7 @@ class BenchmarkCallback(Callback):
     """Callback to collect platform-agnostic performance metrics."""
     
     def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, 
-                 parallel_strategy: str = "unknown", profiler_config: Optional[Dict] = None):
+                 parallel_strategy: str = "unknown", profiler_config: Optional[Dict] = None, framework: str = None):
         """
         Args:
             output_dir: Directory to save benchmark results
@@ -48,6 +48,7 @@ class BenchmarkCallback(Callback):
             model_name: Name of the model (e.g., 'llama', 'qwen')
             parallel_strategy: Parallelism strategy name (e.g., 'minimal_communication', 'balanced')
             profiler_config: Dictionary with profiling configuration (from config.yaml)
+            framework: Framework name for output filename (e.g., 'hf', 'fsdp', 'nemo')
         """
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -78,6 +79,7 @@ class BenchmarkCallback(Callback):
         self.num_gpus = None
         self.model_name = model_name
         self.parallel_strategy = parallel_strategy
+        self.framework = framework
         
         # Profiling configuration
         self.profiler_config = profiler_config or {}
@@ -417,14 +419,17 @@ class BenchmarkCallback(Callback):
             }
             
             # Save results (round all floats to 3 decimal places)
-            # Use software stack (cuda/rocm) for filename
-            software_stack = self.gpu_info.get("software_stack", self.platform)
-            
-            # Create filename with model name if provided
-            if self.model_name:
+            # Use framework name if provided, otherwise fall back to software stack
+            if self.framework and self.model_name:
+                # Format: train_<framework>_<model>.json (e.g., train_hf_llama.json)
+                filename = f"train_{self.framework}_{self.model_name}.json"
+            elif self.model_name:
+                # Fallback: use software stack if no framework specified
+                software_stack = self.gpu_info.get("software_stack", self.platform)
                 filename = f"train_{software_stack}_{self.model_name}.json"
             else:
                 # Fallback to timestamp if no model name
+                software_stack = self.gpu_info.get("software_stack", self.platform)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"train_{software_stack}_{timestamp}.json"
             
