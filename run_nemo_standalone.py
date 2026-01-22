@@ -65,7 +65,6 @@ def train_llama():
     recipe.model.config.fp8_param = True
     recipe.model.config.recompute_granularity = "selective"
     recipe.model.config.recompute_method = "uniform"
-    recipe.model.config.recompute_num_layers = 1
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
@@ -143,7 +142,6 @@ def train_qwen():
     recipe.model.config.fp8_param = True
     recipe.model.config.recompute_granularity = "selective"
     recipe.model.config.recompute_method = "uniform"
-    recipe.model.config.recompute_num_layers = 1
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
