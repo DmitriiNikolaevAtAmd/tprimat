@@ -44,13 +44,13 @@ def train_llama():
             paths=[dataset_path],
             seq_length=2048,
             micro_batch_size=1,
-            global_batch_size=128,
+            global_batch_size=64,
             tokenizer=tokenizer,
             num_workers=2,
         )
     else:
         recipe.data.micro_batch_size = 1
-        recipe.data.global_batch_size = 128
+        recipe.data.global_batch_size = 64
         recipe.data.seq_length = 2048
     
     recipe.trainer.max_steps = 10
@@ -63,6 +63,9 @@ def train_llama():
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.model.config.fp8 = "hybrid"
     recipe.model.config.fp8_param = True
+    recipe.model.config.activations_checkpoint_granularity = "selective"
+    recipe.model.config.activations_checkpoint_method = "uniform"
+    recipe.model.config.activations_checkpoint_num_layers = 1
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
@@ -119,14 +122,14 @@ def train_qwen():
             paths=[dataset_path],
             seq_length=2048,
             micro_batch_size=1,
-            global_batch_size=128,
+            global_batch_size=64,
             tokenizer=tokenizer,
             num_workers=2,
         )
     else:
         recipe.data.micro_batch_size = 1
-        recipe.data.global_batch_size = 128
-        recipe.data.seq_length = 2048
+        recipe.data.global_batch_size = 64
+        recipe.data.seq_length=2048
     
     recipe.trainer.max_steps = 10
     recipe.optim.config.lr = 0.0003
@@ -138,6 +141,9 @@ def train_qwen():
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.model.config.fp8 = "hybrid"
     recipe.model.config.fp8_param = True
+    recipe.model.config.activations_checkpoint_granularity = "selective"
+    recipe.model.config.activations_checkpoint_method = "uniform"
+    recipe.model.config.activations_checkpoint_num_layers = 1
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
