@@ -413,8 +413,6 @@ class BenchmarkCallback(Callback):
                 },
                 "raw_step_times": self.step_times,
                 "raw_loss_values": self.loss_values if self.loss_values else [],
-                "raw_memory_values": self.memory_allocated if self.memory_allocated else [],
-                "raw_memory_per_gpu": self.memory_allocated_per_gpu if self.memory_allocated_per_gpu else [],
                 "raw_learning_rates": self.learning_rates if self.learning_rates else [],
             }
             
@@ -456,13 +454,6 @@ class BenchmarkCallback(Callback):
             else:
                 print(f"Throughput: {results['performance_metrics']['steps_per_second']:.3f} steps/s")
                 print(f"  (Token-based metrics unavailable - need batch size & sequence length)")
-            
-            if 'raw_memory_values' in results and results['raw_memory_values']:
-                memory_values = results['raw_memory_values']
-                print(f"\nMemory Usage (time series):")
-                print(f"  Memory samples: {len(memory_values)}")
-                print(f"  Avg Memory: {sum(memory_values)/len(memory_values):.2f}GB")
-                print(f"  Peak Memory: {max(memory_values):.2f}GB")
             
             print(f"\nResults saved to: {filepath}")
             print(f"{'='*60}\n")
@@ -521,7 +512,6 @@ def compare_benchmarks(results_dir: str = "./output") -> Dict:
             "tokens_per_second": nvidia['performance_metrics'].get('tokens_per_second'),
             "tokens_per_second_per_gpu": nvidia['performance_metrics'].get('tokens_per_second_per_gpu'),
             "steps_per_second": nvidia['performance_metrics'].get('steps_per_second'),
-            "peak_memory": max(nvidia.get('raw_memory_values', [0])) if nvidia.get('raw_memory_values') else 'N/A',
         },
         "amd": {
             "device": amd['gpu_info']['device_name'],
@@ -530,7 +520,6 @@ def compare_benchmarks(results_dir: str = "./output") -> Dict:
             "tokens_per_second": amd['performance_metrics'].get('tokens_per_second'),
             "tokens_per_second_per_gpu": amd['performance_metrics'].get('tokens_per_second_per_gpu'),
             "steps_per_second": amd['performance_metrics'].get('steps_per_second'),
-            "peak_memory": max(amd.get('raw_memory_values', [0])) if amd.get('raw_memory_values') else 'N/A',
         }
     }
     

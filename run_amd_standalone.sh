@@ -29,7 +29,7 @@ bash ./examples/run_pretrain.sh \
 
 cd "$TPRIMAT_PATH"
 
-python3 extract_primus_metrics.py \
+python3 extract_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_llama.log" \
     --model-name "llama" \
     --output "$TPRIMAT_PATH/output/benchmark_rocm_llama.json" \
@@ -53,7 +53,7 @@ bash ./examples/run_pretrain.sh \
 
 cd "$TPRIMAT_PATH"
 
-python3 extract_primus_metrics.py \
+python3 extract_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_qwen.log" \
     --model-name "qwen" \
     --output "$TPRIMAT_PATH/output/benchmark_rocm_qwen.json" \

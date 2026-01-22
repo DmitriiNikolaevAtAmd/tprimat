@@ -256,7 +256,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     # Get parallel strategy from environment (if set)
     PARALLEL_STRATEGY="${PARALLEL:-unknown}"
     
-    python3 extract_primus_metrics.py \
+    python3 extract_metrics.py \
         --log-file "$LOG_FILE" \
         --model-name "$MODEL" \
         --output "$OUTPUT_DIR/benchmark_rocm_${MODEL}.json" \

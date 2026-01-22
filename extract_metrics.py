@@ -3,7 +3,7 @@
 Extract benchmark metrics from Primus training logs.
 
 Usage:
-    python3 extract_primus_metrics.py \
+    python3 extract_metrics.py \
         --log-file primus_training.log \
         --output benchmark_results/benchmark_rocm_manual.json \
         --num-gpus 8 \
@@ -439,7 +439,6 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
         },
         "raw_step_times": step_times,
         "raw_loss_values": loss_values if loss_values else [],
-        "raw_memory_values": memory_values if memory_values else [],
         "raw_learning_rates": learning_rates if learning_rates else [],
         "source_log_file": str(Path(log_file).absolute())
     }
@@ -461,12 +460,6 @@ def print_summary(results):
         print(f"\nThroughput Metrics:")
         print(f"  Total Throughput: {results['performance_metrics']['tokens_per_second']:,.0f} tokens/sec")
         print(f"  Per-GPU Throughput: {results['performance_metrics']['tokens_per_second_per_gpu']:,.0f} tokens/sec/GPU")
-    
-    if 'raw_memory_values' in results and results['raw_memory_values']:
-        memory_values = results['raw_memory_values']
-        print(f"\nMemory Usage (time series):")
-        print(f"  Memory samples: {len(memory_values)}")
-        print(f"  Avg Memory: {sum(memory_values)/len(memory_values):.2f}GB")
         print(f"  Peak Memory: {max(memory_values):.2f}GB")
     
     print(f"{'='*60}\n")
@@ -479,7 +472,7 @@ def main():
         epilog="""
 Examples:
   # With model name (auto-generates filename)
-  python3 extract_primus_metrics.py \\
+  python3 extract_metrics.py \\
       --log-file primus_training.log \\
       --model-name llama \\
       --num-gpus 8 \\
@@ -487,7 +480,7 @@ Examples:
       --sequence-length 2048
   
   # With explicit output path
-  python3 extract_primus_metrics.py \\
+  python3 extract_metrics.py \\
       --log-file primus_training.log \\
       --output output/benchmark_rocm_llama.json \\
       --num-gpus 8 \\
@@ -583,7 +576,7 @@ Examples:
         print("  1. Check log file format")
         print("  2. Verify log contains timing information")
         print("  3. Try opening the log and looking for step times manually")
-        print("  4. Adjust regex patterns in extract_primus_metrics.py if needed")
+        print("  4. Adjust regex patterns in extract_metrics.py if needed")
         return 1
     
     return 0
