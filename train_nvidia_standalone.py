@@ -168,8 +168,8 @@ def train_qwen():
     
     recipe.trainer.max_steps = 500
     
-    recipe.optim.config.lr = 0.0003  # 3.0e-4
-    recipe.optim.config.min_lr = 0.00003  # 3.0e-5 (10% of peak LR)
+    recipe.optim.config.lr = 0.0003
+    recipe.optim.config.min_lr = 0.00003
     recipe.optim.config.weight_decay = 0.1
     recipe.optim.config.adam_beta1 = 0.9
     recipe.optim.config.adam_beta2 = 0.95
