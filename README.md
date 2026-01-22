@@ -12,6 +12,7 @@
 
 - [Overview](#overview)
 - [Quick Start](#quick-start)
+  - [Standalone Scripts](#standalone-scripts-hardcoded-parameters)
 - [Installation](#installation)
 - [Remote Server Deployment](#remote-server-deployment)
   - [Method 1: Docker Detached Mode](#method-1-docker-detached-mode-recommended)
@@ -85,6 +86,35 @@ TPrimat is a comprehensive benchmarking suite for comparing LLM training perform
 ```
 
 This creates `output-00/` through `output-04/` with complete benchmarks and comparison plots.
+
+### Standalone Scripts (Hardcoded Parameters)
+
+For reproducible training with all parameters explicitly set as literal numbers (no variables):
+
+```bash
+# NVIDIA H100 (NeMo) - trains both Llama and Qwen
+python3 run_nvidia_standalone.py
+
+# AMD MI300X (Primus) - trains both Llama and Qwen  
+./run_amd_standalone.sh
+```
+
+**Hardcoded Configuration:**
+- Training iterations: **10** (fast testing)
+- Parallelism: **TP=1, PP=1, DP=8** (minimal communication)
+- Batch size: **128** (micro=1, grad_accum=16)
+- Sequence length: **2048** tokens
+- Learning rate: **0.0003** with **1** warmup step
+- Precision: **FP8 Hybrid**
+- Seed: **42**
+
+**Output Files:**
+- `output/benchmark_cuda_llama.json`
+- `output/benchmark_cuda_qwen.json`
+- `output/benchmark_rocm_llama.json`
+- `output/benchmark_rocm_qwen.json`
+
+**Note:** The NVIDIA script runs each model in a separate subprocess to ensure complete GPU memory cleanup between runs.
 
 ---
 
