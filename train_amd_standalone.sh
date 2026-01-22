@@ -18,12 +18,12 @@ cd "$PRIMUS_PATH"
 export EXP="examples/megatron/configs/MI300X/llama3.1_8B-BF16-pretrain.yaml"
 
 bash ./examples/run_pretrain.sh \
-    --train_iters 500 \
+    --train_iters 10 \
     --lr 0.0003 \
     --min_lr 0.00003 \
-    --lr_warmup_iters 50 \
+    --lr_warmup_iters 1 \
     --lr_decay_style cosine \
-    --lr_decay_iters 500 \
+    --lr_decay_iters 10 \
     --weight_decay 0.1 \
     > "$TPRIMAT_PATH/output/training_main_llama.log" 2>&1
 
@@ -42,12 +42,12 @@ cd "$PRIMUS_PATH"
 export EXP="examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml"
 
 bash ./examples/run_pretrain.sh \
-    --train_iters 500 \
+    --train_iters 10 \
     --lr 0.0003 \
     --min_lr 0.00003 \
-    --lr_warmup_iters 50 \
+    --lr_warmup_iters 1 \
     --lr_decay_style cosine \
-    --lr_decay_iters 500 \
+    --lr_decay_iters 10 \
     --weight_decay 0.1 \
     > "$TPRIMAT_PATH/output/training_main_qwen.log" 2>&1
 

@@ -53,13 +53,13 @@ def train_llama():
         recipe.data.global_batch_size = 128
         recipe.data.seq_length = 2048
     
-    recipe.trainer.max_steps = 500
+    recipe.trainer.max_steps = 10
     recipe.optim.config.lr = 0.0003
     recipe.optim.config.min_lr = 0.00003
     recipe.optim.config.weight_decay = 0.1
     recipe.optim.config.adam_beta1 = 0.9
     recipe.optim.config.adam_beta2 = 0.95
-    recipe.optim.lr_scheduler.warmup_steps = 50
+    recipe.optim.lr_scheduler.warmup_steps = 1
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.model.config.fp8 = "hybrid"
     recipe.model.config.fp8_param = True
@@ -128,13 +128,13 @@ def train_qwen():
         recipe.data.global_batch_size = 128
         recipe.data.seq_length = 2048
     
-    recipe.trainer.max_steps = 500
+    recipe.trainer.max_steps = 10
     recipe.optim.config.lr = 0.0003
     recipe.optim.config.min_lr = 0.00003
     recipe.optim.config.weight_decay = 0.1
     recipe.optim.config.adam_beta1 = 0.9
     recipe.optim.config.adam_beta2 = 0.95
-    recipe.optim.lr_scheduler.warmup_steps = 50
+    recipe.optim.lr_scheduler.warmup_steps = 1
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.model.config.fp8 = "hybrid"
     recipe.model.config.fp8_param = True
@@ -166,8 +166,15 @@ def main():
     if not torch.cuda.is_available():
         sys.exit(1)
     
-    train_llama()
-    train_qwen()
+    try:
+        train_llama()
+    except Exception as e:
+        print(f"Llama training failed: {e}")
+    
+    try:
+        train_qwen()
+    except Exception as e:
+        print(f"Qwen training failed: {e}")
 
 
 if __name__ == "__main__":
