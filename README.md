@@ -93,10 +93,10 @@ For reproducible training with all parameters explicitly set as literal numbers 
 
 ```bash
 # NVIDIA H100 (NeMo) - trains both Llama and Qwen
-python3 run_nvidia_standalone.py
+python3 run_nemo_standalone.py
 
 # AMD MI300X (Primus) - trains both Llama and Qwen  
-./run_amd_standalone.sh
+./run_primus_standalone.sh
 ```
 
 **Hardcoded Configuration:**
