@@ -72,7 +72,7 @@ cleanup() {
     # rm -f "$OUTPUT_DIR"/training_main_*.log
     # rm -f "$OUTPUT_DIR"/primus_training_*.log
     # rm -f "$OUTPUT_DIR"/*.yaml
-    # find "$OUTPUT_DIR" -name "*.json" -not -name "benchmark_*" -not -name "config.json" -mmin -5 -delete 2>/dev/null || true
+    # find "$OUTPUT_DIR" -name "*.json" -not -name "train_*" -not -name "config.json" -mmin -5 -delete 2>/dev/null || true
 }
 
 # Note: Pre-existing log deletion is disabled to preserve all training history
@@ -227,7 +227,7 @@ if [ "$PROF_ENABLED" = "true" ]; then
     STRATEGY="${PARALLEL:-unknown}"
     TARGET_NAME="profile_rocm_${MODEL}_${STRATEGY}.pt.trace.json"
     
-    LATEST_TRACE=$(find "$OUTPUT_DIR" -name "*.json" -not -name "benchmark_*" -not -name "config.json" -newer "$LOG_FILE" | head -1)
+    LATEST_TRACE=$(find "$OUTPUT_DIR" -name "*.json" -not -name "train_*" -not -name "config.json" -newer "$LOG_FILE" | head -1)
     if [ -n "$LATEST_TRACE" ]; then
         mv "$LATEST_TRACE" "$OUTPUT_DIR/$TARGET_NAME"
         echo "[+] Profile renamed to: $TARGET_NAME"
@@ -259,7 +259,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     python3 extract_metrics.py \
         --log-file "$LOG_FILE" \
         --model-name "$MODEL" \
-        --output "$OUTPUT_DIR/benchmark_rocm_${MODEL}.json" \
+        --output "$OUTPUT_DIR/train_primus_${MODEL}.json" \
         --num-gpus "$NUM_GPUS" \
         --global-batch-size "$GLOBAL_BATCH_SIZE" \
         --sequence-length "$SEQ_LENGTH" \
@@ -270,7 +270,7 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo ""
         echo "  + Metrics extracted successfully!"
         echo ""
-        echo "Results saved to: $OUTPUT_DIR/benchmark_rocm_${MODEL}.json"
+        echo "Results saved to: $OUTPUT_DIR/train_primus_${MODEL}.json"
         echo ""
         
         # Note: Cleanup is disabled - all logs are preserved

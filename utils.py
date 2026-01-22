@@ -188,7 +188,7 @@ class BenchmarkCallback(Callback):
             # Detect software stack and version
             # ROCm sets torch.version.hip, CUDA sets torch.version.cuda
             is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-            software_stack = "rocm" if is_rocm else "cuda"
+            software_stack = "primus" if is_rocm else "nemo"
             software_version = torch.version.hip if is_rocm else torch.version.cuda
             
             self.gpu_info = {
@@ -422,11 +422,11 @@ class BenchmarkCallback(Callback):
             
             # Create filename with model name if provided
             if self.model_name:
-                filename = f"benchmark_{software_stack}_{self.model_name}.json"
+                filename = f"train_{software_stack}_{self.model_name}.json"
             else:
                 # Fallback to timestamp if no model name
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"benchmark_{software_stack}_{timestamp}.json"
+                filename = f"train_{software_stack}_{timestamp}.json"
             
             filepath = self.output_dir / filename
             
@@ -484,11 +484,11 @@ def compare_benchmarks(results_dir: str = "./output") -> Dict:
         software_stack = data.get('gpu_info', {}).get('software_stack', '').lower()
         
         # Prioritize software_stack over platform for accurate detection
-        # NVIDIA: cuda
-        if software_stack == 'cuda':
+        # NVIDIA: nemo (new) or cuda (old)
+        if software_stack in ['nemo', 'cuda']:
             nvidia_results.append(data)
-        # AMD: rocm
-        elif software_stack == 'rocm':
+        # AMD: primus (new) or rocm (old)
+        elif software_stack in ['primus', 'rocm']:
             amd_results.append(data)
         # Fallback to platform field (for older files)
         elif platform in ['cuda', 'nvd', 'nvidia']:

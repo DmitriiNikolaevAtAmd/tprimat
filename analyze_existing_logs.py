@@ -162,8 +162,11 @@ def compare_with_new_benchmarks(benchmark_dir: str = "./output"):
     print("NEW BENCHMARK RESULTS")
     print(f"{'='*60}\n")
     
-    json_files = sorted(benchmark_path.glob("benchmark_*.json"), 
-                       key=os.path.getmtime, reverse=True)
+    # Support both new (train_*) and old (benchmark_*) naming conventions
+    json_files = []
+    for pattern in ["train_*.json", "benchmark_*.json"]:
+        json_files.extend(benchmark_path.glob(pattern))
+    json_files = sorted(json_files, key=os.path.getmtime, reverse=True)
     
     for json_file in json_files:
         with open(json_file, 'r') as f:

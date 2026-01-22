@@ -55,7 +55,7 @@ if [ ${#SUCCESS[@]} -gt 0 ]; then
     # Use OUTPUT_DIR or default to output
     RESULTS_DIR="${OUTPUT_DIR:-output}"
     for MODEL in "${SUCCESS[@]}"; do
-        echo "    * ${RESULTS_DIR}/benchmark_rocm_${MODEL}.json"
+        echo "    * ${RESULTS_DIR}/train_primus_${MODEL}.json"
     done
     echo ""
 fi

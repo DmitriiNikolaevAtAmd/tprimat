@@ -51,14 +51,17 @@ for config_num in "${available_configs[@]}"; do
     echo "   Input:  ${config_dir}/"
     echo "   Output: ${output_file}"
     
-    # Check if benchmark files exist
+    # Check if benchmark files exist (both new train_* and old benchmark_* patterns)
+    train_count=$(find "$config_dir" -name "train_*.json" 2>/dev/null | wc -l)
     benchmark_count=$(find "$config_dir" -name "benchmark_*.json" 2>/dev/null | wc -l)
-    if [ "$benchmark_count" -eq 0 ]; then
+    total_count=$((train_count + benchmark_count))
+    
+    if [ "$total_count" -eq 0 ]; then
         echo "   [!] No benchmark files found in ${config_dir}/, skipping..."
         continue
     fi
     
-    echo "   Found: ${benchmark_count} benchmark file(s)"
+    echo "   Found: ${total_count} benchmark file(s)"
     
     # Generate comparison plot
     python3 compare.py --results-dir "$config_dir"

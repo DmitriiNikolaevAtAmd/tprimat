@@ -29,30 +29,41 @@ def load_all_benchmark_results(results_dir: str) -> Dict[str, Dict]:
     
     benchmarks = {}
     
-    for json_file in sorted(results_path.glob("benchmark_*.json")):
-        try:
-            with open(json_file, 'r') as f:
-                data = json.load(f)
-            
-            # Extract model name from filename: benchmark_{platform}_{model}.json
-            filename = json_file.stem  # e.g., "benchmark_cuda_llama"
-            parts = filename.split('_')
-            if len(parts) >= 3:
-                platform_name = parts[1]  # cuda or rocm
-                model_name = parts[2]     # llama or qwen
+    # Support both new (train_*) and old (benchmark_*) naming conventions
+    patterns = ["train_*.json", "benchmark_*.json"]
+    
+    for pattern in patterns:
+        for json_file in sorted(results_path.glob(pattern)):
+            try:
+                with open(json_file, 'r') as f:
+                    data = json.load(f)
                 
-                # Normalize platform name
-                platform = "nvidia" if platform_name == "cuda" else "amd"
-                
-                # Store with key like "nvidia-llama"
-                key = f"{platform}-{model_name}"
-                data['model_name'] = model_name
-                data['platform_key'] = platform
-                benchmarks[key] = data
-                
-                print(f"[+] Loaded: {key}")
-        except Exception as e:
-            print(f"[!] Error loading {json_file}: {e}")
+                # Extract model name from filename
+                # New format: train_{framework}_{model}.json (e.g., "train_nemo_llama")
+                # Old format: benchmark_{platform}_{model}.json (e.g., "benchmark_cuda_llama")
+                filename = json_file.stem
+                parts = filename.split('_')
+                if len(parts) >= 3:
+                    framework_or_platform = parts[1]  # nemo/primus/cuda/rocm
+                    model_name = parts[2]              # llama or qwen
+                    
+                    # Normalize framework/platform name to platform
+                    if framework_or_platform in ['nemo', 'cuda']:
+                        platform = "nvidia"
+                    elif framework_or_platform in ['primus', 'rocm']:
+                        platform = "amd"
+                    else:
+                        platform = framework_or_platform
+                    
+                    # Store with key like "nvidia-llama"
+                    key = f"{platform}-{model_name}"
+                    data['model_name'] = model_name
+                    data['platform_key'] = platform
+                    benchmarks[key] = data
+                    
+                    print(f"[+] Loaded: {key} from {json_file.name}")
+            except Exception as e:
+                print(f"[!] Error loading {json_file}: {e}")
     
     return benchmarks
 
@@ -329,8 +340,12 @@ def main():
     if not benchmarks:
         print("  x No benchmark results found!")
         print(f"Expected files in {args.results_dir}/:")
-        print("  - benchmark_cuda_llama.json, benchmark_cuda_qwen.json (for NVIDIA)")
-        print("  - benchmark_rocm_llama.json, benchmark_rocm_qwen.json (for AMD)")
+        print("  New format:")
+        print("    - train_nemo_llama.json, train_nemo_qwen.json (for NVIDIA)")
+        print("    - train_primus_llama.json, train_primus_qwen.json (for AMD)")
+        print("  Old format (backward compatible):")
+        print("    - benchmark_cuda_llama.json, benchmark_cuda_qwen.json (for NVIDIA)")
+        print("    - benchmark_rocm_llama.json, benchmark_rocm_qwen.json (for AMD)")
         return 1
     
     # Detect which platforms are available

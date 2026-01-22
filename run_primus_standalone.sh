@@ -32,7 +32,7 @@ cd "$TPRIMAT_PATH"
 python3 extract_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_llama.log" \
     --model-name "llama" \
-    --output "$TPRIMAT_PATH/output/benchmark_rocm_llama.json" \
+    --output "$TPRIMAT_PATH/output/train_primus_llama.json" \
     --num-gpus 8 \
     --global-batch-size 128 \
     --sequence-length 2048 \
@@ -56,7 +56,7 @@ cd "$TPRIMAT_PATH"
 python3 extract_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_qwen.log" \
     --model-name "qwen" \
-    --output "$TPRIMAT_PATH/output/benchmark_rocm_qwen.json" \
+    --output "$TPRIMAT_PATH/output/train_primus_qwen.json" \
     --num-gpus 8 \
     --global-batch-size 128 \
     --sequence-length 2048 \

@@ -239,7 +239,7 @@ platform_optimizations:
 benchmarking:
   output:
     directory: "./output"
-    filename_format: "benchmark_{software_stack}_{model}.json"
+    filename_format: "train_{framework}_{model}.json"
     log_format: "training_{model}.log"
     
   metrics:

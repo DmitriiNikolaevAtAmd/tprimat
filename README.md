@@ -109,10 +109,10 @@ python3 run_nemo_standalone.py
 - Seed: **42**
 
 **Output Files:**
-- `output/benchmark_cuda_llama.json`
-- `output/benchmark_cuda_qwen.json`
-- `output/benchmark_rocm_llama.json`
-- `output/benchmark_rocm_qwen.json`
+- `output/train_nemo_llama.json`
+- `output/train_nemo_qwen.json`
+- `output/train_primus_llama.json`
+- `output/train_primus_qwen.json`
 
 **Note:** The NVIDIA script runs each model in a separate subprocess to ensure complete GPU memory cleanup between runs.
 
@@ -379,7 +379,7 @@ docker exec primat cat /workspace/tprimat/output/training_llama.log
 docker exec primat tail -f /workspace/tprimat/output/training_llama.log
 
 # Benchmark output
-docker exec primat cat /workspace/tprimat/output/benchmark_rocm_llama.json
+docker exec primat cat /workspace/tprimat/output/train_primus_llama.json
 ```
 
 #### Monitor Resources:
@@ -718,7 +718,7 @@ python3 pretrain_llama.py   # Automatically wraps with nsys when profiling enabl
 ```
 output/
 ├── profile_cuda_llama_balanced.nsys-rep    # Nsight profile (binary)
-├── benchmark_cuda_llama.json               # Benchmark metrics
+├── train_nemo_llama.json                   # Training metrics
 ```
 
 ### Profiler Configuration
@@ -992,6 +992,7 @@ cat output/training_llama.log | grep -i "error"
 python3 extract_metrics.py \
     --log-file output/training_llama.log \
     --model-name llama \
+    --output output/train_primus_llama.json \
     --num-gpus 8 \
     --global-batch-size 128 \
     --sequence-length 2048
@@ -1093,13 +1094,21 @@ After running a benchmark, you'll find everything in your specified output direc
 
 ```
 output/  (or --output-dir path)
-├── benchmark_cuda_llama.json      # NVIDIA Llama metrics
-├── benchmark_cuda_qwen.json       # NVIDIA Qwen metrics
-├── benchmark_rocm_llama.json      # AMD Llama metrics (if available)
-├── benchmark_rocm_qwen.json       # AMD Qwen metrics (if available)
+├── train_nemo_llama.json          # NVIDIA Llama metrics
+├── train_nemo_qwen.json           # NVIDIA Qwen metrics
+├── train_primus_llama.json        # AMD Llama metrics (if available)
+├── train_primus_qwen.json         # AMD Qwen metrics (if available)
 ├── training_llama.log             # Complete training logs
 └── training_qwen.log              # Complete training logs
 ```
+
+**Backward Compatibility:**
+
+The comparison tools support both new and old naming conventions:
+- **New format**: `train_{framework}_{model}.json` (e.g., `train_nemo_llama.json`, `train_primus_qwen.json`)
+- **Old format**: `benchmark_{platform}_{model}.json` (e.g., `benchmark_cuda_llama.json`, `benchmark_rocm_qwen.json`)
+
+Both formats can be used interchangeably with `compare.py` and other analysis tools.
 
 ### Benchmark JSON Structure
 
