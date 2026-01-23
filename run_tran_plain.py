@@ -26,6 +26,13 @@ from torch.utils.data import Dataset, IterableDataset
 import json
 from utils import BenchmarkCallbackTran
 
+# Try to import bitsandbytes for 8-bit optimizer
+try:
+    import bitsandbytes as bnb
+    HAS_BITSANDBYTES = True
+except ImportError:
+    HAS_BITSANDBYTES = False
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -123,13 +130,18 @@ def train_llama():
         dataloader_num_workers=2,
         ddp_find_unused_parameters=False,
         gradient_checkpointing=True,
-        optim="adamw_torch_fused",  # Use fused optimizer for better memory
+        optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",  # Use 8-bit optimizer to save memory
         remove_unused_columns=False,
         report_to="none",
         # Distributed training settings
         local_rank=int(os.environ.get("LOCAL_RANK", -1)),
         ddp_backend="nccl",
     )
+    
+    if HAS_BITSANDBYTES:
+        logger.info("Using 8-bit AdamW optimizer (saves ~75% optimizer memory)")
+    else:
+        logger.warning("bitsandbytes not available, using fused AdamW (higher memory)")
     
     # Create trainer
     trainer = Trainer(
@@ -176,12 +188,14 @@ def train_qwen():
         torch_dtype=torch.bfloat16,
         attn_implementation="flash_attention_2",  # Use Flash Attention 2 if available
         use_cache=False,
+        low_cpu_mem_usage=True
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
     
     # Enable gradient checkpointing for memory efficiency
     model.gradient_checkpointing_enable()
+    logger.info("Enabled gradient checkpointing")
     
     # Calculate batch size based on number of GPUs
     num_gpus = torch.cuda.device_count()
@@ -206,8 +220,6 @@ def train_qwen():
     # Training arguments
     training_args = TrainingArguments(
         output_dir="./output/qwen_tran",
-        gradient_checkpointing=True,  # Enable gradient checkpointing
-        optim="adamw_torch_fused",  # Use fused optimizer for better memory
         per_device_train_batch_size=per_device_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=0.0003,
@@ -224,13 +236,18 @@ def train_qwen():
         dataloader_num_workers=2,
         ddp_find_unused_parameters=False,
         gradient_checkpointing=True,
-        optim="adamw_torch_fused",  # Use fused optimizer for better memory
+        optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",  # Use 8-bit optimizer to save memory
         remove_unused_columns=False,
         report_to="none",
         # Distributed training settings
         local_rank=int(os.environ.get("LOCAL_RANK", -1)),
         ddp_backend="nccl",
     )
+    
+    if HAS_BITSANDBYTES:
+        logger.info("Using 8-bit AdamW optimizer (saves ~75% optimizer memory)")
+    else:
+        logger.warning("bitsandbytes not available, using fused AdamW (higher memory)")
     
     # Create trainer
     trainer = Trainer(
