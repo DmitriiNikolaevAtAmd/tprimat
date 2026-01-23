@@ -73,7 +73,7 @@ def train_llama():
         recipe.data.global_batch_size = 64
         recipe.data.seq_length = 2048
     
-    recipe.trainer.max_steps = 10
+    recipe.trainer.max_steps = 500
     recipe.optim.config.lr = 0.0003
     recipe.optim.config.min_lr = 0.00003
     recipe.optim.config.weight_decay = 0.1
@@ -155,7 +155,7 @@ def train_qwen():
         recipe.data.global_batch_size = 64
         recipe.data.seq_length=2048
     
-    recipe.trainer.max_steps = 10
+    recipe.trainer.max_steps = 500
     recipe.optim.config.lr = 0.0003
     recipe.optim.config.min_lr = 0.00003
     recipe.optim.config.weight_decay = 0.1

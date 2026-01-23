@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 class PretrainingDataset(IterableDataset):
     """Simple iterable dataset for pretraining"""
-    def __init__(self, data_path, tokenizer, seq_length=2048, max_steps=10, global_batch_size=64):
+    def __init__(self, data_path, tokenizer, seq_length=2048, max_steps=500, global_batch_size=64):
         self.data_path = data_path
         self.tokenizer = tokenizer
         self.seq_length = seq_length
@@ -96,7 +96,7 @@ def train_llama():
         data_path="/data/llama_dataset_text_document",
         tokenizer=tokenizer,
         seq_length=2048,
-        max_steps=10,
+        max_steps=500,
         global_batch_size=64
     )
     
@@ -120,7 +120,7 @@ def train_llama():
         weight_decay=0.1,
         adam_beta1=0.9,
         adam_beta2=0.95,
-        max_steps=10,
+        max_steps=500,
         warmup_steps=1,
         lr_scheduler_type="cosine",
         logging_steps=1,
@@ -213,7 +213,7 @@ def train_qwen():
         data_path="/data/llama_dataset_text_document",
         tokenizer=tokenizer,
         seq_length=2048,
-        max_steps=10,
+        max_steps=500,
         global_batch_size=global_batch_size
     )
     
@@ -226,7 +226,7 @@ def train_qwen():
         weight_decay=0.1,
         adam_beta1=0.9,
         adam_beta2=0.95,
-        max_steps=10,
+        max_steps=500,
         warmup_steps=1,
         lr_scheduler_type="cosine",
         logging_steps=1,

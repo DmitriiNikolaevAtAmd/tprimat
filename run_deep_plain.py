@@ -137,7 +137,7 @@ def train_model(model_name, model_short_name):
     dataset = PretrainingDataset(
         tokenizer=tokenizer,
         seq_length=2048,
-        num_samples=640  # 10 steps * 64 global batch size
+        num_samples=32000  # 500 steps * 64 global batch size
     )
     
     # Get DeepSpeed config with proper world_size
@@ -156,7 +156,7 @@ def train_model(model_name, model_short_name):
         print("Starting training...")
     
     model_engine.train()
-    total_steps = 10
+    total_steps = 500
     step = 0
     total_loss = 0.0
     start_time = time.time()
