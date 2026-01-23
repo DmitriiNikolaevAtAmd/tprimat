@@ -264,29 +264,23 @@ def main():
     num_gpus = torch.cuda.device_count()
     logger.info(f"CUDA devices available: {num_gpus}")
     
-    # Check if running with distributed training
     if num_gpus > 1 and "RANK" not in os.environ:
         logger.warning(f"⚠️  Detected {num_gpus} GPUs but not using distributed training. Only GPU 0 will be used.")
         logger.warning(f"   To use all GPUs: torchrun --nproc_per_node={num_gpus} {sys.argv[0]}")
     
-    if len(sys.argv) > 1:
-        model = sys.argv[1]
-        if model == "llama":
-            train_llama()
-        elif model == "qwen":
-            train_qwen()
-        else:
-            logger.error(f"Unknown model: {model}")
-            sys.exit(1)
+    if len(sys.argv) < 2:
+        logger.error("Usage: python run_hf_standalone.py <model>")
+        logger.error("  model: 'llama' or 'qwen'")
+        sys.exit(1)
+    
+    model = sys.argv[1]
+    if model == "llama":
+        train_llama()
+    elif model == "qwen":
+        train_qwen()
     else:
-        import subprocess
-        import time
-        
-        logger.info("Running Llama training...")
-        subprocess.run([sys.executable, "-u", __file__, "llama"])
-        time.sleep(10)
-        logger.info("Running Qwen training...")
-        subprocess.run([sys.executable, "-u", __file__, "qwen"])
+        logger.error(f"Unknown model: {model}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

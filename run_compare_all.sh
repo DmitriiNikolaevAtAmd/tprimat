@@ -1,52 +1,80 @@
 #!/bin/bash
-# sequentially build all charts for output-00 to output-04
-
 set -e
 
-# list of directories to process
-# Finds all output-XX directories, even if they are nested under 'output/'
+OUTPUT_BASE=${1:-"output"}
+mkdir -p "$OUTPUT_BASE"
+
+declare -A CONFIGS
+CONFIGS["00"]="maximum_performance"
+CONFIGS["01"]="truly_identical"
+CONFIGS["02"]="memory_optimized"
+CONFIGS["03"]="minimal_communication"
+CONFIGS["04"]="balanced"
+
 OUTPUT_DIRS=($(find . -maxdepth 2 -type d -name "output-*" | sort))
 
 if [ ${#OUTPUT_DIRS[@]} -eq 0 ]; then
-    echo "  x No output-XX directories found!"
     exit 1
 fi
 
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║        Building Sequentially All Comparison Charts        ║"
-echo "╚════════════════════════════════════════════════════════════╝"
-echo "Found ${#OUTPUT_DIRS[@]} directories: ${OUTPUT_DIRS[*]}"
-echo ""
-
 for DIR in "${OUTPUT_DIRS[@]}"; do
     if [ -d "$DIR" ]; then
-        echo "════════════════════════════════════════════════════════════"
-        echo "Processing: $DIR"
-        echo "════════════════════════════════════════════════════════════"
-        
-        # Determine index (XX) from directory name like output-XX or output/output-XX
         DIR_NAME=$(basename "$DIR")
         INDEX="${DIR_NAME#output-}"
+        OUTPUT_FILE="${OUTPUT_BASE}/compare-${INDEX}.png"
         
-        # Place the generated chart in the 'output/' directory
-        OUTPUT_FILE="output/compare-${INDEX}.png"
+        train_count=$(find "$DIR" -name "train_*.json" 2>/dev/null | wc -l)
+        benchmark_count=$(find "$DIR" -name "benchmark_*.json" 2>/dev/null | wc -l)
+        total_count=$((train_count + benchmark_count))
         
-        # Ensure the output parent directory exists
-        mkdir -p "output"
+        if [ "$total_count" -eq 0 ]; then
+            continue
+        fi
         
-        echo "  * Generating chart: $OUTPUT_FILE from $DIR"
         python3 compare.py --results-dir "$DIR" --output "$OUTPUT_FILE"
-        echo "  + Created $OUTPUT_FILE"
-
-        echo ""
-    else
-        echo "[!] Directory $DIR not found, skipping..."
     fi
 done
 
-echo "════════════════════════════════════════════════════════════"
-echo "SUMMARY"
-echo "════════════════════════════════════════════════════════════"
-ls -lh output/compare-*.png 2>/dev/null || echo "No charts generated in output/."
+summary_file="${OUTPUT_BASE}/configurations_summary.txt"
+{
+echo "Configuration Summary"
+echo "===================="
 echo ""
-echo "Done."
+
+for DIR in "${OUTPUT_DIRS[@]}"; do
+    DIR_NAME=$(basename "$DIR")
+    INDEX="${DIR_NAME#output-}"
+    config_name="${CONFIGS[$INDEX]}"
+    
+    if [ -n "$config_name" ]; then
+        echo "Config ${INDEX}: ${config_name}"
+        
+        case "$config_name" in
+            "maximum_performance")
+                echo "  Llama (NVIDIA): TP=4, PP=1, DP=2"
+                echo "  Llama (AMD):    TP=1, PP=1, DP=8"
+                echo "  Qwen (NVIDIA):  TP=4, PP=2, DP=1"
+                echo "  Qwen (AMD):     TP=1, PP=1, DP=8"
+                ;;
+            "truly_identical")
+                echo "  Llama: TP=4, PP=1, DP=2 (both platforms and models)"
+                echo "  Qwen:  TP=4, PP=1, DP=2 (both platforms and models)"
+                ;;
+            "memory_optimized")
+                echo "  Llama (NVIDIA): TP=8, PP=1, DP=1"
+                echo "  Llama (AMD):    TP=2, PP=1, DP=4"
+                echo "  Qwen (NVIDIA):  TP=8, PP=1, DP=1"
+                echo "  Qwen (AMD):     TP=2, PP=1, DP=4"
+                ;;
+            "minimal_communication")
+                echo "  All: TP=1, PP=1, DP=8 (both platforms)"
+                ;;
+            "balanced")
+                echo "  Llama: TP=2, PP=1, DP=4 (both platforms)"
+                echo "  Qwen:  TP=2, PP=2, DP=2 (both platforms)"
+                ;;
+        esac
+        echo ""
+    fi
+done
+} > "$summary_file"

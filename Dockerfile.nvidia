@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
     fish \
     && rm -rf /var/lib/apt/lists/*
 
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONHASHSEED=42
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ENV NCCL_DEBUG=INFO
 ENV NCCL_IB_DISABLE=0

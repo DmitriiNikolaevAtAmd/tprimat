@@ -368,24 +368,19 @@ def main():
     
     logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
     
-    if len(sys.argv) > 1:
-        model = sys.argv[1]
-        if model == "llama":
-            train_llama()
-        elif model == "qwen":
-            train_qwen()
-        else:
-            logger.error(f"Unknown model: {model}")
-            sys.exit(1)
+    if len(sys.argv) < 2:
+        logger.error("Usage: python run_fsdp_standalone.py <model>")
+        logger.error("  model: 'llama' or 'qwen'")
+        sys.exit(1)
+    
+    model = sys.argv[1]
+    if model == "llama":
+        train_llama()
+    elif model == "qwen":
+        train_qwen()
     else:
-        import subprocess
-        import time
-        
-        logger.info("Running Llama training...")
-        subprocess.run([sys.executable, "-u", __file__, "llama"])
-        time.sleep(10)
-        logger.info("Running Qwen training...")
-        subprocess.run([sys.executable, "-u", __file__, "qwen"])
+        logger.error(f"Unknown model: {model}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

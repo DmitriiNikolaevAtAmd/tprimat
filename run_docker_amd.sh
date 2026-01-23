@@ -1,7 +1,5 @@
 #!/bin/bash
-# Run AMD/ROCm Docker container
 
-# Load secrets if available
 if [ -f secrets.env ]; then
     source secrets.env
 fi
