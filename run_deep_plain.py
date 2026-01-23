@@ -76,9 +76,8 @@ def get_deepspeed_config(world_size=1):
             }
         },
         "scheduler": {
-            "type": "WarmupCosineLR",
+            "type": "WarmupLR",
             "params": {
-                "total_num_steps": 10,
                 "warmup_min_lr": 0.00003,
                 "warmup_max_lr": 0.0003,
                 "warmup_num_steps": 1
