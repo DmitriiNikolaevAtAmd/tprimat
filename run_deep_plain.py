@@ -58,13 +58,24 @@ def get_deepspeed_config(world_size=1):
             "enabled": True
         },
         "zero_optimization": {
-            "stage": 2,  # ZeRO stage 2: optimizer state + gradient partitioning
-            "allgather_partitions": True,
-            "allgather_bucket_size": 5e8,
-            "reduce_scatter": True,
-            "reduce_bucket_size": 5e8,
+            "stage": 3,  # ZeRO stage 3: full model sharding (more memory efficient)
+            "offload_optimizer": {
+                "device": "cpu",  # Offload optimizer to CPU to save GPU memory
+                "pin_memory": True
+            },
+            "offload_param": {
+                "device": "cpu",  # Offload parameters to CPU when not needed
+                "pin_memory": True
+            },
             "overlap_comm": True,
             "contiguous_gradients": True,
+            "sub_group_size": 1e9,
+            "reduce_bucket_size": "auto",
+            "stage3_prefetch_bucket_size": "auto",
+            "stage3_param_persistence_threshold": "auto",
+            "stage3_max_live_parameters": 1e9,
+            "stage3_max_reuse_distance": 1e9,
+            "stage3_gather_16bit_weights_on_model_save": True
         },
         "optimizer": {
             "type": "AdamW",
@@ -108,6 +119,7 @@ def train_model(model_name, model_short_name):
         print(f"Loading model: {model_name}")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
         print(f"Batch config: micro_batch=1, grad_accum=8, train_batch={1*8*world_size}")
+        print(f"Using ZeRO Stage 3 with CPU offloading for memory efficiency")
     
     # Load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
