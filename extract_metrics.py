@@ -12,316 +12,18 @@ Usage:
 """
 import argparse
 import json
-import re
+import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
 
-try:
-    from config_loader import load_config
-    CONFIG_LOADER_AVAILABLE = True
-except ImportError:
-    CONFIG_LOADER_AVAILABLE = False
-    print("[!] config_loader not available - parallelism details will be limited")
-
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    print("[!] PyTorch not available - running in log-only mode")
-
-
-def round_floats(obj: Any, precision: int = 5) -> Any:
-    """
-    Recursively round all float values in a nested structure to specified precision.
-    
-    Args:
-        obj: Dictionary, list, or value to process
-        precision: Number of decimal places (default: 5)
-    
-    Returns:
-        Object with all floats rounded
-    """
-    if isinstance(obj, float):
-        # Use higher precision for very small numbers (like learning rates)
-        # to avoid rounding 5e-6 and 1e-5 to the same value
-        if abs(obj) < 0.001 and obj != 0:
-            # For learning rates and other small values, preserve more precision
-            return round(obj, 10)  # 10 decimal places for small values
-        return round(obj, precision)
-    elif isinstance(obj, dict):
-        return {key: round_floats(value, precision) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [round_floats(item, precision) for item in obj]
-    else:
-        return obj
-
-
-def get_gpu_core_count(device_name: str, device_props) -> int:
-    """
-    Get approximate GPU core count based on device name.
-    
-    NVIDIA GPUs use CUDA cores, AMD GPUs use Stream Processors.
-    """
-    device_name_lower = device_name.lower()
-    
-    # NVIDIA GPUs (CUDA cores)
-    nvidia_cores = {
-        "h100": 16896,
-        "h100 sxm5": 16896,
-        "h100 pcie": 14592,
-        "a100": 6912,
-        "v100": 5120,
-        "a40": 10752,
-        "a30": 10752,
-        "a10": 9216,
-        "rtx 4090": 16384,
-        "rtx 3090": 10496,
-    }
-    
-    # AMD GPUs (Stream Processors)
-    amd_cores = {
-        "mi300x": 19456,
-        "mi300a": 19456,
-        "mi250x": 14080 * 2,  # 2 GCDs
-        "mi250": 13312 * 2,
-        "mi210": 13312,
-        "mi100": 7680,
-        "instinct mi300x": 19456,
-        "instinct mi250x": 14080 * 2,
-        "instinct mi210": 13312,
-    }
-    
-    # Try to match device name
-    for gpu_name, cores in nvidia_cores.items():
-        if gpu_name in device_name_lower:
-            return cores
-    
-    for gpu_name, cores in amd_cores.items():
-        if gpu_name in device_name_lower:
-            return cores
-    
-    # Try to get from device properties
-    if hasattr(device_props, 'multi_processor_count'):
-        return device_props.multi_processor_count * 128
-    
-    return 0
-
-
-def detect_gpu_info():
-    """
-    Auto-detect GPU information from PyTorch.
-    
-    Works for both NVIDIA (CUDA) and AMD (ROCm) GPUs.
-    torch.cuda.* APIs are compatible with both platforms.
-    
-    If no GPU is available, returns placeholder info for log analysis.
-    """
-    gpu_info = {}
-    
-    if not TORCH_AVAILABLE:
-        # PyTorch not available - use placeholder info for log analysis
-        print("ℹ️  PyTorch not available - using log data only")
-        gpu_info = {
-            "device_count": "N/A",
-            "device_name": "AMD GPU (from log)",
-            "total_memory_gb": 192,  # MI300X default
-            "gpu_cores": 19456,  # MI300X default
-            "pytorch_version": "N/A",
-            "software_stack": "rocm",
-            "software_version": "N/A",
-        }
-        return gpu_info
-    
-    if torch.cuda.is_available():  # Works for both CUDA and ROCm
-        device_props = torch.cuda.get_device_properties(0)
-        device_name = torch.cuda.get_device_name(0)
-        
-        # Detect GPU cores (approximate based on known models)
-        gpu_cores = get_gpu_core_count(device_name, device_props)
-        
-        # Detect software stack and version
-        # ROCm sets torch.version.hip, CUDA sets torch.version.cuda
-        is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-        software_stack = "rocm" if is_rocm else "cuda"
-        software_version = torch.version.hip if is_rocm else torch.version.cuda
-        
-        gpu_info = {
-            "device_count": torch.cuda.device_count(),
-            "device_name": device_name,
-            "total_memory_gb": device_props.total_memory / 1e9,
-            "gpu_cores": gpu_cores,
-            "pytorch_version": torch.__version__,
-            "software_stack": software_stack,
-            "software_version": software_version,
-        }
-    else:
-        # No GPU available - use placeholder info for log analysis
-        print("ℹ️  No GPU detected - using log data only")
-        gpu_info = {
-            "device_count": "N/A",
-            "device_name": "Unknown (from logs)",
-            "total_memory_gb": "N/A",
-            "gpu_cores": 0,
-            "pytorch_version": torch.__version__,
-            "software_stack": "rocm",  # Default to rocm for log analysis
-            "software_version": "N/A",
-        }
-    
-    return gpu_info
-
-
-def extract_step_times_from_log(log_file):
-    """
-    Extract step timing and loss from Primus/Megatron logs.
-    
-    Primus format:
-    elapsed time per iteration (ms): 9836.3/21761.7
-    lm loss: 1.189761E+01
-    learning rate: 5.000000E-06
-    """
-    step_times = []
-    tokens_per_gpu_values = []
-    loss_values = []
-    learning_rates = []
-    
-    with open(log_file, 'r') as f:
-        for line in f:
-            # Primus format: elapsed time per iteration (ms): 9836.3/21761.7
-            # First value is current iteration, second is average
-            match = re.search(r'elapsed time per iteration \(ms\):\s*([0-9.]+)/([0-9.]+)', line)
-            if match:
-                try:
-                    # Get current iteration time in ms, convert to seconds
-                    step_time_ms = float(match.group(1))
-                    step_time_s = step_time_ms / 1000.0
-                    
-                    if 0.001 < step_time_s < 1000:  # Sanity check
-                        step_times.append(step_time_s)
-                except (ValueError, IndexError):
-                    continue
-            
-            # Also extract tokens per GPU if available
-            # tokens per GPU (tokens/s/GPU): 13325.3/8608.1
-            tokens_match = re.search(r'tokens per GPU \(tokens/s/GPU\):\s*([0-9.]+)/([0-9.]+)', line)
-            if tokens_match:
-                try:
-                    tokens_per_gpu = float(tokens_match.group(1))
-                    if 0 < tokens_per_gpu < 1000000:  # Sanity check
-                        tokens_per_gpu_values.append(tokens_per_gpu)
-                except (ValueError, IndexError):
-                    continue
-            
-            # Extract loss values
-            # lm loss: 1.189761E+01 or lm loss: 11.89761
-            loss_match = re.search(r'lm loss:\s*([0-9.Ee+-]+)', line)
-            if loss_match:
-                try:
-                    loss = float(loss_match.group(1))
-                    if 0 < loss < 10000:  # Sanity check
-                        loss_values.append(loss)
-                except (ValueError, IndexError):
-                    continue
-            
-            # learning rate: 5.000000E-06 or learning rate: 0.000005
-            lr_match = re.search(r'learning rate:\s*([0-9.Ee+-]+)', line)
-            if lr_match:
-                try:
-                    lr = float(lr_match.group(1))
-                    if 0 < lr < 1:  # Sanity check (learning rates are typically 1e-7 to 1e-3)
-                        learning_rates.append(lr)
-                except (ValueError, IndexError):
-                    continue
-    
-    return step_times, tokens_per_gpu_values, loss_values, learning_rates
-
-
-def extract_memory_from_log(log_file):
-    """
-    Extract GPU memory usage from log.
-    
-    Supports multiple formats:
-    - Primus/Megatron: hip mem usage/free/total/usage_ratio: 117.99GB/74.00GB/191.98GB/61.46%
-    - Megatron-LM: allocated: 60.2GB, max allocated: 60.3GB, reserved: 62.1GB
-    - Generic: memory usage: 60.5 GB
-    
-    Note: "hip" refers to AMD's HIP (Heterogeneous Interface for Portability),
-    which provides CUDA compatibility on ROCm.
-    """
-    memory_values = []
-    
-    with open(log_file, 'r') as f:
-        for line in f:
-            # Format 1: Primus/ROCm - hip mem usage/free/total/usage_ratio: 117.99GB/...
-            match = re.search(r'hip mem (?:usage|allocated)[^:]*:\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
-            if match:
-                try:
-                    memory_gb = float(match.group(1))
-                    if 0 < memory_gb < 1000:  # Sanity check
-                        memory_values.append(memory_gb)
-                        continue
-                except (ValueError, IndexError):
-                    pass
-            
-            # Format 2: Megatron-LM - allocated: 60.2GB or max allocated: 60.3GB
-            match = re.search(r'(?:max )?allocated:\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
-            if match:
-                try:
-                    memory_gb = float(match.group(1))
-                    if 0 < memory_gb < 1000:  # Sanity check
-                        memory_values.append(memory_gb)
-                        continue
-                except (ValueError, IndexError):
-                    pass
-            
-            # Format 3: Generic - memory usage: 60.5 GB or memory: 60.5GB
-            match = re.search(r'memory\s+(?:usage)?:?\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
-            if match:
-                try:
-                    memory_gb = float(match.group(1))
-                    if 0 < memory_gb < 1000:  # Sanity check
-                        memory_values.append(memory_gb)
-                        continue
-                except (ValueError, IndexError):
-                    pass
-    
-    return memory_values
-
-
-def get_parallelism_config(strategy: str, model: str, platform: str) -> Dict[str, Any]:
-    """
-    Get parallelism configuration from config.yaml.
-    
-    Args:
-        strategy: Parallelism strategy name
-        model: Model name (llama, qwen)
-        platform: Platform (amd, nvidia/nvd)
-        
-    Returns:
-        Dictionary with parallelism parameters or minimal info if unavailable
-    """
-    if not CONFIG_LOADER_AVAILABLE or not strategy or strategy == "unknown":
-        return {"strategy": strategy or "unknown"}
-    
-    try:
-        config = load_config()
-        # Normalize platform name (nvd -> nvidia)
-        platform_normalized = "nvidia" if platform in ["nvd", "nvidia"] else "amd"
-        
-        # Get parallelism config for this strategy/model/platform
-        params = config.get_parallelism(model, platform_normalized, methodology=strategy)
-        
-        return {
-            "strategy": strategy,
-            "tensor_parallel_size": params.get("tensor_model_parallel_size", 1),
-            "pipeline_parallel_size": params.get("pipeline_model_parallel_size", 1),
-            "data_parallel_size": params.get("data_parallel_size", 1),
-            "gradient_accumulation_steps": params.get("gradient_accumulation_steps", 1),
-        }
-    except Exception as e:
-        print(f"[!] Could not load parallelism config: {e}")
-        return {"strategy": strategy or "unknown"}
+from utils import (
+    round_floats,
+    detect_gpu_info,
+    extract_step_times_from_log,
+    extract_memory_from_log,
+    get_parallelism_config,
+    print_summary
+)
 
 
 def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, parallel_strategy=None, model_name=None):
@@ -355,15 +57,6 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     
     # Auto-detect GPU info
     gpu_info = detect_gpu_info()
-    if not gpu_info:
-        gpu_info = {
-            "device_count": num_gpus,
-            "device_name": "AMD GPU (from log)",
-            "gpu_cores": 0,
-            "pytorch_version": torch.__version__,
-            "software_stack": "rocm",
-            "software_version": "unknown",
-        }
     
     # Detect platform from GPU info
     # Use software_stack as the primary indicator
@@ -404,7 +97,6 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     steps_per_second = 1.0 / avg_step_time
     
     # Get parallelism configuration from config.yaml
-    import os
     # Priority: explicit argument > environment variable
     if not parallel_strategy:
         parallel_strategy = os.environ.get('PARALLEL', None)
@@ -443,26 +135,15 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
         "source_log_file": str(Path(log_file).absolute())
     }
     
+    # Add memory metrics if available
+    if memory_values:
+        results["memory_metrics"] = {
+            "peak_memory_allocated_gb": max(memory_values),
+            "avg_memory_allocated_gb": sum(memory_values) / len(memory_values),
+            "min_memory_allocated_gb": min(memory_values),
+        }
+    
     return results
-
-
-def print_summary(results):
-    """Print benchmark summary."""
-    print(f"\n{'='*60}")
-    print(f"BENCHMARK SUMMARY - Platform: {results['platform'].upper()}")
-    print(f"{'='*60}")
-    print(f"Device: {results['gpu_info'].get('device_name', 'Unknown')}")
-    print(f"GPUs: {results['training_config']['num_gpus']}")
-    print(f"Total Steps: {results['performance_metrics']['total_steps']}")
-    print(f"Avg Step Time: {results['performance_metrics']['avg_step_time_seconds']:.3f}s")
-    
-    if results['performance_metrics'].get('tokens_per_second'):
-        print(f"\nThroughput Metrics:")
-        print(f"  Total Throughput: {results['performance_metrics']['tokens_per_second']:,.0f} tokens/sec")
-        print(f"  Per-GPU Throughput: {results['performance_metrics']['tokens_per_second_per_gpu']:,.0f} tokens/sec/GPU")
-        print(f"  Peak Memory: {max(memory_values):.2f}GB")
-    
-    print(f"{'='*60}\n")
 
 
 def main():
@@ -550,7 +231,7 @@ Examples:
             model_suffix = f"_{args.model_name}" if args.model_name else ""
             output_path = Path(f"./output/train_{software_stack}{model_suffix}.json").resolve()
         
-        # Save results (round all floats to 3 decimal places)
+        # Save results (round all floats to 5 decimal places)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Round all float values to 5 decimal places
@@ -567,7 +248,7 @@ Examples:
         # Print next steps
         print("Next Steps:")
         print("  1. Run on NVIDIA GPU and collect results")
-        print("  2. Compare with: python3 compare_results.py")
+        print("  2. Compare with: python3 compare.py")
         print()
         
     else:
@@ -576,7 +257,6 @@ Examples:
         print("  1. Check log file format")
         print("  2. Verify log contains timing information")
         print("  3. Try opening the log and looking for step times manually")
-        print("  4. Adjust regex patterns in extract_metrics.py if needed")
         return 1
     
     return 0
@@ -584,4 +264,3 @@ Examples:
 
 if __name__ == "__main__":
     exit(main())
-

@@ -24,7 +24,7 @@ from transformers import (
 )
 from torch.utils.data import Dataset, IterableDataset
 import json
-from utils import BenchmarkCallback
+from utils import BenchmarkCallbackHF
 
 # Configure logging
 logging.basicConfig(
@@ -124,7 +124,7 @@ def train_llama():
     
     # Add benchmark callback if available
     try:
-        benchmark_callback = BenchmarkCallback(
+        benchmark_callback = BenchmarkCallbackHF(
             output_dir="./output",
             platform="auto",
             model_name="llama",
@@ -208,7 +208,7 @@ def train_qwen():
     
     # Add benchmark callback if available
     try:
-        benchmark_callback = BenchmarkCallback(
+        benchmark_callback = BenchmarkCallbackHF(
             output_dir="./output",
             platform="auto",
             model_name="qwen",
