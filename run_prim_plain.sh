@@ -17,7 +17,7 @@ mkdir -p "$TPRIMAT_PATH/output"
 cd "$PRIMUS_PATH"
 export EXP="examples/megatron/configs/MI300X/llama3.1_8B-BF16-pretrain.yaml"
 
-bash ./examples/run_pretrain.sh \
+bash ./examples/run_train.sh \
     --train_iters 10 \
     --lr 0.0003 \
     --min_lr 0.00003 \
@@ -32,7 +32,7 @@ cd "$TPRIMAT_PATH"
 python3 extract_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_llama.log" \
     --model-name "llama" \
-    --output "$TPRIMAT_PATH/output/train_primus_llama.json" \
+    --output "$TPRIMAT_PATH/output/train_prim_llama.json" \
     --num-gpus 8 \
     --global-batch-size 128 \
     --sequence-length 2048 \
@@ -41,7 +41,7 @@ python3 extract_metrics.py \
 cd "$PRIMUS_PATH"
 export EXP="examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml"
 
-bash ./examples/run_pretrain.sh \
+bash ./examples/run_train.sh \
     --train_iters 10 \
     --lr 0.0003 \
     --min_lr 0.00003 \
@@ -56,7 +56,7 @@ cd "$TPRIMAT_PATH"
 python3 extract_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_qwen.log" \
     --model-name "qwen" \
-    --output "$TPRIMAT_PATH/output/train_primus_qwen.json" \
+    --output "$TPRIMAT_PATH/output/train_prim_qwen.json" \
     --num-gpus 8 \
     --global-batch-size 128 \
     --sequence-length 2048 \

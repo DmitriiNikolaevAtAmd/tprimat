@@ -1,8 +1,8 @@
 # TPrimat - LLM Training Benchmark Suite
 
-**Tensor Parallelism AMD/NVIDIA Training** - Comprehensive LLM training benchmarks comparing AMD MI300X vs NVIDIA H100 GPUs with multiple parallelism strategies.
+**Tensor Parallelism AMD/NVD Training** - Comprehensive LLM training benchmarks comparing AMD MI300X vs NVD H100 GPUs with multiple parallelism strategies.
 
-[![Platform](https://img.shields.io/badge/Platform-AMD%20MI300X%20%7C%20NVIDIA%20H100-blue)]()
+[![Platform](https://img.shields.io/badge/Platform-AMD%20MI300X%20%7C%20NVD%20H100-blue)]()
 [![Models](https://img.shields.io/badge/Models-Llama%203.1%208B%20%7C%20Qwen%202.5%207B-green)]()
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)]()
 
@@ -12,7 +12,7 @@
 
 - [Overview](#overview)
 - [Quick Start](#quick-start)
-  - [Standalone Scripts](#standalone-scripts-multiple-frameworks)
+  - [Plain Scripts](#plain-scripts-multiple-frameworks)
 - [Logging & Output](#logging--output)
   - [Logging Configuration](#logging-configuration)
   - [Output File Naming Convention](#output-file-naming-convention)
@@ -46,11 +46,11 @@
 
 ## Overview
 
-TPrimat is a comprehensive benchmarking suite for comparing LLM training performance between AMD and NVIDIA GPUs using different parallelism strategies.
+TPrimat is a comprehensive benchmarking suite for comparing LLM training performance between AMD and NVD GPUs using different parallelism strategies.
 
 ### Key Features
 
-- **Multi-Platform**: Supports AMD MI300X (ROCm/Primus) and NVIDIA H100 (CUDA/NeMo)
+- **Multi-Platform**: Supports AMD MI300X (ROCm/Prim) and NVD H100 (CUDA/NeMo)
 - **Multiple Models**: Llama 3.1 8B and Qwen 2.5 7B
 - **5 Parallelism Strategies**: From TP=1 (fastest) to TP=4, PP=2 (memory-optimized)
 - **Automatic Benchmarking**: JSON metrics + training logs + comparison plots
@@ -60,8 +60,8 @@ TPrimat is a comprehensive benchmarking suite for comparing LLM training perform
 
 | Platform | GPU | Memory | Framework | Software Stack |
 |----------|-----|--------|-----------|----------------|
-| NVIDIA | H100 80GB | 80GB HBM3 | NeMo | CUDA 12.8 |
-| AMD | MI300X | 192GB HBM3 | Primus | ROCm 6.x |
+| NVD | H100 80GB | 80GB HBM3 | NeMo | CUDA 12.8 |
+| AMD | MI300X | 192GB HBM3 | Prim | ROCm 6.x |
 
 ### Supported Models
 
@@ -77,13 +77,13 @@ TPrimat is a comprehensive benchmarking suite for comparing LLM training perform
 ### 🚀 Fastest Start - All Frameworks
 
 ```bash
-# Run all frameworks (HF, FSDP, NeMo) at once
-./run_nvidia_all.sh              # On NVIDIA
-./run_amd_all.sh                 # On AMD
+# Run all frameworks (HF, Mega-LM, NeMo) at once
+./run_nvd_all_plain.sh        # On NVD
+./run_amd_all_plain.sh           # On AMD
 
 # Or in Docker
-./run_docker_nvidia.sh ./run_nvidia_all.sh
-./run_docker_amd.sh ./run_amd_all.sh
+./run_docker_nvd.sh ./run_nvd_all_plain.sh
+./run_docker_amd.sh ./run_amd_all_plain.sh
 ```
 
 **Result:** 6 benchmark files in `output/` (takes ~30-60 min)
@@ -92,9 +92,9 @@ TPrimat is a comprehensive benchmarking suite for comparing LLM training perform
 
 ```bash
 # Test one framework quickly
-python3 -u run_hf_standalone.py llama
-python3 -u run_fsdp_standalone.py qwen
-python3 -u run_nemo_standalone.py llama
+python3 -u run_tran_plain.py llama
+torchrun --nproc_per_node=8 run_mega_plain.py llama
+python3 -u run_nemo_plain.py llama
 ```
 
 **Result:** 1 benchmark file in `output/` (takes ~5-10 min)
@@ -124,62 +124,58 @@ python3 -u run_nemo_standalone.py llama
 ./benchmark.py --runs 3
 ```
 
-### Standalone Scripts (Multiple Frameworks)
+### Plain Scripts (Multiple Frameworks)
 
-TPrimat includes standalone training scripts for multiple frameworks, allowing you to compare HuggingFace Transformers, PyTorch FSDP, and NeMo/Primus side-by-side.
+TPrimat includes plain training scripts for multiple frameworks, allowing you to compare Transformers Transformers, Mega-LM, and NeMo/Prim side-by-side.
 
 #### Run All Frameworks (Recommended)
 
 ```bash
-# NVIDIA: Run HF, FSDP, and NeMo
-./run_nvidia_all.sh
+# NVD: Run HF, Mega-LM, and NeMo
+./run_nvd_all_plain.sh
 
-# AMD: Run HF, FSDP, and NeMo (with ROCm)
-./run_amd_all.sh
+# AMD: Run HF, Mega-LM, and NeMo (with ROCm)
+./run_amd_all_plain.sh
 ```
 
 **Generates 6 output files:**
-- `output/train_hf_llama.json` & `output/train_hf_qwen.json`
-- `output/train_fsdp_llama.json` & `output/train_fsdp_qwen.json`
+- `output/train_tran_llama.json` & `output/train_tran_qwen.json`
+- `output/train_mega_llama.json` & `output/train_mega_qwen.json`
 - `output/train_nemo_llama.json` & `output/train_nemo_qwen.json`
 
 #### Run Individual Frameworks
 
 ```bash
-# HuggingFace Transformers (both models)
-python3 -u run_hf_standalone.py
-
-# PyTorch FSDP (both models)
-python3 -u run_fsdp_standalone.py
+# Transformers Transformers (both models)
+python3 -u run_tran_plain.py
 
 # NeMo (both models)
-python3 -u run_nemo_standalone.py
+python3 -u run_nemo_plain.py
 
 # Run specific model only
-python3 -u run_hf_standalone.py llama
-python3 -u run_fsdp_standalone.py qwen
-python3 -u run_nemo_standalone.py llama
+python3 -u run_tran_plain.py llama
+python3 -u run_nemo_plain.py llama
 ```
 
 #### In Docker
 
 ```bash
-# NVIDIA
-./run_docker_nvidia.sh ./run_nvidia_all.sh
-./run_docker_nvidia.sh python3 -u run_hf_standalone.py llama
+# NVD
+./run_docker_nvd.sh ./run_nvidia_all.sh
+./run_docker_nvd.sh python3 -u run_tran_plain.py llama
 
 # AMD
 ./run_docker_amd.sh ./run_amd_all.sh
-./run_docker_amd.sh python3 -u run_nemo_standalone.py qwen
+./run_docker_amd.sh python3 -u run_nemo_plain.py qwen
 ```
 
 **Hardcoded Configuration (All Frameworks):**
 - Training iterations: **10** (fast testing)
-- Parallelism: **TP=1, PP=1, DP=8** (minimal communication) for NeMo; **DDP** for HF; **FSDP** for FSDP
+- Parallelism: **TP=1, PP=1, DP=8** (minimal communication) for NeMo; **DDP** for HF
 - Batch size: **64** global (micro=1, grad_accum=8)
 - Sequence length: **2048** tokens
 - Learning rate: **0.0003** with **1** warmup step
-- Precision: **BFloat16** (HF/FSDP), **FP8 Hybrid** (NeMo)
+- Precision: **BFloat16** (HF), **FP8 Hybrid** (NeMo)
 - Seed: **42**
 
 **Note:** All scripts use `-u` flag for unbuffered output to ensure real-time log visibility.
@@ -190,13 +186,13 @@ python3 -u run_nemo_standalone.py llama
 
 ### Logging Configuration
 
-All standalone scripts use proper Python logging with real-time output:
+All plain scripts use proper Python logging with real-time output:
 
 **Features:**
 - ✅ Proper Python `logging` module (not print statements)
 - ✅ Timestamps on all log messages
 - ✅ Unbuffered output (logs appear immediately)
-- ✅ Rank information for distributed training (FSDP)
+- ✅ Rank information for distributed training
 - ✅ Framework and model identification in output files
 
 **Log Format:**
@@ -206,7 +202,7 @@ All standalone scripts use proper Python logging with real-time output:
 2026-01-22 10:31:00,789 - __main__ - INFO - Starting training...
 ```
 
-**For FSDP (distributed training), rank information is included:**
+**For distributed training, rank information is included:**
 ```
 2026-01-22 10:30:45,123 - [Rank 0] - INFO - Loading model: meta-llama/Llama-3.1-8B
 2026-01-22 10:30:46,456 - [Rank 0] - INFO - World size: 8, Rank: 0, Local rank: 0
@@ -221,22 +217,20 @@ output/train_<framework>_<model>.json
 ```
 
 **Framework names:**
-- `hf` - HuggingFace Transformers
-- `fsdp` - PyTorch FSDP
-- `nemo` - NVIDIA NeMo
-- `primus` - AMD Primus (AMD-specific)
+- `tran` - Transformers (Transformers)
+- `nemo` - NVD NeMo
+- `primus` - AMD Prim (AMD-specific)
 
 **Examples:**
-- `output/train_hf_llama.json` - HuggingFace Llama
-- `output/train_fsdp_qwen.json` - FSDP Qwen
+- `output/train_tran_llama.json` - Transformers Llama
 - `output/train_nemo_llama.json` - NeMo Llama
-- `output/train_primus_qwen.json` - Primus Qwen (AMD)
+- `output/train_prim_qwen.json` - Prim Qwen (AMD)
 
 **Benefits:**
 - Framework and model immediately identifiable from filename
 - Easy to compare results across frameworks for the same model
 - Simple to parse and process programmatically
-- Consistent across all platforms (NVIDIA/AMD)
+- Consistent across all platforms (NVD/AMD)
 
 ### Troubleshooting Logs
 
@@ -244,31 +238,25 @@ output/train_<framework>_<model>.json
 
 **Always use `-u` flag for unbuffered output:**
 ```bash
-python3 -u run_hf_standalone.py llama
+python3 -u run_tran_plain.py llama
 ```
 
 **Or set environment variable:**
 ```bash
 export PYTHONUNBUFFERED=1
-python3 run_hf_standalone.py llama
+python3 run_tran_plain.py llama
 ```
 
 **In Docker, logs appear in real-time:**
 ```bash
-./run_docker_nvidia.sh python3 -u run_hf_standalone.py llama
+./run_docker_nvd.sh python3 -u run_tran_plain.py llama
 ```
 
 **Save logs while viewing:**
 ```bash
-python3 -u run_hf_standalone.py llama 2>&1 | tee output/hf_llama.log
+python3 -u run_tran_plain.py llama 2>&1 | tee output/hf_llama.log
 ```
 
-#### FSDP not seeing output from all ranks?
-
-Use `torchrun` for proper distributed setup:
-```bash
-torchrun --nproc_per_node=8 run_fsdp_standalone.py llama
-```
 
 Only rank 0 prints most logs (this is normal and prevents duplicate output).
 
@@ -280,17 +268,16 @@ Only rank 0 prints most logs (this is normal and prevents duplicate output).
 
 | Script | Purpose | Frameworks | Output Files |
 |--------|---------|------------|--------------|
-| `run_nvidia_all.sh` | All frameworks (NVIDIA) | HF, FSDP, NeMo | 6 files |
-| `run_amd_all.sh` | All frameworks (AMD) | HF, FSDP, NeMo | 6 files |
-| `run_hf_standalone.py` | HuggingFace only | HF | 2 files |
-| `run_fsdp_standalone.py` | FSDP only | FSDP | 2 files |
-| `run_nemo_standalone.py` | NeMo only | NeMo | 2 files |
-| `run_primus_all.sh` | Primus (AMD-optimized) | Primus | 2 files |
-| `run_primus_standalone.sh` | Primus direct | Primus | Logs + 2 files |
+| `run_nvidia_all.sh` | All frameworks (NVD) | HF, NeMo | 4 files |
+| `run_amd_all.sh` | All frameworks (AMD) | HF, NeMo | 4 files |
+| `run_tran_plain.py` | Transformers only | HF | 2 files |
+| `run_nemo_plain.py` | NeMo only | NeMo | 2 files |
+| `run_prim_all.sh` | Prim (AMD-optimized) | Prim | 2 files |
+| `run_prim_plain.sh` | Prim direct | Prim | Logs + 2 files |
 
 ### run_nvidia_all.sh
 
-**Purpose:** Run all three training frameworks sequentially on NVIDIA hardware.
+**Purpose:** Run all training frameworks sequentially on NVD hardware.
 
 **Usage:**
 ```bash
@@ -298,22 +285,21 @@ Only rank 0 prints most logs (this is normal and prevents duplicate output).
 ./run_nvidia_all.sh
 
 # In Docker
-./run_docker_nvidia.sh ./run_nvidia_all.sh
+./run_docker_nvd.sh ./run_nvidia_all.sh
 ```
 
 **What it does:**
-1. ✅ Runs HuggingFace Transformers (Llama + Qwen)
-2. ✅ Runs PyTorch FSDP (Llama + Qwen)
-3. ✅ Runs NeMo (Llama + Qwen)
-4. ✅ Lists all generated files
+1. ✅ Runs Transformers Transformers (Llama + Qwen)
+2. ✅ Runs NeMo (Llama + Qwen)
+3. ✅ Lists all generated files
 
-**Output:** 6 JSON files in `output/`
+**Output:** 4 JSON files in `output/`
 
-**Time estimate:** ~30-60 minutes depending on hardware
+**Time estimate:** ~20-40 minutes depending on hardware
 
-### run_amd_all.sh
+### run_amd_all_plain.sh
 
-**Purpose:** Run all three training frameworks sequentially on AMD/ROCm hardware.
+**Purpose:** Run all training frameworks sequentially on AMD/ROCm hardware.
 
 **Usage:**
 ```bash
@@ -331,70 +317,45 @@ Only rank 0 prints most logs (this is normal and prevents duplicate output).
 
 ### Individual Framework Scripts
 
-#### run_hf_standalone.py - HuggingFace Transformers
+#### run_tran_plain.py - Transformers Transformers
 
 **Features:**
-- Standard HuggingFace Trainer API
+- Standard Transformers Trainer API
 - Flash Attention 2 support (if available)
 - Gradient checkpointing for memory efficiency
-- Works on both NVIDIA and AMD
+- Works on both NVD and AMD
 
 **Usage:**
 ```bash
 # Both models
-python3 -u run_hf_standalone.py
+python3 -u run_tran_plain.py
 
 # Single model
-python3 -u run_hf_standalone.py llama
-python3 -u run_hf_standalone.py qwen
+python3 -u run_tran_plain.py llama
+python3 -u run_tran_plain.py qwen
 ```
 
 **Output:**
-- `output/train_hf_llama.json`
-- `output/train_hf_qwen.json`
+- `output/train_tran_llama.json`
+- `output/train_tran_qwen.json`
 
-#### run_fsdp_standalone.py - PyTorch FSDP
-
-**Features:**
-- Native PyTorch Fully Sharded Data Parallel
-- Memory-efficient training with model sharding
-- Mixed precision (bfloat16)
-- Auto-wrap policy for transformer layers
-- Works on both NVIDIA and AMD
-
-**Usage:**
-```bash
-# Both models (with auto-initialization)
-python3 -u run_fsdp_standalone.py
-
-# Single model with torchrun (8 GPUs)
-torchrun --nproc_per_node=8 run_fsdp_standalone.py llama
-torchrun --nproc_per_node=8 run_fsdp_standalone.py qwen
-```
-
-**Output:**
-- `output/train_fsdp_llama.json`
-- `output/train_fsdp_qwen.json`
-
-**Note:** Automatically handles distributed setup (rank 0 saves results).
-
-#### run_nemo_standalone.py - NVIDIA NeMo
+#### run_nemo_plain.py - NVD NeMo
 
 **Features:**
-- NeMo + Megatron-LM backend
+- NeMo + Mega-LM backend
 - FP8 training (hybrid mode) on H100
 - Selective recomputation (activation checkpointing)
 - Advanced parallelism strategies (TP, PP, CP)
-- Works on both NVIDIA (native) and AMD (via NeMo-ROCm)
+- Works on both NVD (native) and AMD (via NeMo-ROCm)
 
 **Usage:**
 ```bash
 # Both models
-python3 -u run_nemo_standalone.py
+python3 -u run_nemo_plain.py
 
 # Single model
-python3 -u run_nemo_standalone.py llama
-python3 -u run_nemo_standalone.py qwen
+python3 -u run_nemo_plain.py llama
+python3 -u run_nemo_plain.py qwen
 ```
 
 **Output:**
@@ -403,90 +364,90 @@ python3 -u run_nemo_standalone.py qwen
 
 ### AMD-Specific Scripts
 
-#### run_primus_all.sh
+#### run_prim_all.sh
 
-**Purpose:** Run Primus framework training for all models (AMD-optimized).
+**Purpose:** Run Prim framework training for all models (AMD-optimized).
 
 **Usage:**
 ```bash
-./run_primus_all.sh
+./run_prim_all.sh
 ```
 
 **What it does:**
-1. Runs `run_primus_llama.sh`
-2. Runs `run_primus_qwen.sh`
+1. Runs `run_prim_llama.sh`
+2. Runs `run_prim_qwen.sh`
 3. Provides summary with success/failure status
 
 **Output:**
-- `output/train_primus_llama.json`
-- `output/train_primus_qwen.json`
+- `output/train_prim_llama.json`
+- `output/train_prim_qwen.json`
 
-**Note:** Primus is AMD's optimized training framework, specifically designed for ROCm/MI300X.
+**Note:** Prim is AMD's optimized training framework, specifically designed for ROCm/MI300X.
 
-#### run_primus_standalone.sh
+#### run_prim_plain.sh
 
-**Purpose:** Run Primus training directly (lower-level access).
+**Purpose:** Run Prim training directly (lower-level access).
 
 **Usage:**
 ```bash
-./run_primus_standalone.sh
+./run_prim_plain.sh
 ```
 
 **What it does:**
-- Runs Llama 3.1 8B via Primus
-- Runs Qwen 2.5 7B via Primus
-- Uses Primus config files from `$PRIMUS_PATH`
+- Runs Llama 3.1 8B via Prim
+- Runs Qwen 2.5 7B via Prim
+- Uses Prim config files from `$PRIMUS_PATH`
 - Extracts metrics from training logs
 
 **Output:**
 - `output/training_main_llama.log` (raw logs)
 - `output/training_main_qwen.log` (raw logs)
-- `output/train_primus_llama.json` (extracted metrics)
-- `output/train_primus_qwen.json` (extracted metrics)
+- `output/train_prim_llama.json` (extracted metrics)
+- `output/train_prim_qwen.json` (extracted metrics)
 
 ### Docker Integration
 
-#### run_docker_nvidia.sh
+#### run_docker_nvd.sh
 
 **Usage:**
 ```bash
 # Interactive shell
-./run_docker_nvidia.sh
+./run_docker_nvd.sh
 
 # Run specific script
-./run_docker_nvidia.sh ./run_nvidia_all.sh
-./run_docker_nvidia.sh python3 -u run_hf_standalone.py llama
+./run_docker_nvd.sh ./run_nvidia_all.sh
+./run_docker_nvd.sh python3 -u run_tran_plain.py llama
 
 # Custom command
-./run_docker_nvidia.sh bash -c "python3 -u run_hf_standalone.py && ls -lh output/"
+./run_docker_nvd.sh bash -c "python3 -u run_tran_plain.py && ls -lh output/"
 ```
 
 **Features:**
 - Mounts current directory to `/workspace/tprimat`
 - Mounts `/data` for datasets
 - GPU access via `--gpus all`
-- Loads HuggingFace token from `secrets.env`
+- Loads Transformers token from `secrets.env`
 
 #### run_docker_amd.sh
 
-**Usage:** Same syntax as `run_docker_nvidia.sh`
+**Usage:** Same syntax as `run_docker_nvd.sh`
 
 **Features:**
 - Mounts home directory and workspace
 - Sets up ROCm device access (`/dev/dri`, `/dev/kfd`)
 - Privileged mode for AMD hardware access
-- Loads HuggingFace token from `secrets.env`
+- Loads Transformers token from `secrets.env`
 
 ### Complete Workflow Examples
 
 #### Quick Test (Single Framework)
 
 ```bash
-# Test HuggingFace on one model
-python3 -u run_hf_standalone.py llama
+# Test Transformers on one model
+python3 -u run_tran_plain.py llama
 
 # Check results
-cat output/train_hf_llama.json
+cat output/train_tran_llama.json
 ```
 
 #### Framework Comparison
@@ -499,11 +460,11 @@ cat output/train_hf_llama.json
 jq '.performance_metrics.tokens_per_second_per_gpu' output/train_*_llama.json
 ```
 
-#### AMD vs NVIDIA Comparison
+#### AMD vs NVD Comparison
 
 ```bash
-# On NVIDIA system
-./run_docker_nvidia.sh ./run_nvidia_all.sh
+# On NVD system
+./run_docker_nvd.sh ./run_nvidia_all.sh
 
 # On AMD system
 ./run_docker_amd.sh ./run_amd_all.sh
@@ -516,17 +477,15 @@ python3 compare.py --results-dir output/
 
 ```bash
 # Test one model at a time
-python3 -u run_hf_standalone.py llama
-python3 -u run_fsdp_standalone.py llama
-python3 -u run_nemo_standalone.py llama
+python3 -u run_tran_plain.py llama
+python3 -u run_nemo_plain.py llama
 
 # Review results before continuing
 ls -lh output/train_*_llama.json
 
 # If good, run Qwen
-python3 -u run_hf_standalone.py qwen
-python3 -u run_fsdp_standalone.py qwen
-python3 -u run_nemo_standalone.py qwen
+python3 -u run_tran_plain.py qwen
+python3 -u run_nemo_plain.py qwen
 ```
 
 ### Environment Variables
@@ -537,7 +496,7 @@ All scripts respect these environment variables:
 - `PYTHONUNBUFFERED=1` - Force unbuffered Python output
 - `PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True'` - Memory allocator
 - `PYTHONHASHSEED="42"` - Reproducibility
-- `HF_TOKEN` - HuggingFace authentication
+- `HF_TOKEN` - Transformers authentication
 
 **AMD-Specific (set by `run_amd_all.sh`):**
 - `HSA_NO_SCRATCH_RECLAIM=1` - ROCm memory management
@@ -545,8 +504,8 @@ All scripts respect these environment variables:
 - `HSA_FORCE_FINE_GRAIN_PCIE=1` - PCIe optimization
 - `RCCL_DEBUG=INFO` - ROCm collective communications debug
 
-**NVIDIA-Specific:**
-- `NCCL_DEBUG=INFO` - NVIDIA collective communications debug
+**NVD-Specific:**
+- `NCCL_DEBUG=INFO` - NVD collective communications debug
 - `CUDA_VISIBLE_DEVICES` - GPU selection (if needed)
 
 ---
@@ -559,7 +518,7 @@ All scripts respect these environment variables:
 # Python 3.10+
 python3 --version
 
-# For NVIDIA
+# For NVD
 nvidia-smi  # Verify CUDA GPUs
 
 # For AMD
@@ -584,9 +543,9 @@ The `secrets.env` file is git-ignored and will not be tracked.
 docker build -f Dockerfile.amd -t primat:amd .
 ```
 
-**For NVIDIA CUDA (H100):**
+**For NVD CUDA (H100):**
 ```bash
-docker build -f Dockerfile.nvidia -t primat:nvidia .
+docker build -f Dockerfile.nvd -t primat:nvd .
 ```
 
 #### 3. Run the container
@@ -596,9 +555,9 @@ docker build -f Dockerfile.nvidia -t primat:nvidia .
 ./run_docker_amd.sh
 ```
 
-**For NVIDIA:**
+**For NVD:**
 ```bash
-./run_docker_nvidia.sh
+./run_docker_nvd.sh
 ```
 
 The scripts automatically load your HF token from `secrets.env`.
@@ -618,11 +577,11 @@ The scripts automatically load your HF token from `secrets.env`.
 # Interactive shell (AMD)
 ./run_docker_amd.sh
 
-# Interactive shell (NVIDIA)
-./run_docker_nvidia.sh
+# Interactive shell (NVD)
+./run_docker_nvd.sh
 
 # Run training directly
-./run_docker_amd.sh ./run_primus_all.sh
+./run_docker_amd.sh ./run_prim_all.sh
 
 # Override HF token
 HF_TOKEN=another_token ./run_docker_amd.sh
@@ -636,7 +595,7 @@ pip install -r requirements.txt
 
 **Dependencies:**
 - PyTorch (with CUDA or ROCm)
-- NeMo (NVIDIA) or Primus (AMD)
+- NeMo (NVD) or Prim (AMD)
 - PyYAML, matplotlib, numpy
 
 ---
@@ -649,14 +608,14 @@ Run long-running benchmarks on remote servers without interruption when SSH disc
 
 1. **Build the Docker image** (do this once):
    ```bash
-   # For NVIDIA
-   docker build -f Dockerfile.nvidia -t primat:nvidia .
+   # For NVD
+   docker build -f Dockerfile.nvd -t primat:nvd .
    
    # For AMD
    docker build -f Dockerfile.amd -t primat:amd .
    ```
 
-2. **Set up secrets** (optional, if using HuggingFace):
+2. **Set up secrets** (optional, if using Transformers):
    ```bash
    echo "export HF_TOKEN=your_token_here" > secrets.env
    ```
@@ -667,9 +626,9 @@ Run long-running benchmarks on remote servers without interruption when SSH disc
 
 #### Start the benchmark:
 
-**For NVIDIA:**
+**For NVD:**
 ```bash
-./run_docker_nvidia_detached.sh
+./run_docker_nvd_detached.sh
 ```
 
 **For AMD:**
@@ -709,8 +668,8 @@ docker stop primat && docker rm primat
 #### Start container with interactive session:
 
 ```bash
-# For NVIDIA
-./run_docker_nvidia_tmux.sh
+# For NVD
+./run_docker_nvd_tmux.sh
 
 # For AMD
 ./run_docker_amd_tmux.sh
@@ -723,7 +682,7 @@ docker stop primat && docker rm primat
 tmux new -s benchmark
 
 # Run your benchmark
-./run_nemo_all.sh  # or ./run_primus_all.sh
+./run_nemo_all.sh  # or ./run_prim_all.sh
 
 # Detach from tmux: Press Ctrl+B, then D
 # Exit container: exit
@@ -759,10 +718,10 @@ tmux ls
 tmux new -s docker-benchmark
 
 # Inside tmux, run container
-./run_docker_nvidia.sh  # or ./run_docker_amd.sh
+./run_docker_nvd.sh  # or ./run_docker_amd.sh
 
 # Inside container, run benchmark
-./run_nemo_all.sh  # or ./run_primus_all.sh
+./run_nemo_all.sh  # or ./run_prim_all.sh
 
 # Detach from tmux: Press Ctrl+B, then D
 # Now you can safely disconnect from SSH
@@ -812,12 +771,12 @@ docker exec primat cat /workspace/tprimat/output/training_llama.log
 docker exec primat tail -f /workspace/tprimat/output/training_llama.log
 
 # Benchmark output
-docker exec primat cat /workspace/tprimat/output/train_primus_llama.json
+docker exec primat cat /workspace/tprimat/output/train_prim_llama.json
 ```
 
 #### Monitor Resources:
 ```bash
-# GPU usage (NVIDIA)
+# GPU usage (NVD)
 nvidia-smi -l 1
 watch -n 1 nvidia-smi
 
@@ -852,7 +811,7 @@ docker rm -f primat
 
 **GPU not available:**
 ```bash
-# Verify GPU access (NVIDIA)
+# Verify GPU access (NVD)
 docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi
 
 # Verify GPU access (AMD)
@@ -970,7 +929,7 @@ python3 compare.py --results-dir ./tp4
 #### Example 3: Fair Hardware Comparison
 
 ```bash
-# On NVIDIA machine
+# On NVD machine
 ./benchmark.py --parallel truly_identical --output-dir ./nvidia-results
 
 # On AMD machine (or later)
@@ -1014,7 +973,7 @@ Each strategy offers different trade-offs between memory, speed, and communicati
 **Goal:** Best performance for each platform
 
 **Configuration:**
-- **NVIDIA (H100):**
+- **NVD (H100):**
   - Llama: TP=4, PP=1, DP=2
   - Qwen: TP=4, PP=2, DP=1
 - **AMD (MI300X):**
@@ -1063,7 +1022,7 @@ Each strategy offers different trade-offs between memory, speed, and communicati
 
 ### Configuration Reference
 
-| Config | Name | Llama (NVIDIA) | Qwen (NVIDIA) | Use Case |
+| Config | Name | Llama (NVD) | Qwen (NVD) | Use Case |
 |--------|------|----------------|---------------|----------|
 | 00 | maximum_performance | TP=4, PP=1, DP=2 | TP=4, PP=2, DP=1 | Best performance |
 | 01 | truly_identical | TP=4, PP=1, DP=2 | TP=4, PP=2, DP=1 | Fair comparison |
@@ -1122,7 +1081,7 @@ ValueError: num_attention_heads (28) must be a multiple of tensor_model_parallel
 
 ## Profiling
 
-TPrimat includes integrated NVIDIA Nsight Systems profiling for detailed GPU performance analysis. Nsight captures kernel-level traces, memory allocations, CUDA operations, and CPU activity.
+TPrimat includes integrated NVD Nsight Systems profiling for detailed GPU performance analysis. Nsight captures kernel-level traces, memory allocations, CUDA operations, and CPU activity.
 
 ### Enabling Nsight Profiler
 
@@ -1141,7 +1100,7 @@ profiling:
 **2. Run your benchmark:**
 
 ```bash
-python3 pretrain_llama.py   # Automatically wraps with nsys when profiling enabled
+python3 train_llama.py   # Automatically wraps with nsys when profiling enabled
 # or
 ./benchmark.py --parallel minimal_communication
 ```
@@ -1159,7 +1118,7 @@ output/
 **Trace Options:**
 
 - `cuda`: CUDA API calls and kernel launches
-- `nvtx`: NVIDIA Tools Extension markers
+- `nvtx`: NVD Tools Extension markers
 - `osrt`: OS runtime libraries
 - `cudnn`: cuDNN operations
 - `cublas`: cuBLAS operations
@@ -1324,9 +1283,9 @@ No CUDA runtime is found
 
 **2. Run models separately:**
 ```bash
-python3 pretrain_llama.py
+python3 train_llama.py
 sleep 30
-python3 pretrain_qwen.py
+python3 train_qwen.py
 ```
 
 **3. Clear GPU memory manually:**
@@ -1421,11 +1380,11 @@ ls output/*.json
 # Check logs for errors
 cat output/training_llama.log | grep -i "error"
 
-# Manually extract metrics (for AMD/Primus)
+# Manually extract metrics (for AMD/Prim)
 python3 extract_metrics.py \
     --log-file output/training_llama.log \
     --model-name llama \
-    --output output/train_primus_llama.json \
+    --output output/train_prim_llama.json \
     --num-gpus 8 \
     --global-batch-size 128 \
     --sequence-length 2048
@@ -1460,7 +1419,7 @@ python3 extract_metrics.py \
 
 ### Platform-Specific Issues
 
-#### NVIDIA Issues
+#### NVD Issues
 
 **1. FP8 not working:**
 - Requires H100 GPU
@@ -1480,7 +1439,7 @@ rocm-smi
 python3 -c "import torch; print(torch.version.hip)"
 ```
 
-**2. Primus configuration:**
+**2. Prim configuration:**
 - Ensure `PRIMUS_PATH` is set
 - Check: `echo $PRIMUS_PATH`
 
@@ -1527,10 +1486,10 @@ After running a benchmark, you'll find everything in your specified output direc
 
 ```
 output/  (or --output-dir path)
-├── train_nemo_llama.json          # NVIDIA Llama metrics
-├── train_nemo_qwen.json           # NVIDIA Qwen metrics
-├── train_primus_llama.json        # AMD Llama metrics (if available)
-├── train_primus_qwen.json         # AMD Qwen metrics (if available)
+├── train_nemo_llama.json          # NVD Llama metrics
+├── train_nemo_qwen.json           # NVD Qwen metrics
+├── train_prim_llama.json        # AMD Llama metrics (if available)
+├── train_prim_qwen.json         # AMD Qwen metrics (if available)
 ├── training_llama.log             # Complete training logs
 └── training_qwen.log              # Complete training logs
 ```
@@ -1538,7 +1497,7 @@ output/  (or --output-dir path)
 **Backward Compatibility:**
 
 The comparison tools support both new and old naming conventions:
-- **New format**: `train_{framework}_{model}.json` (e.g., `train_nemo_llama.json`, `train_primus_qwen.json`)
+- **New format**: `train_{framework}_{model}.json` (e.g., `train_nemo_llama.json`, `train_prim_qwen.json`)
 - **Old format**: `benchmark_{platform}_{model}.json` (e.g., `benchmark_cuda_llama.json`, `benchmark_rocm_qwen.json`)
 
 Both formats can be used interchangeably with `compare.py` and other analysis tools.
@@ -1549,7 +1508,7 @@ Both formats can be used interchangeably with `compare.py` and other analysis to
 {
   "platform": "nvd",
   "gpu_info": {
-    "device_name": "NVIDIA H100 80GB HBM3",
+    "device_name": "NVD H100 80GB HBM3",
     "device_count": 8,
     "software_stack": "cuda"
   },
@@ -1625,7 +1584,7 @@ Instead of command-line flags, you can use environment variables:
 ```bash
 # Set parallelism strategy
 export PARALLEL="minimal_communication"
-python3 pretrain_llama.py
+python3 train_llama.py
 
 # Set output directory
 export OUTPUT_DIR="./my-results"
@@ -1639,10 +1598,10 @@ python3 benchmark.py
 export PARALLEL="balanced"
 export OUTPUT_DIR="./output"
 
-python3 pretrain_llama.py
+python3 train_llama.py
 # Wait for GPU memory to clear
 sleep 30
-python3 pretrain_qwen.py
+python3 train_qwen.py
 ```
 
 ### Custom Configurations
@@ -1769,7 +1728,7 @@ Options:
 
 ### extract_metrics.py
 
-Extract metrics from AMD/Primus training logs.
+Extract metrics from AMD/Prim training logs.
 
 ```bash
 python3 extract_metrics.py \
@@ -1811,7 +1770,7 @@ Main configuration file structure:
 ```yaml
 experiment:                    # Experiment metadata
 hardware:                      # Platform specifications
-  platforms:                   # NVIDIA and AMD configs
+  platforms:                   # NVD and AMD configs
 models:                        # Model specifications
   llama:                       # Llama 3.1 8B config
   qwen:                        # Qwen 2.5 7B config
@@ -1824,7 +1783,7 @@ parallelism:                   # 5 parallelism strategies
   memory_optimized:            # Config 02
   minimal_communication:       # Config 03
   balanced:                    # Config 04
-platform_optimizations:        # NVIDIA/AMD specific settings
+platform_optimizations:        # NVD/AMD specific settings
 benchmarking:                  # Metrics and output config
 ```
 
@@ -1833,8 +1792,8 @@ benchmarking:                  # Metrics and output config
 ```
 tprimat/
 ├── benchmark.py               # Main entry point
-├── pretrain_llama.py         # Llama training script
-├── pretrain_qwen.py          # Qwen training script
+├── train_llama.py         # Llama training script
+├── train_qwen.py          # Qwen training script
 ├── compare.py                # Comparison plot generator
 ├── extract_metrics.py # AMD log parser
 ├── config_loader.py          # Configuration loader
@@ -1850,14 +1809,14 @@ tprimat/
 
 ## Credits & License
 
-**TPrimat** - Tensor Parallelism AMD/NVIDIA Training Benchmark Suite
+**TPrimat** - Tensor Parallelism AMD/NVD Training Benchmark Suite
 
 Developed for fair, reproducible LLM training benchmarks across GPU platforms.
 
 ### Frameworks Used
 
-- **NeMo**: NVIDIA's neural module framework
-- **Primus**: AMD's training framework
+- **NeMo**: NVD's neural module framework
+- **Prim**: AMD's training framework
 - **Megatron**: Model-parallel transformers
 
 ### Models
@@ -1869,39 +1828,35 @@ Developed for fair, reproducible LLM training benchmarks across GPU platforms.
 
 ## Quick Reference Card
 
-### Standalone Scripts (Most Common)
+### Plain Scripts (Most Common)
 
 ```bash
 # ========================================
 # RUN ALL FRAMEWORKS (RECOMMENDED)
 # ========================================
 
-# NVIDIA: Run HF, FSDP, NeMo
+# NVD: Run HF, NeMo
 ./run_nvidia_all.sh
 
-# AMD: Run HF, FSDP, NeMo  
+# AMD: Run HF, NeMo  
 ./run_amd_all.sh
 
 # In Docker
-./run_docker_nvidia.sh ./run_nvidia_all.sh
+./run_docker_nvd.sh ./run_nvidia_all.sh
 ./run_docker_amd.sh ./run_amd_all.sh
 
 # ========================================
 # RUN INDIVIDUAL FRAMEWORKS
 # ========================================
 
-# HuggingFace (both models)
-python3 -u run_hf_standalone.py
-
-# FSDP (both models)
-python3 -u run_fsdp_standalone.py
+# Transformers (both models)
+python3 -u run_tran_plain.py
 
 # NeMo (both models)
-python3 -u run_nemo_standalone.py
+python3 -u run_nemo_plain.py
 
 # Single model only
-python3 -u run_hf_standalone.py llama
-python3 -u run_fsdp_standalone.py qwen
+python3 -u run_tran_plain.py llama
 
 # ========================================
 # VIEW RESULTS
@@ -1911,7 +1866,7 @@ python3 -u run_fsdp_standalone.py qwen
 ls -lh output/train_*.json
 
 # View specific result
-cat output/train_hf_llama.json
+cat output/train_tran_llama.json
 
 # Compare throughput across frameworks
 for f in output/train_*_llama.json; do
@@ -1923,7 +1878,7 @@ done
 # ========================================
 
 # Check GPUs
-nvidia-smi              # NVIDIA
+nvidia-smi              # NVD
 rocm-smi                # AMD
 watch -n 1 nvidia-smi   # Continuous monitoring
 
@@ -1975,45 +1930,39 @@ python3 compare.py --results-dir ./output
 
 | Framework | Script | Output Files | When to Use |
 |-----------|--------|--------------|-------------|
-| HuggingFace | `run_hf_standalone.py` | `train_hf_*.json` | Standard training, easy debugging |
-| FSDP | `run_fsdp_standalone.py` | `train_fsdp_*.json` | Memory efficiency, large models |
-| NeMo | `run_nemo_standalone.py` | `train_nemo_*.json` | Advanced features, FP8, best performance |
-| Primus (AMD) | `run_primus_all.sh` | `train_primus_*.json` | AMD-optimized, MI300X |
+| Transformers | `run_tran_plain.py` | `train_tran_*.json` | Standard training, easy debugging |
+| NeMo | `run_nemo_plain.py` | `train_nemo_*.json` | Advanced features, FP8, best performance |
+| Prim (AMD) | `run_prim_all.sh` | `train_prim_*.json` | AMD-optimized, MI300X |
 
 ### Common Troubleshooting
 
 ```bash
 # Not seeing logs? Use -u flag
-python3 -u run_hf_standalone.py llama
+python3 -u run_tran_plain.py llama
 
 # Kill all Python processes
 pkill -f python
 
-# Reset GPUs (NVIDIA, requires sudo)
+# Reset GPUs (NVD, requires sudo)
 sudo nvidia-smi --gpu-reset
 
 # Check GPU memory
 nvidia-smi --query-gpu=memory.free --format=csv
 
-# FSDP with 8 GPUs
-torchrun --nproc_per_node=8 run_fsdp_standalone.py llama
-
 # Save logs to file
-python3 -u run_hf_standalone.py llama 2>&1 | tee output/hf_llama.log
+python3 -u run_tran_plain.py llama 2>&1 | tee output/hf_llama.log
 ```
 
 ### Output Files Reference
 
 ```bash
 output/
-├── train_hf_llama.json          # HuggingFace Llama
-├── train_hf_qwen.json           # HuggingFace Qwen
-├── train_fsdp_llama.json        # FSDP Llama
-├── train_fsdp_qwen.json         # FSDP Qwen
+├── train_tran_llama.json          # Transformers Llama
+├── train_tran_qwen.json           # Transformers Qwen
 ├── train_nemo_llama.json        # NeMo Llama
 ├── train_nemo_qwen.json         # NeMo Qwen
-├── train_primus_llama.json      # Primus Llama (AMD)
-└── train_primus_qwen.json       # Primus Qwen (AMD)
+├── train_prim_llama.json      # Prim Llama (AMD)
+└── train_prim_qwen.json       # Prim Qwen (AMD)
 ```
 
 ---

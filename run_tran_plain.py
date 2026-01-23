@@ -24,7 +24,7 @@ from transformers import (
 )
 from torch.utils.data import Dataset, IterableDataset
 import json
-from utils import BenchmarkCallbackHF
+from utils import BenchmarkCallbackTran
 
 # Configure logging
 logging.basicConfig(
@@ -138,13 +138,13 @@ def train_llama():
     
     # Add benchmark callback if available
     try:
-        benchmark_callback = BenchmarkCallbackHF(
+        benchmark_callback = BenchmarkCallbackTran(
             output_dir="./output",
             platform="auto",
             model_name="llama",
             parallel_strategy="ddp",
             profiler_config={"enabled": False},
-            framework="hf"
+            framework="tran"
         )
         trainer.add_callback(benchmark_callback)
     except Exception as e:
@@ -236,13 +236,13 @@ def train_qwen():
     
     # Add benchmark callback if available
     try:
-        benchmark_callback = BenchmarkCallbackHF(
+        benchmark_callback = BenchmarkCallbackTran(
             output_dir="./output",
             platform="auto",
             model_name="qwen",
             parallel_strategy="ddp",
             profiler_config={"enabled": False},
-            framework="hf"
+            framework="tran"
         )
         trainer.add_callback(benchmark_callback)
     except Exception as e:
@@ -269,18 +269,21 @@ def main():
         logger.warning(f"   To use all GPUs: torchrun --nproc_per_node={num_gpus} {sys.argv[0]}")
     
     if len(sys.argv) < 2:
-        logger.error("Usage: python run_hf_standalone.py <model>")
-        logger.error("  model: 'llama' or 'qwen'")
-        sys.exit(1)
-    
-    model = sys.argv[1]
-    if model == "llama":
+        # No model specified, train all models
+        logger.info("No model specified, training all models")
         train_llama()
-    elif model == "qwen":
         train_qwen()
     else:
-        logger.error(f"Unknown model: {model}")
-        sys.exit(1)
+        model = sys.argv[1]
+        if model == "llama":
+            train_llama()
+        elif model == "qwen":
+            train_qwen()
+        else:
+            logger.error(f"Unknown model: {model}")
+            logger.error("Usage: python run_tran_plain.py [model]")
+            logger.error("  model: 'llama' or 'qwen' (optional, trains all if omitted)")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

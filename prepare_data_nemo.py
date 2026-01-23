@@ -32,14 +32,14 @@ def prepare_data():
         for entry in dataset:
             text = entry[args.text_column]
             if text and text.strip():
-                # Megatron-LM preprocessor expects a JSON object per line with a 'text' key
+                # Mega-LM preprocessor expects a JSON object per line with a 'text' key
                 json.dump({"text": text}, f, ensure_ascii=False)
                 f.write("\n")
                 
     print(f"  + Successfully saved {len(dataset)} examples to {args.output_file}")
     print("\nNext step: Run the NeMo preprocessor to convert JSONL to .bin and .idx format.")
     print("Example command for Llama 3.1 (uses HuggingFace tokenizer):")
-    print(f"python /opt/NeMo/scripts/nlp_language_modeling/preprocess_data_for_megatron.py \\")
+    print(f"python /opt/NeMo/scripts/nlp_language_modeling/preprocess_data_for_mega.py \\")
     print(f"    --input {args.output_file} \\")
     print(f"    --output-prefix /data/llama_dataset \\")
     print(f"    --tokenizer-library huggingface \\")

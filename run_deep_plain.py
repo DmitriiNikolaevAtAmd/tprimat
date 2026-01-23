@@ -203,9 +203,9 @@ def main():
         import subprocess
         import time
         
-        # Note: For DeepSpeed, you typically need to use deepspeed launcher
+        # Note: For Deep, you typically need to use deepspeed launcher
         # instead of python directly:
-        # deepspeed --num_gpus=8 run_deepspeed_standalone.py llama
+        # deepspeed --num_gpus=8 run_deep_plain.py llama
         subprocess.run([sys.executable, __file__, "llama"])
         time.sleep(10)
         subprocess.run([sys.executable, __file__, "qwen"])

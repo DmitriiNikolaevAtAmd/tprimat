@@ -1,10 +1,10 @@
 #!/bin/bash
-# Run Primus training for Llama 3.1 8B and capture logs for benchmarking
+# Run Primus training for Qwen 2.5 7B and capture logs for benchmarking
 
 set -e
 
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║        Primus Training: Llama 3.1 8B                      ║"
+echo "║        Primus Training: Qwen 2.5 7B                       ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -23,8 +23,8 @@ echo ""
 
 # Configuration (with fallbacks to environment or defaults from config.yaml)
 PRIMUS_PATH="${PRIMUS_PATH:-${CONFIG_PRIMUS_PATH:-/workspace/Primus}}"
-MODEL="llama"
-CONFIG_FILE="${CONFIG_LLAMA_PRIMUS_CONFIG:-examples/megatron/configs/MI300X/llama3.1_8B-BF16-pretrain.yaml}"
+MODEL="qwen"
+CONFIG_FILE="${CONFIG_QWEN_PRIMUS_CONFIG:-examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml}"
 TRAIN_ITERS="${TRAIN_ITERS:-${CONFIG_TRAIN_ITERS:-10}}"
 OUTPUT_DIR="${CONFIG_OUTPUT_DIR:-$TPRIMAT_PATH/output}"
 # Ensure OUTPUT_DIR is absolute and normalized
@@ -38,9 +38,9 @@ GLOBAL_BATCH_SIZE="${CONFIG_GLOBAL_BATCH_SIZE:-128}"
 SEQ_LENGTH="${CONFIG_SEQ_LENGTH:-2048}"
 
 # Parallelism parameters for AMD
-TP="${CONFIG_LLAMA_AMD_TP:-1}"
-PP="${CONFIG_LLAMA_AMD_PP:-1}"
-GACC="${CONFIG_LLAMA_AMD_GACC:-16}"
+TP="${CONFIG_QWEN_AMD_TP:-1}"
+PP="${CONFIG_QWEN_AMD_PP:-1}"
+GACC="${CONFIG_QWEN_AMD_GACC:-16}"
 
 # Profiling parameters
 PROF_ENABLED="${CONFIG_PROF_ENABLED:-false}"
@@ -98,7 +98,7 @@ if [ ! -f "$PRIMUS_PATH/$CONFIG_FILE" ]; then
     echo "  x Config file not found: $PRIMUS_PATH/$CONFIG_FILE"
     echo ""
     echo "Available configs:"
-    ls -1 "$PRIMUS_PATH/examples/megatron/configs/MI300X/" 2>/dev/null | grep -i llama || echo "  (none found)"
+    ls -1 "$PRIMUS_PATH/examples/megatron/configs/MI300X/" 2>/dev/null | grep -i qwen || echo "  (none found)"
     echo ""
     exit 1
 fi
@@ -209,7 +209,7 @@ export EXP="$PATCHED_CONFIG"
 # Run training and capture logs
 echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --lr_decay_style cosine --lr_decay_iters $TRAIN_ITERS --weight_decay $WEIGHT_DECAY"
 
-bash ./examples/run_pretrain.sh \
+bash ./examples/run_train.sh \
     --train_iters $TRAIN_ITERS \
     --lr $LEARNING_RATE \
     --min_lr $MIN_LEARNING_RATE \
@@ -224,12 +224,9 @@ EXIT_CODE=${PIPESTATUS[0]}
 if [ "$PROF_ENABLED" = "true" ]; then
     echo "  * Cleaning up profile traces..."
     # Primus/Megatron usually saves traces with rank/timestamp in the name
-    # We want to match the NVIDIA layout: profile_rocm_llama_PARALLEL.pt.trace.json
     STRATEGY="${PARALLEL:-unknown}"
     TARGET_NAME="profile_rocm_${MODEL}_${STRATEGY}.pt.trace.json"
     
-    # Find the largest json file in output dir created in the last minute (likely the trace)
-    # or look for files containing 'trace' and 'json'
     LATEST_TRACE=$(find "$OUTPUT_DIR" -name "*.json" -not -name "train_*" -not -name "config.json" -newer "$LOG_FILE" | head -1)
     if [ -n "$LATEST_TRACE" ]; then
         mv "$LATEST_TRACE" "$OUTPUT_DIR/$TARGET_NAME"
@@ -262,7 +259,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     python3 extract_metrics.py \
         --log-file "$LOG_FILE" \
         --model-name "$MODEL" \
-        --output "$OUTPUT_DIR/train_primus_${MODEL}.json" \
+        --output "$OUTPUT_DIR/train_prim_${MODEL}.json" \
         --num-gpus "$NUM_GPUS" \
         --global-batch-size "$GLOBAL_BATCH_SIZE" \
         --sequence-length "$SEQ_LENGTH" \
@@ -273,7 +270,7 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo ""
         echo "  + Metrics extracted successfully!"
         echo ""
-        echo "Results saved to: $OUTPUT_DIR/train_primus_${MODEL}.json"
+        echo "Results saved to: $OUTPUT_DIR/train_prim_${MODEL}.json"
         echo ""
         
         # Note: Cleanup is disabled - all logs are preserved

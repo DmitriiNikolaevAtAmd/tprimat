@@ -342,7 +342,7 @@ def main():
         print(f"Expected files in {args.results_dir}/:")
         print("  New format:")
         print("    - train_nemo_llama.json, train_nemo_qwen.json (for NVIDIA)")
-        print("    - train_primus_llama.json, train_primus_qwen.json (for AMD)")
+        print("    - train_prim_llama.json, train_prim_qwen.json (for AMD)")
         print("  Old format (backward compatible):")
         print("    - benchmark_cuda_llama.json, benchmark_cuda_qwen.json (for NVIDIA)")
         print("    - benchmark_rocm_llama.json, benchmark_rocm_qwen.json (for AMD)")

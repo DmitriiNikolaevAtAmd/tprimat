@@ -38,7 +38,7 @@ def train_llama():
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
     logger.info("Creating Llama training recipe...")
-    recipe = llm.llama31_8b.pretrain_recipe(
+    recipe = llm.llama31_8b.train_recipe(
         name="llama31_8b_pretrain",
         dir="/data",
         num_nodes=1,
@@ -120,7 +120,7 @@ def train_qwen():
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
     logger.info("Creating Qwen training recipe...")
-    recipe = llm.qwen25_7b.pretrain_recipe(
+    recipe = llm.qwen25_7b.train_recipe(
         name="qwen25_7b_pretrain",
         dir="/data",
         num_nodes=1,
@@ -202,19 +202,22 @@ def main():
     logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
     
     if len(sys.argv) < 2:
-        logger.error("Usage: python run_nemo_standalone.py <model>")
-        logger.error("  model: 'llama' or 'qwen'")
-        sys.exit(1)
-    
-    model = sys.argv[1]
-    logger.info(f"Training model: {model}")
-    if model == "llama":
+        # No model specified, train all models
+        logger.info("No model specified, training all models")
         train_llama()
-    elif model == "qwen":
         train_qwen()
     else:
-        logger.error(f"Unknown model: {model}")
-        sys.exit(1)
+        model = sys.argv[1]
+        logger.info(f"Training model: {model}")
+        if model == "llama":
+            train_llama()
+        elif model == "qwen":
+            train_qwen()
+        else:
+            logger.error(f"Unknown model: {model}")
+            logger.error("Usage: python run_nemo_plain.py [model]")
+            logger.error("  model: 'llama' or 'qwen' (optional, trains all if omitted)")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

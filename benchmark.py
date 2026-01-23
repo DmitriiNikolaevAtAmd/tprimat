@@ -63,7 +63,7 @@ def extract_metrics(log_file: str, model: str, parallel_strategy: str, output_di
     from config_loader import load_config
     config = load_config()
     
-    output_path = os.path.join(output_dir, f"train_primus_{model}.json")
+    output_path = os.path.join(output_dir, f"train_prim_{model}.json")
     print(f"  Extracting metrics to: {output_path}")
     
     # Get num_gpus based on detected platform (default to nvidia if detection fails)

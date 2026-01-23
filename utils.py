@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Any, Tuple
 import torch
 from lightning.pytorch.callbacks import Callback
 
-# Try to import HuggingFace trainer callback
+# Try to import Transformers trainer callback
 try:
     from transformers import TrainerCallback, TrainerState, TrainerControl, TrainingArguments
     HF_AVAILABLE = True
@@ -207,9 +207,9 @@ def detect_gpu_info() -> Dict[str, Any]:
 
 def extract_step_times_from_log(log_file: str) -> Tuple[List[float], List[float], List[float], List[float]]:
     """
-    Extract step timing and loss from Primus/Megatron logs.
+    Extract step timing and loss from Prim/Mega logs.
     
-    Primus format:
+    Prim format:
     elapsed time per iteration (ms): 9836.3/21761.7
     lm loss: 1.189761E+01
     learning rate: 5.000000E-06
@@ -224,7 +224,7 @@ def extract_step_times_from_log(log_file: str) -> Tuple[List[float], List[float]
     
     with open(log_file, 'r') as f:
         for line in f:
-            # Primus format: elapsed time per iteration (ms): 9836.3/21761.7
+            # Prim format: elapsed time per iteration (ms): 9836.3/21761.7
             # First value is current iteration, second is average
             match = re.search(r'elapsed time per iteration \(ms\):\s*([0-9.]+)/([0-9.]+)', line)
             if match:
@@ -278,8 +278,8 @@ def extract_memory_from_log(log_file: str) -> List[float]:
     Extract GPU memory usage from log.
     
     Supports multiple formats:
-    - Primus/Megatron: hip mem usage/free/total/usage_ratio: 117.99GB/74.00GB/191.98GB/61.46%
-    - Megatron-LM: allocated: 60.2GB, max allocated: 60.3GB, reserved: 62.1GB
+    - Prim/Mega: hip mem usage/free/total/usage_ratio: 117.99GB/74.00GB/191.98GB/61.46%
+    - Mega-LM: allocated: 60.2GB, max allocated: 60.3GB, reserved: 62.1GB
     - Generic: memory usage: 60.5 GB
     
     Note: "hip" refers to AMD's HIP (Heterogeneous Interface for Portability),
@@ -289,7 +289,7 @@ def extract_memory_from_log(log_file: str) -> List[float]:
     
     with open(log_file, 'r') as f:
         for line in f:
-            # Format 1: Primus/ROCm - hip mem usage/free/total/usage_ratio: 117.99GB/...
+            # Format 1: Prim/ROCm - hip mem usage/free/total/usage_ratio: 117.99GB/...
             match = re.search(r'hip mem (?:usage|allocated)[^:]*:\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
             if match:
                 try:
@@ -300,7 +300,7 @@ def extract_memory_from_log(log_file: str) -> List[float]:
                 except (ValueError, IndexError):
                     pass
             
-            # Format 2: Megatron-LM - allocated: 60.2GB or max allocated: 60.3GB
+            # Format 2: Mega-LM - allocated: 60.2GB or max allocated: 60.3GB
             match = re.search(r'(?:max )?allocated:\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
             if match:
                 try:
@@ -445,7 +445,7 @@ class BenchmarkCallback(Callback):
             model_name: Name of the model (e.g., 'llama', 'qwen')
             parallel_strategy: Parallelism strategy name (e.g., 'minimal_communication', 'balanced')
             profiler_config: Dictionary with profiling configuration (from config.yaml)
-            framework: Framework name for output filename (e.g., 'hf', 'fsdp', 'nemo')
+            framework: Framework name for output filename (e.g., 'tran', 'nemo')
         """
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -510,7 +510,7 @@ class BenchmarkCallback(Callback):
             # Detect software stack and version
             # ROCm sets torch.version.hip, CUDA sets torch.version.cuda
             is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-            software_stack = "primus" if is_rocm else "nemo"
+            software_stack = "prim" if is_rocm else "nemo"
             software_version = torch.version.hip if is_rocm else torch.version.cuda
             
             self.gpu_info = {
@@ -784,8 +784,8 @@ class BenchmarkCallback(Callback):
             print(f"{'='*60}\n")
 
 
-class BenchmarkCallbackHF(TrainerCallback):
-    """HuggingFace Trainer-compatible callback for collecting performance metrics."""
+class BenchmarkCallbackTran(TrainerCallback):
+    """Transformers Trainer-compatible callback for collecting performance metrics."""
     
     def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, 
                  parallel_strategy: str = "unknown", profiler_config: Optional[Dict] = None, framework: str = None):
@@ -794,9 +794,9 @@ class BenchmarkCallbackHF(TrainerCallback):
             output_dir: Directory to save benchmark results
             platform: 'cuda', 'rocm', or 'auto' for auto-detection
             model_name: Name of the model (e.g., 'llama', 'qwen')
-            parallel_strategy: Parallelism strategy name (e.g., 'ddp', 'fsdp')
+            parallel_strategy: Parallelism strategy name (e.g., 'ddp')
             profiler_config: Dictionary with profiling configuration (from config.yaml)
-            framework: Framework name for output filename (e.g., 'hf', 'fsdp', 'deepspeed')
+            framework: Framework name for output filename (e.g., 'tran', 'deep')
         """
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -850,7 +850,7 @@ class BenchmarkCallbackHF(TrainerCallback):
             gpu_cores = get_gpu_core_count(device_name, device_props)
             
             is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-            software_stack = "primus" if is_rocm else "nemo"
+            software_stack = "prim" if is_rocm else "nemo"
             software_version = torch.version.hip if is_rocm else torch.version.cuda
             
             self.gpu_info = {
@@ -1042,8 +1042,8 @@ def compare_benchmarks(results_dir: str = "./output") -> Dict:
         # NVIDIA: nemo (new) or cuda (old)
         if software_stack in ['nemo', 'cuda']:
             nvidia_results.append(data)
-        # AMD: primus (new) or rocm (old)
-        elif software_stack in ['primus', 'rocm']:
+        # AMD: prim (new) or rocm (old)
+        elif software_stack in ['prim', 'rocm']:
             amd_results.append(data)
         # Fallback to platform field (for older files)
         elif platform in ['cuda', 'nvd', 'nvidia']:

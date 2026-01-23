@@ -12,4 +12,4 @@ docker run --gpus all -it --rm \
     -v /data:/data \
     -w /workspace/tprimat \
     -e HF_TOKEN="${HF_TOKEN}" \
-    primat:nvidia "$@"
+    primat:nvd "$@"

@@ -5,7 +5,7 @@ Extract benchmark metrics from Primus training logs.
 Usage:
     python3 extract_metrics.py \
         --log-file primus_training.log \
-        --output benchmark_results/train_primus_manual.json \
+        --output benchmark_results/train_prim_manual.json \
         --num-gpus 8 \
         --global-batch-size 128 \
         --sequence-length 2048
@@ -163,7 +163,7 @@ Examples:
   # With explicit output path
   python3 extract_metrics.py \\
       --log-file primus_training.log \\
-      --output output/train_primus_llama.json \\
+      --output output/train_prim_llama.json \\
       --num-gpus 8 \\
       --global-batch-size 128 \\
       --sequence-length 2048
@@ -171,7 +171,7 @@ Examples:
     )
     
     parser.add_argument('--log-file', required=True, 
-                       help='Primus/Megatron training log file')
+                       help='Prim/Mega training log file')
     parser.add_argument('--output', 
                        help='Output JSON file path (if not specified, uses output/train_<framework>_<model>.json)')
     parser.add_argument('--model-name', 

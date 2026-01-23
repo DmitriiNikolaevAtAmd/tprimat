@@ -42,7 +42,7 @@ models:
     num_layers: 28
     hidden_size: 3584
     num_attention_heads: 28
-    primus_config: "examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml"
+    prim_config: "examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml"
     nemo_recipe: "qwen25_7b.pretrain_recipe"
     # Model-specific data paths (optional, overrides global training.data)
     # Using same dataset as Llama for benchmarking (computational workload is what matters)

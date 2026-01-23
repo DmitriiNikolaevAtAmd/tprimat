@@ -43,7 +43,7 @@ def run_pretrain():
     tp_size = parallelism['tensor_model_parallel_size']
     pp_size = parallelism['pipeline_model_parallel_size']
     
-    recipe = llm.llama31_8b.pretrain_recipe(
+    recipe = llm.llama31_8b.train_recipe(
         name=f"{config.models.llama.name}_pretrain",
         dir=config.paths.nemo.data_dir,
         num_nodes=1,
