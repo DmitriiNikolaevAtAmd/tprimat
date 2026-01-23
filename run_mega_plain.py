@@ -20,6 +20,13 @@ import time
 from pathlib import Path
 from datetime import datetime
 
+# Try to import bitsandbytes for 8-bit optimizer
+try:
+    import bitsandbytes as bnb
+    HAS_BITSANDBYTES = True
+except ImportError:
+    HAS_BITSANDBYTES = False
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -139,25 +146,15 @@ def train_model(model_name: str, model_config: dict):
         batch_size = model_config['micro_batch_size']
         num_steps = model_config['num_steps']
         
-        # Setup optimizer - use 8-bit Adam for memory efficiency on single GPU
-        if world_size == 1:
-            try:
-                import bitsandbytes as bnb
-                optimizer = bnb.optim.Adam8bit(
-                    model.parameters(),
-                    lr=model_config['learning_rate'],
-                    betas=(0.9, 0.95),
-                    eps=1e-8
-                )
-                logger.info("Using 8-bit Adam optimizer for memory efficiency")
-            except ImportError:
-                logger.warning("bitsandbytes not available, using regular Adam")
-                optimizer = torch.optim.Adam(
-                    model.parameters(),
-                    lr=model_config['learning_rate'],
-                    betas=(0.9, 0.95),
-                    eps=1e-8
-                )
+        # Setup optimizer - use 8-bit for memory efficiency on all GPUs
+        if HAS_BITSANDBYTES:
+            optimizer = bnb.optim.Adam8bit(
+                model.parameters(),
+                lr=model_config['learning_rate'],
+                betas=(0.9, 0.95),
+                eps=1e-8
+            )
+            logger.info("Using 8-bit Adam optimizer (saves ~75% optimizer memory)")
         else:
             optimizer = torch.optim.Adam(
                 model.parameters(),
@@ -165,6 +162,7 @@ def train_model(model_name: str, model_config: dict):
                 betas=(0.9, 0.95),
                 eps=1e-8
             )
+            logger.warning("bitsandbytes not available, using standard Adam (higher memory)")
         
         logger.info(f"Configuration:")
         logger.info(f"  Sequence length: {seq_length}")
