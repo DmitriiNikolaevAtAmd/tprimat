@@ -233,8 +233,11 @@ def main():
         print("CUDA is not available!")
         sys.exit(1)
     
-    if len(sys.argv) > 1:
-        model = sys.argv[1]
+    # Filter out DeepSpeed arguments (--local_rank, etc.)
+    model_args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
+    
+    if len(model_args) > 0:
+        model = model_args[0]
         if model == "llama":
             train_llama()
         elif model == "qwen":
