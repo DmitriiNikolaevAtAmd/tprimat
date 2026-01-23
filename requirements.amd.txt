@@ -1,0 +1,31 @@
+# AMD Container Requirements
+# PyTorch ROCm support (installed from base image)
+
+# Core training frameworks
+transformers>=4.36.0
+accelerate>=0.25.0
+datasets>=2.14.0
+
+# AMD-specific frameworks
+# deepspeed (ROCm-compatible version if available)
+# nemo-toolkit[all]>=1.20.0 (if ROCm compatible)
+
+# AMD Primus framework (if available via pip or git)
+# primus @ git+https://github.com/amd/primus.git
+
+# Memory optimization (ROCm-compatible)
+# bitsandbytes-rocm (if available)
+
+# Performance
+# flash-attn (ROCm version if available)
+ninja
+
+# Utilities
+scipy
+sentencepiece
+protobuf
+pydantic
+
+# Monitoring
+tensorboard
+wandb

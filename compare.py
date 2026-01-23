@@ -149,8 +149,8 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     has_data = False
     
     for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks and 'raw_loss_values' in benchmarks[key]:
-            loss_values = benchmarks[key]['raw_loss_values']
+        if key in benchmarks and 'loss_values' in benchmarks[key]:
+            loss_values = benchmarks[key]['loss_values']
             if loss_values:
                 steps = range(len(loss_values))
                 style = style_map[key]
@@ -180,8 +180,8 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     has_data = False
     
     for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks and 'raw_learning_rates' in benchmarks[key]:
-            lr_values = benchmarks[key]['raw_learning_rates']
+        if key in benchmarks and 'learning_rates' in benchmarks[key]:
+            lr_values = benchmarks[key]['learning_rates']
             if lr_values:
                 steps = range(len(lr_values))
                 style = style_map[key]
@@ -212,8 +212,8 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     has_data = False
     
     for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks and 'raw_step_times' in benchmarks[key]:
-            step_times = benchmarks[key]['raw_step_times']
+        if key in benchmarks and 'step_times' in benchmarks[key]:
+            step_times = benchmarks[key]['step_times']
             if step_times:
                 steps = range(len(step_times))
                 style = style_map[key]
@@ -391,7 +391,7 @@ def main():
             perf = data['performance_metrics']
             tps_gpu = perf.get('tokens_per_second_per_gpu', 0)
             step_time = perf.get('avg_step_time_seconds', 0)
-            loss_values = data.get('raw_loss_values', [])
+            loss_values = data.get('loss_values', [])
             avg_loss = sum(loss_values) / len(loss_values) if loss_values else 0
             
             print(f"{key:<25} {tps_gpu:>15,.1f} {step_time:>15.2f} {avg_loss:>12.2f}")

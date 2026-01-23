@@ -115,6 +115,36 @@ def train_model(model_name, model_short_name):
     rank = int(os.environ.get('RANK', 0))
     world_size = int(os.environ.get('WORLD_SIZE', 1))
     
+    # Detect platform and get GPU info
+    if torch.cuda.is_available():
+        device_props = torch.cuda.get_device_properties(0)
+        device_name = torch.cuda.get_device_name(0)
+        is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+        platform = "amd" if is_rocm else "nvd"
+        software_stack = "prim" if is_rocm else "nemo"
+        software_version = torch.version.hip if is_rocm else torch.version.cuda
+        
+        # Approximate GPU cores
+        gpu_cores = 16896 if "h100" in device_name.lower() else 6912
+        
+        gpu_info = {
+            "device_count": world_size,
+            "device_name": device_name,
+            "total_memory_gb": device_props.total_memory / 1e9,
+            "gpu_cores": gpu_cores,
+            "pytorch_version": torch.__version__,
+            "software_stack": software_stack,
+            "software_version": software_version,
+        }
+    else:
+        platform = "cpu"
+        gpu_info = {}
+    
+    # Track metrics
+    step_times = []
+    loss_values = []
+    learning_rates = []
+    
     if rank == 0:
         print(f"Loading model: {model_name}")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
@@ -158,12 +188,13 @@ def train_model(model_name, model_short_name):
     model_engine.train()
     total_steps = 500
     step = 0
-    total_loss = 0.0
     start_time = time.time()
     
     for batch_idx, batch in enumerate(dataloader):
         if step >= total_steps:
             break
+        
+        step_start = time.time()
         
         input_ids = batch['input_ids'].to(model_engine.device)
         labels = batch['labels'].to(model_engine.device)
@@ -178,13 +209,20 @@ def train_model(model_name, model_short_name):
         # Optimizer step
         model_engine.step()
         
-        total_loss += loss.item()
+        # Track metrics
+        step_time = time.time() - step_start
+        step_times.append(step_time)
+        loss_values.append(loss.item())
+        # Get learning rate from optimizer
+        current_lr = optimizer.param_groups[0]['lr'] if optimizer else 0.0003
+        learning_rates.append(current_lr)
+        
         step += 1
         
-        if rank == 0:
-            avg_loss = total_loss / step
+        if rank == 0 and step % 10 == 0:
+            avg_loss = sum(loss_values) / len(loss_values)
             elapsed = time.time() - start_time
-            print(f"Step {step}/{total_steps}, Loss: {avg_loss:.4f}, Time: {elapsed:.2f}s")
+            print(f"Step {step}/{total_steps}, Loss: {avg_loss:.4f}, Step Time: {step_time:.3f}s, Elapsed: {elapsed:.2f}s")
         
         if step >= total_steps:
             break
@@ -193,29 +231,74 @@ def train_model(model_name, model_short_name):
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
         
-        # Save benchmark results
-        import json
-        from pathlib import Path
-        
-        avg_loss = total_loss / step if step > 0 else 0.0
-        results = {
-            "model_name": model_short_name,
-            "framework": "deep",
-            "total_steps": step,
-            "total_time": total_time,
-            "avg_loss": avg_loss,
-            "final_loss": loss.item() if step > 0 else 0.0,
-            "world_size": world_size,
-        }
-        
-        output_dir = Path("output")
-        output_dir.mkdir(exist_ok=True)
-        output_file = output_dir / f"train_deep_{model_short_name}.json"
-        
-        with open(output_file, 'w') as f:
-            json.dump(results, f, indent=2)
-        
-        print(f"Results saved to {output_file}")
+        # Calculate final metrics (unified format)
+        if len(step_times) > 1:
+            # Skip first step (warmup)
+            step_times_no_warmup = step_times[1:]
+            
+            avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
+            steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
+            
+            # Calculate token-based throughput
+            micro_batch = 1
+            grad_accum = 8
+            global_batch_size = micro_batch * grad_accum * world_size
+            seq_length = 2048
+            tokens_per_step = global_batch_size * seq_length
+            tokens_per_second = tokens_per_step / avg_step_time
+            tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
+            
+            # Build unified results structure
+            from datetime import datetime
+            import json
+            from pathlib import Path
+            from utils import round_floats
+            
+            results = {
+                "platform": platform,
+                "gpu_info": gpu_info,
+                "timestamp": datetime.now().isoformat(),
+                "training_config": {
+                    "max_steps": total_steps,
+                    "global_batch_size": global_batch_size,
+                    "micro_batch_size": micro_batch,
+                    "sequence_length": seq_length,
+                    "num_gpus": world_size,
+                    "parallel_strategy": "zero3",
+                    "gradient_accumulation_steps": grad_accum,
+                },
+                "performance_metrics": {
+                    "total_steps": len(step_times),
+                    "total_time_seconds": total_time,
+                    "avg_step_time_seconds": avg_step_time,
+                    "min_step_time_seconds": min(step_times_no_warmup),
+                    "max_step_time_seconds": max(step_times_no_warmup),
+                    "steps_per_second": steps_per_second,
+                    "tokens_per_second": tokens_per_second,
+                    "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
+                    "throughput_per_gpu_core": steps_per_second / gpu_info["gpu_cores"] if gpu_info.get("gpu_cores", 0) > 0 else 0,
+                },
+                "step_times": step_times,
+                "loss_values": loss_values,
+                "learning_rates": learning_rates,
+            }
+            
+            print(f"Average step time: {avg_step_time:.3f}s")
+            print(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
+            print(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
+            
+            # Save results
+            output_dir = Path("output")
+            output_dir.mkdir(exist_ok=True)
+            output_file = output_dir / f"train_deep_{model_short_name}.json"
+            
+            # Round all floats to 5 decimal places
+            results_rounded = round_floats(results, precision=5)
+            
+            with open(output_file, 'w') as f:
+                json.dump(results_rounded, f, indent=2)
+            
+            print(f"Results saved to {output_file}")
 
 
 def train_llama():

@@ -129,9 +129,9 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
             "tokens_per_second": tokens_per_second,
             "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
         },
-        "raw_step_times": step_times,
-        "raw_loss_values": loss_values if loss_values else [],
-        "raw_learning_rates": learning_rates if learning_rates else [],
+        "step_times": step_times,
+        "loss_values": loss_values if loss_values else [],
+        "learning_rates": learning_rates if learning_rates else [],
         "source_log_file": str(Path(log_file).absolute())
     }
     

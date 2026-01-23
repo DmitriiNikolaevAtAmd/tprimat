@@ -75,19 +75,35 @@ def train_model(model_name: str, model_config: dict):
     set_seed(42)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    # Track metrics
-    metrics = {
-        'model_name': model_name,
-        'framework': 'mega',
-        'timestamp': datetime.now().isoformat(),
-        'rank': rank,
-        'world_size': world_size,
-        'config': model_config,
-        'steps': [],
-        'total_training_time': 0.0,
-        'avg_step_time': 0.0,
-        'throughput_tokens_per_sec': 0.0,
-    }
+    # Detect platform and get GPU info
+    if torch.cuda.is_available():
+        device_props = torch.cuda.get_device_properties(0)
+        device_name = torch.cuda.get_device_name(0)
+        is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+        platform = "amd" if is_rocm else "nvd"
+        software_stack = "prim" if is_rocm else "nemo"
+        software_version = torch.version.hip if is_rocm else torch.version.cuda
+        
+        # Approximate GPU cores (will update with utils function if needed)
+        gpu_cores = 16896 if "h100" in device_name.lower() else 6912  # H100 or A100 default
+        
+        gpu_info = {
+            "device_count": world_size,
+            "device_name": device_name,
+            "total_memory_gb": device_props.total_memory / 1e9,
+            "gpu_cores": gpu_cores,
+            "pytorch_version": torch.__version__,
+            "software_stack": software_stack,
+            "software_version": software_version,
+        }
+    else:
+        platform = "cpu"
+        gpu_info = {}
+    
+    # Track step times and losses for unified format
+    step_times = []
+    loss_values = []
+    learning_rates = []
     
     try:
         from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
@@ -216,17 +232,13 @@ def train_model(model_name: str, model_config: dict):
             tokens_per_step = batch_size * seq_length * model_config['grad_accum_steps'] * world_size
             throughput = tokens_per_step / step_time
             
+            # Track metrics
+            step_times.append(step_time)
+            loss_values.append(avg_loss)
+            learning_rates.append(model_config['learning_rate'])  # Fixed LR for now
+            
             # Log metrics
             if rank == 0:
-                step_metrics = {
-                    'step': step + 1,
-                    'loss': avg_loss,
-                    'step_time': step_time,
-                    'throughput': throughput,
-                    'tokens_per_step': tokens_per_step,
-                }
-                metrics['steps'].append(step_metrics)
-                
                 logger.info(
                     f"Step {step + 1}/{num_steps} | "
                     f"Loss: {avg_loss:.4f} | "
@@ -243,23 +255,56 @@ def train_model(model_name: str, model_config: dict):
         
         training_time = time.time() - training_start
         
-        # Calculate final metrics
-        if rank == 0 and len(metrics['steps']) > 0:
-            step_times = [s['step_time'] for s in metrics['steps']]
-            throughputs = [s['throughput'] for s in metrics['steps']]
+        # Calculate final metrics (unified format)
+        if rank == 0 and len(step_times) > 1:
+            # Skip first step (warmup)
+            step_times_no_warmup = step_times[1:]
             
-            metrics['total_training_time'] = training_time
-            metrics['avg_step_time'] = sum(step_times) / len(step_times)
-            metrics['throughput_tokens_per_sec'] = sum(throughputs) / len(throughputs)
-            metrics['min_step_time'] = min(step_times)
-            metrics['max_step_time'] = max(step_times)
-            metrics['final_loss'] = metrics['steps'][-1]['loss']
+            avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
+            steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
+            
+            # Calculate token-based throughput
+            global_batch_size = batch_size * world_size * model_config['grad_accum_steps']
+            tokens_per_step = global_batch_size * seq_length
+            tokens_per_second = tokens_per_step / avg_step_time
+            tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
+            
+            # Build unified results structure
+            results = {
+                "platform": platform,
+                "gpu_info": gpu_info,
+                "timestamp": datetime.now().isoformat(),
+                "training_config": {
+                    "max_steps": num_steps,
+                    "global_batch_size": global_batch_size,
+                    "micro_batch_size": batch_size,
+                    "sequence_length": seq_length,
+                    "num_gpus": world_size,
+                    "parallel_strategy": "ddp",
+                    "gradient_accumulation_steps": model_config['grad_accum_steps'],
+                },
+                "performance_metrics": {
+                    "total_steps": len(step_times),
+                    "total_time_seconds": training_time,
+                    "avg_step_time_seconds": avg_step_time,
+                    "min_step_time_seconds": min(step_times_no_warmup),
+                    "max_step_time_seconds": max(step_times_no_warmup),
+                    "steps_per_second": steps_per_second,
+                    "tokens_per_second": tokens_per_second,
+                    "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
+                    "throughput_per_gpu_core": steps_per_second / gpu_info["gpu_cores"] if gpu_info.get("gpu_cores", 0) > 0 else 0,
+                },
+                "step_times": step_times,
+                "loss_values": loss_values,
+                "learning_rates": learning_rates,
+            }
             
             logger.info(f"=" * 80)
             logger.info(f"Training completed for {model_name}")
             logger.info(f"Total time: {training_time:.2f}s")
-            logger.info(f"Average step time: {metrics['avg_step_time']:.3f}s")
-            logger.info(f"Average throughput: {metrics['throughput_tokens_per_sec']:.0f} tokens/s")
+            logger.info(f"Average step time: {avg_step_time:.3f}s")
+            logger.info(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
+            logger.info(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
             logger.info(f"=" * 80)
             
             # Save results
@@ -267,20 +312,35 @@ def train_model(model_name: str, model_config: dict):
             output_dir.mkdir(exist_ok=True)
             output_file = output_dir / f"train_mega_{model_name}.json"
             
+            # Round all floats to 5 decimal places (matching BenchmarkCallback)
+            from utils import round_floats
+            results_rounded = round_floats(results, precision=5)
+            
             with open(output_file, 'w') as f:
-                json.dump(metrics, f, indent=2)
+                json.dump(results_rounded, f, indent=2)
             
             logger.info(f"Results saved to {output_file}")
     
     except Exception as e:
         logger.error(f"Training failed: {e}", exc_info=True)
-        if rank == 0:
-            metrics['error'] = str(e)
+        if rank == 0 and len(step_times) > 0:
+            # Save partial results on error
+            results = {
+                "platform": platform,
+                "gpu_info": gpu_info,
+                "timestamp": datetime.now().isoformat(),
+                "error": str(e),
+                "partial_results": {
+                    "steps_completed": len(step_times),
+                    "step_times": step_times,
+                    "loss_values": loss_values,
+                },
+            }
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
             output_file = output_dir / f"train_mega_{model_name}.json"
             with open(output_file, 'w') as f:
-                json.dump(metrics, f, indent=2)
+                json.dump(results, f, indent=2)
         raise
     
     finally:

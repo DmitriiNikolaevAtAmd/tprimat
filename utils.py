@@ -733,9 +733,9 @@ class BenchmarkCallback(Callback):
                     # Secondary metrics (for reference)
                     "throughput_per_gpu_core": steps_per_second / self.gpu_info["gpu_cores"] if self.gpu_info.get("gpu_cores", 0) > 0 else 0,
                 },
-                "raw_step_times": self.step_times,
-                "raw_loss_values": self.loss_values if self.loss_values else [],
-                "raw_learning_rates": self.learning_rates if self.learning_rates else [],
+                "step_times": self.step_times,
+                "loss_values": self.loss_values if self.loss_values else [],
+                "learning_rates": self.learning_rates if self.learning_rates else [],
             }
             
             # Save results (round all floats to 3 decimal places)
@@ -969,9 +969,9 @@ class BenchmarkCallbackTran(TrainerCallback):
                     "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
                     "throughput_per_gpu_core": steps_per_second / self.gpu_info["gpu_cores"] if self.gpu_info.get("gpu_cores", 0) > 0 else 0,
                 },
-                "raw_step_times": self.step_times,
-                "raw_loss_values": self.loss_values if self.loss_values else [],
-                "raw_learning_rates": self.learning_rates if self.learning_rates else [],
+                "step_times": self.step_times,
+                "loss_values": self.loss_values if self.loss_values else [],
+                "learning_rates": self.learning_rates if self.learning_rates else [],
             }
             
             # Save results

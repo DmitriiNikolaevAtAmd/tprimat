@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y \
     fish \
     && rm -rf /var/lib/apt/lists/*
 
+COPY requirements.amd.txt .
+RUN pip install --no-cache-dir -r requirements.amd.txt || true
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONHASHSEED=42
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
