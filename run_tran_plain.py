@@ -104,7 +104,7 @@ def train_llama():
     
     # Training arguments
     training_args = TrainingArguments(
-        output_dir="./output/llama_hf",
+        output_dir="./output/llama_tran",
         per_device_train_batch_size=per_device_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=0.0003,
@@ -202,7 +202,7 @@ def train_qwen():
     
     # Training arguments
     training_args = TrainingArguments(
-        output_dir="./output/qwen_hf",
+        output_dir="./output/qwen_tran",
         per_device_train_batch_size=per_device_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=0.0003,

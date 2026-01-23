@@ -192,6 +192,30 @@ def train_model(model_name, model_short_name):
     if rank == 0:
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
+        
+        # Save benchmark results
+        import json
+        from pathlib import Path
+        
+        avg_loss = total_loss / step if step > 0 else 0.0
+        results = {
+            "model_name": model_short_name,
+            "framework": "deep",
+            "total_steps": step,
+            "total_time": total_time,
+            "avg_loss": avg_loss,
+            "final_loss": loss.item() if step > 0 else 0.0,
+            "world_size": world_size,
+        }
+        
+        output_dir = Path("output")
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / f"train_deep_{model_short_name}.json"
+        
+        with open(output_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        print(f"Results saved to {output_file}")
 
 
 def train_llama():

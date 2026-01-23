@@ -95,19 +95,36 @@ def train_model(model_name: str, model_config: dict):
             tokenizer.pad_token = tokenizer.eos_token
         
         logger.info(f"Loading model: {model_config['hf_model']}")
-        model = AutoModelForCausalLM.from_pretrained(
-            model_config['hf_model'],
-            torch_dtype=torch.bfloat16,
-            trust_remote_code=True
-        )
         
-        # Apply tensor parallelism manually (simplified version)
-        device = torch.device(f'cuda:{local_rank}')
-        model = model.to(device)
+        # Load model with low CPU memory mode for single GPU
+        if world_size == 1:
+            logger.info("Single GPU detected - using memory optimization")
+            model = AutoModelForCausalLM.from_pretrained(
+                model_config['hf_model'],
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+                device_map="auto"  # Automatic device placement
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_config['hf_model'],
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True
+            )
+            # Apply tensor parallelism manually (simplified version)
+            device = torch.device(f'cuda:{local_rank}')
+            model = model.to(device)
+        
+        # Enable gradient checkpointing for memory efficiency
+        if hasattr(model, 'gradient_checkpointing_enable'):
+            model.gradient_checkpointing_enable()
+            logger.info("Enabled gradient checkpointing")
         
         # Use DDP for data parallelism
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
+            device = torch.device(f'cuda:{local_rank}')
             model = DDP(
                 model,
                 device_ids=[local_rank],
@@ -122,13 +139,32 @@ def train_model(model_name: str, model_config: dict):
         batch_size = model_config['micro_batch_size']
         num_steps = model_config['num_steps']
         
-        # Setup optimizer
-        optimizer = torch.optim.Adam(
-            model.parameters(),
-            lr=model_config['learning_rate'],
-            betas=(0.9, 0.95),
-            eps=1e-8
-        )
+        # Setup optimizer - use 8-bit Adam for memory efficiency on single GPU
+        if world_size == 1:
+            try:
+                import bitsandbytes as bnb
+                optimizer = bnb.optim.Adam8bit(
+                    model.parameters(),
+                    lr=model_config['learning_rate'],
+                    betas=(0.9, 0.95),
+                    eps=1e-8
+                )
+                logger.info("Using 8-bit Adam optimizer for memory efficiency")
+            except ImportError:
+                logger.warning("bitsandbytes not available, using regular Adam")
+                optimizer = torch.optim.Adam(
+                    model.parameters(),
+                    lr=model_config['learning_rate'],
+                    betas=(0.9, 0.95),
+                    eps=1e-8
+                )
+        else:
+            optimizer = torch.optim.Adam(
+                model.parameters(),
+                lr=model_config['learning_rate'],
+                betas=(0.9, 0.95),
+                eps=1e-8
+            )
         
         logger.info(f"Configuration:")
         logger.info(f"  Sequence length: {seq_length}")
@@ -152,6 +188,9 @@ def train_model(model_name: str, model_config: dict):
             
             for micro_step in range(model_config['grad_accum_steps']):
                 # Generate synthetic data
+                if world_size == 1:
+                    # For single GPU with device_map="auto", use model's device
+                    device = next(model.parameters()).device
                 input_ids = torch.randint(
                     0, tokenizer.vocab_size,
                     (batch_size, seq_length),

@@ -9,5 +9,7 @@ torchrun --nproc_per_node=$NUM_GPUS run_tran_plain.py llama
 torchrun --nproc_per_node=$NUM_GPUS run_tran_plain.py qwen
 torchrun --nproc_per_node=$NUM_GPUS run_mega_plain.py llama
 torchrun --nproc_per_node=$NUM_GPUS run_mega_plain.py qwen
+deepspeed --num_gpus=$NUM_GPUS run_deep_plain.py llama
+deepspeed --num_gpus=$NUM_GPUS run_deep_plain.py qwen
 python3 -u run_nemo_plain.py llama
 python3 -u run_nemo_plain.py qwen

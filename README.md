@@ -86,7 +86,7 @@ TPrimat is a comprehensive benchmarking suite for comparing LLM training perform
 ./run_docker_amd.sh ./run_amd_all_plain.sh
 ```
 
-**Result:** 6 benchmark files in `output/` (takes ~30-60 min)
+**Result:** 8 benchmark files in `output/` (takes ~40-80 min)
 
 ### ⚡ Quick Test - Single Framework
 
@@ -138,9 +138,10 @@ TPrimat includes plain training scripts for multiple frameworks, allowing you to
 ./run_amd_all_plain.sh
 ```
 
-**Generates 6 output files:**
+**Generates 8 output files:**
 - `output/train_tran_llama.json` & `output/train_tran_qwen.json`
 - `output/train_mega_llama.json` & `output/train_mega_qwen.json`
+- `output/train_deep_llama.json` & `output/train_deep_qwen.json`
 - `output/train_nemo_llama.json` & `output/train_nemo_qwen.json`
 
 #### Run Individual Frameworks
