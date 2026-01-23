@@ -38,12 +38,19 @@ class PretrainingDataset(Dataset):
         }
 
 
-def get_deepspeed_config():
+def get_deepspeed_config(world_size=1):
     """Get DeepSpeed configuration matching NeMo settings"""
+    # Calculate train_batch_size = micro_batch * grad_accum * world_size
+    # For world_size=1: 8 = 1 * 8 * 1
+    # For world_size=8: 64 = 1 * 8 * 8
+    micro_batch = 1
+    grad_accum = 8
+    train_batch = micro_batch * grad_accum * world_size
+    
     return {
-        "train_batch_size": 64,  # Global batch size
-        "train_micro_batch_size_per_gpu": 1,
-        "gradient_accumulation_steps": 8,  # 64 / 8 GPUs
+        "train_batch_size": train_batch,  # Auto-calculated
+        "train_micro_batch_size_per_gpu": micro_batch,
+        "gradient_accumulation_steps": grad_accum,  # 64 / 8 GPUs
         "steps_per_print": 1,
         "gradient_clipping": 1.0,
         "prescale_gradients": False,
@@ -101,6 +108,7 @@ def train_model(model_name, model_short_name):
     if rank == 0:
         print(f"Loading model: {model_name}")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
+        print(f"Batch config: micro_batch=1, grad_accum=8, train_batch={1*8*world_size}")
     
     # Load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
@@ -121,8 +129,8 @@ def train_model(model_name, model_short_name):
         num_samples=640  # 10 steps * 64 global batch size
     )
     
-    # Get DeepSpeed config
-    ds_config = get_deepspeed_config()
+    # Get DeepSpeed config with proper world_size
+    ds_config = get_deepspeed_config(world_size)
     
     # Initialize DeepSpeed
     model_engine, optimizer, dataloader, lr_scheduler = deepspeed.initialize(
