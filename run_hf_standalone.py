@@ -91,11 +91,22 @@ def train_llama():
         global_batch_size=64
     )
     
+    # Calculate batch size based on number of GPUs
+    num_gpus = torch.cuda.device_count()
+    global_batch_size = 64
+    per_device_batch_size = 1
+    gradient_accumulation_steps = global_batch_size // (per_device_batch_size * num_gpus)
+    
+    logger.info(f"Distributed training config: {num_gpus} GPUs")
+    logger.info(f"  Per-device batch size: {per_device_batch_size}")
+    logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
+    logger.info(f"  Global batch size: {global_batch_size}")
+    
     # Training arguments
     training_args = TrainingArguments(
         output_dir="./output/llama_hf",
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,  # 64 / 8 GPUs = 8 per GPU
+        per_device_train_batch_size=per_device_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=0.0003,
         weight_decay=0.1,
         adam_beta1=0.9,
@@ -112,6 +123,9 @@ def train_llama():
         gradient_checkpointing=True,
         remove_unused_columns=False,
         report_to="none",
+        # Distributed training settings
+        local_rank=int(os.environ.get("LOCAL_RANK", -1)),
+        ddp_backend="nccl",
     )
     
     # Create trainer
@@ -166,20 +180,31 @@ def train_qwen():
     # Enable gradient checkpointing for memory efficiency
     model.gradient_checkpointing_enable()
     
+    # Calculate batch size based on number of GPUs
+    num_gpus = torch.cuda.device_count()
+    global_batch_size = 64
+    per_device_batch_size = 1
+    gradient_accumulation_steps = global_batch_size // (per_device_batch_size * num_gpus)
+    
+    logger.info(f"Distributed training config: {num_gpus} GPUs")
+    logger.info(f"  Per-device batch size: {per_device_batch_size}")
+    logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
+    logger.info(f"  Global batch size: {global_batch_size}")
+    
     # Create dataset
     dataset = PretrainingDataset(
         data_path="/data/llama_dataset_text_document",
         tokenizer=tokenizer,
         seq_length=2048,
         max_steps=10,
-        global_batch_size=64
+        global_batch_size=global_batch_size
     )
     
     # Training arguments
     training_args = TrainingArguments(
         output_dir="./output/qwen_hf",
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,  # 64 / 8 GPUs = 8 per GPU
+        per_device_train_batch_size=per_device_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=0.0003,
         weight_decay=0.1,
         adam_beta1=0.9,
@@ -196,6 +221,9 @@ def train_qwen():
         gradient_checkpointing=True,
         remove_unused_columns=False,
         report_to="none",
+        # Distributed training settings
+        local_rank=int(os.environ.get("LOCAL_RANK", -1)),
+        ddp_backend="nccl",
     )
     
     # Create trainer
@@ -233,7 +261,13 @@ def main():
         logger.error("CUDA is not available!")
         sys.exit(1)
     
-    logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
+    num_gpus = torch.cuda.device_count()
+    logger.info(f"CUDA devices available: {num_gpus}")
+    
+    # Check if running with distributed training
+    if num_gpus > 1 and "RANK" not in os.environ:
+        logger.warning(f"⚠️  Detected {num_gpus} GPUs but not using distributed training. Only GPU 0 will be used.")
+        logger.warning(f"   To use all GPUs: torchrun --nproc_per_node={num_gpus} {sys.argv[0]}")
     
     if len(sys.argv) > 1:
         model = sys.argv[1]
