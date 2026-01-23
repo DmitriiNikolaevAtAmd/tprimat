@@ -38,7 +38,7 @@ def train_llama():
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
     logger.info("Creating Llama training recipe...")
-    recipe = llm.llama31_8b.train_recipe(
+    recipe = llm.llama31_8b.pretrain_recipe(
         name="llama31_8b_pretrain",
         dir="/data",
         num_nodes=1,
@@ -120,7 +120,7 @@ def train_qwen():
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
     logger.info("Creating Qwen training recipe...")
-    recipe = llm.qwen25_7b.train_recipe(
+    recipe = llm.qwen25_7b.pretrain_recipe(
         name="qwen25_7b_pretrain",
         dir="/data",
         num_nodes=1,
