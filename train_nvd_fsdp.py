@@ -187,7 +187,7 @@ def train_model(model_name, model_short_name):
         backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
-        use_orig_params=False,
+        use_orig_params=True,
     )
     
     optimizer = torch.optim.AdamW(
