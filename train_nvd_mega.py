@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""
-Megatron-LM Training Script for NVIDIA GPUs
-
-This is a standalone script that trains LLMs using Megatron-LM.
-No shell wrapper needed - all environment setup is handled internally.
-
-Usage:
-    python train_nvd_mega.py              # Train both llama and qwen
-    python train_nvd_mega.py llama        # Train only llama
-    python train_nvd_mega.py qwen         # Train only qwen
-"""
 import os
 import sys
 
@@ -270,11 +259,8 @@ def train_model(model_name: str, model_config: dict):
                     logger.info(f"GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
         
         training_time = time.time() - training_start
-        
-        # Calculate final metrics (unified format)
-        if rank == 0 and len(step_times) > 1:
-            # Skip first step (warmup)
-            step_times_no_warmup = step_times[1:]
+        if rank == 0 and len(step_times) > 10:
+            step_times_no_warmup = step_times[10:]
             
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
@@ -365,13 +351,12 @@ def train_model(model_name: str, model_config: dict):
 
 
 def train_llama():
-    """Train Llama 3.1 8B with Mega-LM."""
     config = {
         'hf_model': 'meta-llama/Llama-3.1-8B',
         'seq_length': 2048,
         'micro_batch_size': 1,
         'grad_accum_steps': 8,
-        'num_steps': 500,
+        'num_steps': 50,
         'learning_rate': 3e-4,
         'tensor_parallel': 1,
         'pipeline_parallel': 1,
@@ -380,13 +365,12 @@ def train_llama():
 
 
 def train_qwen():
-    """Train Qwen 2.5 7B with Mega-LM."""
     config = {
         'hf_model': 'Qwen/Qwen2.5-7B',
         'seq_length': 2048,
         'micro_batch_size': 1,
         'grad_accum_steps': 8,
-        'num_steps': 500,
+        'num_steps': 50,
         'learning_rate': 3e-4,
         'tensor_parallel': 1,
         'pipeline_parallel': 1,
@@ -395,8 +379,6 @@ def train_qwen():
 
 
 def main():
-    """Main entry point."""
-    # Set environment variables for GPU training
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['HSA_NO_SCRATCH_RECLAIM'] = '1'

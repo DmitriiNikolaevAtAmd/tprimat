@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-"""
-Option 1: PyTorch + HuggingFace Transformers
-Most portable and straightforward approach, good for single-node training
-"""
 import os
 import sys
 
-# Force unbuffered output
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -26,14 +21,12 @@ from torch.utils.data import Dataset, IterableDataset
 import json
 from utils import BenchmarkCallbackTran
 
-# Try to import bitsandbytes for 8-bit optimizer
 try:
     import bitsandbytes as bnb
     HAS_BITSANDBYTES = True
 except ImportError:
     HAS_BITSANDBYTES = False
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -46,8 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 class PretrainingDataset(IterableDataset):
-    """Simple iterable dataset for pretraining"""
-    def __init__(self, data_path, tokenizer, seq_length=2048, max_steps=500, global_batch_size=64, use_real_data=False):
+    def __init__(self, data_path, tokenizer, seq_length=2048, max_steps=50, global_batch_size=64, use_real_data=False):
         self.data_path = data_path
         self.tokenizer = tokenizer
         self.seq_length = seq_length
@@ -57,11 +49,8 @@ class PretrainingDataset(IterableDataset):
         
         if self.use_real_data:
             logger.info(f"Using real data from {data_path}")
-            # Load real data using indexed dataset
             try:
                 from transformers import TextDataset
-                # For real data, we'll use a simple text file reader
-                # This is a simplified version - production should use proper indexed datasets
                 self.real_data_available = True
             except Exception as e:
                 logger.warning(f"Could not load real data: {e}. Falling back to synthetic data.")
@@ -71,10 +60,7 @@ class PretrainingDataset(IterableDataset):
             self.real_data_available = False
         
     def __iter__(self):
-        # Generate synthetic data for benchmarking
-        # Note: For production with real data, you'd load from indexed dataset
         for _ in range(self.max_steps * self.global_batch_size):
-            # Create random tokens for benchmarking
             input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
             yield {
                 'input_ids': input_ids,
@@ -95,8 +81,6 @@ def train_llama():
     platform_prefix = "amd" if is_rocm else "nvd"
     
     model_name = "meta-llama/Llama-3.1-8B"
-    
-    # Load model and tokenizer
     logger.info(f"Loading model: {model_name}")
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -111,8 +95,6 @@ def train_llama():
     # Enable gradient checkpointing for memory efficiency
     model.gradient_checkpointing_enable()
     logger.info("Enabled gradient checkpointing")
-    
-    # Check if real data is available
     dataset_path = "/data/llama_dataset_text_document"
     use_real_data = os.path.exists(dataset_path + ".idx")
     
@@ -126,7 +108,7 @@ def train_llama():
         data_path=dataset_path,
         tokenizer=tokenizer,
         seq_length=2048,
-        max_steps=500,
+        max_steps=50,
         global_batch_size=64,
         use_real_data=use_real_data
     )
@@ -141,8 +123,6 @@ def train_llama():
     logger.info(f"  Per-device batch size: {per_device_batch_size}")
     logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
     logger.info(f"  Global batch size: {global_batch_size}")
-    
-    # Training arguments
     training_args = TrainingArguments(
         output_dir="./output/llama_tran",
         per_device_train_batch_size=per_device_batch_size,
@@ -151,8 +131,8 @@ def train_llama():
         weight_decay=0.1,
         adam_beta1=0.9,
         adam_beta2=0.95,
-        max_steps=500,
-        warmup_steps=1,
+        max_steps=50,
+        warmup_steps=10,
         lr_scheduler_type="cosine",
         logging_steps=1,
         save_strategy="no",
@@ -189,7 +169,6 @@ def train_llama():
             platform="auto",
             model_name="llama",
             parallel_strategy="ddp",
-            profiler_config={"enabled": False},
             framework=f"{platform_prefix}_tran"
         )
         trainer.add_callback(benchmark_callback)
@@ -215,8 +194,6 @@ def train_qwen():
     platform_prefix = "amd" if is_rocm else "nvd"
     
     model_name = "Qwen/Qwen2.5-7B"
-    
-    # Load model and tokenizer
     logger.info(f"Loading model: {model_name}")
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -231,8 +208,6 @@ def train_qwen():
     # Enable gradient checkpointing for memory efficiency
     model.gradient_checkpointing_enable()
     logger.info("Enabled gradient checkpointing")
-    
-    # Calculate batch size based on number of GPUs
     num_gpus = torch.cuda.device_count()
     global_batch_size = 64
     per_device_batch_size = 1
@@ -242,8 +217,6 @@ def train_qwen():
     logger.info(f"  Per-device batch size: {per_device_batch_size}")
     logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
     logger.info(f"  Global batch size: {global_batch_size}")
-    
-    # Check if real data is available
     dataset_path = "/data/llama_dataset_text_document"
     use_real_data = os.path.exists(dataset_path + ".idx")
     
@@ -257,12 +230,10 @@ def train_qwen():
         data_path=dataset_path,
         tokenizer=tokenizer,
         seq_length=2048,
-        max_steps=500,
+        max_steps=50,
         global_batch_size=global_batch_size,
         use_real_data=use_real_data
     )
-    
-    # Training arguments
     training_args = TrainingArguments(
         output_dir="./output/qwen_tran",
         per_device_train_batch_size=per_device_batch_size,
@@ -271,8 +242,8 @@ def train_qwen():
         weight_decay=0.1,
         adam_beta1=0.9,
         adam_beta2=0.95,
-        max_steps=500,
-        warmup_steps=1,
+        max_steps=50,
+        warmup_steps=10,
         lr_scheduler_type="cosine",
         logging_steps=1,
         save_strategy="no",
@@ -309,7 +280,6 @@ def train_qwen():
             platform="auto",
             model_name="qwen",
             parallel_strategy="ddp",
-            profiler_config={"enabled": False},
             framework=f"{platform_prefix}_tran"
         )
         trainer.add_callback(benchmark_callback)
@@ -333,11 +303,10 @@ def main():
     logger.info(f"CUDA devices available: {num_gpus}")
     
     if num_gpus > 1 and "RANK" not in os.environ:
-        logger.warning(f"⚠️  Detected {num_gpus} GPUs but not using distributed training. Only GPU 0 will be used.")
-        logger.warning(f"   To use all GPUs: torchrun --nproc_per_node={num_gpus} {sys.argv[0]}")
+        logger.warning(f"Detected {num_gpus} GPUs but not using distributed training. Only GPU 0 will be used.")
+        logger.warning(f"To use all GPUs: torchrun --nproc_per_node={num_gpus} {sys.argv[0]}")
     
     if len(sys.argv) < 2:
-        # No model specified, train all models
         logger.info("No model specified, training all models")
         train_llama()
         train_qwen()

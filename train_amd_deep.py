@@ -16,7 +16,6 @@ import time
 
 
 class PretrainingDataset(Dataset):
-    """Simple dataset for pretraining benchmarking"""
     def __init__(self, tokenizer, seq_length=2048, num_samples=640, use_real_data=False, data_path=None):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
@@ -46,10 +45,6 @@ class PretrainingDataset(Dataset):
 
 
 def get_deepspeed_config(world_size=1):
-    """Get DeepSpeed configuration for AMD ROCm"""
-    # Calculate train_batch_size = micro_batch * grad_accum * world_size
-    # For world_size=1: 8 = 1 * 8 * 1
-    # For world_size=8: 64 = 1 * 8 * 8
     micro_batch = 1
     grad_accum = 8
     train_batch = micro_batch * grad_accum * world_size
@@ -107,7 +102,6 @@ def get_deepspeed_config(world_size=1):
 
 
 def train_model(model_name, model_short_name):
-    # Set seeds
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
     np.random.seed(42)
@@ -209,7 +203,7 @@ def train_model(model_name, model_short_name):
         print("Starting training...")
     
     model_engine.train()
-    total_steps = 500
+    total_steps = 50
     step = 0
     start_time = time.time()
     
@@ -253,11 +247,8 @@ def train_model(model_name, model_short_name):
     if rank == 0:
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
-        
-        # Calculate final metrics (unified format)
-        if len(step_times) > 1:
-            # Skip first step (warmup)
-            step_times_no_warmup = step_times[1:]
+        if len(step_times) > 10:
+            step_times_no_warmup = step_times[10:]
             
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)

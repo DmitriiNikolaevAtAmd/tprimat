@@ -599,10 +599,6 @@ experiment:
   profiling: true
 ```
 
-Output: `output/profile_cuda_llama_<strategy>.nsys-rep`
-
-View with: `nsys-ui profile_cuda_llama_*.nsys-rep`
-
 ### Real Data Training
 
 Set data paths in `config.yaml`:

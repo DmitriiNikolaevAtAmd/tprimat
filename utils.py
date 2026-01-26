@@ -437,14 +437,13 @@ class BenchmarkCallback(Callback):
     """Callback to collect platform-agnostic performance metrics."""
     
     def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, 
-                 parallel_strategy: str = "unknown", profiler_config: Optional[Dict] = None, framework: str = None):
+                 parallel_strategy: str = "unknown", framework: str = None):
         """
         Args:
             output_dir: Directory to save benchmark results
             platform: 'cuda', 'rocm', or 'auto' for auto-detection
             model_name: Name of the model (e.g., 'llama', 'qwen')
             parallel_strategy: Parallelism strategy name (e.g., 'minimal_communication', 'balanced')
-            profiler_config: Dictionary with profiling configuration (from config.yaml)
             framework: Framework name for output filename (e.g., 'tran', 'nemo')
         """
         self.output_dir = Path(output_dir).resolve()
@@ -477,11 +476,6 @@ class BenchmarkCallback(Callback):
         self.model_name = model_name
         self.parallel_strategy = parallel_strategy
         self.framework = framework
-        
-        # Profiling configuration
-        self.profiler_config = profiler_config or {}
-        self.profiler = None
-        self.profiler_enabled = self.profiler_config.get('enabled', False)
         
     def on_train_start(self, trainer, pl_module):
         """
@@ -522,21 +516,6 @@ class BenchmarkCallback(Callback):
                 "software_stack": software_stack,
                 "software_version": software_version,
             }
-        
-        # Initialize NVIDIA Nsight Systems profiler if enabled (only on rank 0)
-        if self.profiler_enabled and trainer.is_global_zero and torch.cuda.is_available():
-            # NVIDIA Nsight Systems profiling - handled via nsys wrapper in pretrain scripts
-            print(f"[+] NVIDIA Nsight Systems profiling mode")
-            print(f"  Output directory: {self.output_dir}")
-            # Start CUDA profiler range for Nsight capture
-            try:
-                torch.cuda.cudart().cudaProfilerStart()
-                self._nsight_profiler_started = True
-                print(f"  CUDA profiler range started")
-            except Exception:
-                self._nsight_profiler_started = False
-        
-        # Only print on rank 0 to avoid duplicate output in distributed training
         if trainer.is_global_zero:
             software_stack = self.gpu_info.get("software_stack", "unknown")
             print(f"\n{'='*60}")
@@ -544,8 +523,6 @@ class BenchmarkCallback(Callback):
             print(f"{'='*60}")
             for key, value in self.gpu_info.items():
                 print(f"{key}: {value}")
-            if self.profiler_enabled:
-                print(f"profiling: enabled (NSIGHT)")
             print(f"{'='*60}\n")
     
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
@@ -641,18 +618,6 @@ class BenchmarkCallback(Callback):
     
     def on_train_end(self, trainer, pl_module):
         """Save benchmark results."""
-        # Finalize NVIDIA Nsight Systems profiler if enabled
-        if self.profiler_enabled and hasattr(self, '_nsight_profiler_started') and self._nsight_profiler_started:
-            try:
-                torch.cuda.cudart().cudaProfilerStop()
-                print(f"[+] CUDA profiler range stopped")
-                print(f"[+] Nsight profile saved by nsys wrapper")
-                print(f"  View with: nsys-ui <profile>.nsys-rep")
-                print(f"  Or export: nsys export --type=json <profile>.nsys-rep")
-            except Exception as e:
-                print(f"[!] Warning: Failed to stop CUDA profiler: {e}")
-        
-        # Only save results on rank 0 to avoid duplicate files in distributed training
         if not trainer.is_global_zero:
             return
             
@@ -788,14 +753,13 @@ class BenchmarkCallbackTran(TrainerCallback):
     """Transformers Trainer-compatible callback for collecting performance metrics."""
     
     def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, 
-                 parallel_strategy: str = "unknown", profiler_config: Optional[Dict] = None, framework: str = None):
+                 parallel_strategy: str = "unknown", framework: str = None):
         """
         Args:
             output_dir: Directory to save benchmark results
             platform: 'cuda', 'rocm', or 'auto' for auto-detection
             model_name: Name of the model (e.g., 'llama', 'qwen')
             parallel_strategy: Parallelism strategy name (e.g., 'ddp')
-            profiler_config: Dictionary with profiling configuration (from config.yaml)
             framework: Framework name for output filename (e.g., 'tran', 'deep')
         """
         self.output_dir = Path(output_dir).resolve()
@@ -827,10 +791,6 @@ class BenchmarkCallbackTran(TrainerCallback):
         self.model_name = model_name
         self.parallel_strategy = parallel_strategy
         self.framework = framework
-        
-        # Profiling configuration
-        self.profiler_config = profiler_config or {}
-        self.profiler_enabled = self.profiler_config.get('enabled', False)
     
     def on_train_begin(self, args: "TrainingArguments", state: "TrainerState", control: "TrainerControl", **kwargs):
         """Called at the beginning of training."""

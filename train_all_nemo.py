@@ -1,23 +1,7 @@
 #!/usr/bin/env python3
-"""
-NeMo Training Script (Platform-Agnostic)
-
-This script trains LLMs using NVIDIA NeMo framework.
-Works on both AMD (ROCm) and NVIDIA (CUDA) GPUs.
-
-Usage:
-    python train_all_nemo.py              # Train both llama and qwen
-    python train_all_nemo.py llama        # Train only llama
-    python train_all_nemo.py qwen         # Train only qwen
-
-Output:
-    - AMD: train_amd_nemo_<model>.json
-    - NVIDIA: train_nvd_nemo_<model>.json
-"""
 import os
 import sys
 
-# Force unbuffered output
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -31,7 +15,6 @@ import nemo_run as run
 from nemo.lightning import MegatronStrategy
 from utils import BenchmarkCallback
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -44,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 
 def get_model_config(model_name: str):
-    """Get model-specific configuration"""
     configs = {
         "llama": {
             "display_name": "Llama 3.1 8B",
@@ -68,20 +50,17 @@ def get_model_config(model_name: str):
 
 
 def train_model(model_name: str):
-    """Train a model using NeMo framework"""
     os.makedirs("./output", exist_ok=True)
     
     if not torch.cuda.is_available():
         logger.error("CUDA is not available!")
         sys.exit(1)
     
-    # Detect platform for output naming
     is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
     platform_prefix = "amd" if is_rocm else "nvd"
     
     logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
     
-    # Get model configuration
     config = get_model_config(model_name)
     
     logger.info(f"Setting up {config['display_name']} training...")
@@ -100,7 +79,6 @@ def train_model(model_name: str):
         num_gpus_per_node=8,
     )
     
-    # Configure parallelism strategy
     recipe.trainer.strategy = MegatronStrategy(
         tensor_model_parallel_size=2,
         pipeline_model_parallel_size=1,
@@ -109,7 +87,6 @@ def train_model(model_name: str):
         sequence_parallel=True,
     )
     
-    # Configure data
     dataset_path = "/data/llama_dataset_text_document"
     
     if os.path.exists(dataset_path + ".idx"):
@@ -131,23 +108,20 @@ def train_model(model_name: str):
         recipe.data.global_batch_size = 64
         recipe.data.seq_length = 2048
     
-    # Training configuration
-    recipe.trainer.max_steps = 500
+    recipe.trainer.max_steps = 50
     recipe.optim.config.lr = 0.0003
     recipe.optim.config.min_lr = 0.00003
     recipe.optim.config.weight_decay = 0.1
     recipe.optim.config.adam_beta1 = 0.9
     recipe.optim.config.adam_beta2 = 0.95
-    recipe.optim.lr_scheduler.warmup_steps = 1
+    recipe.optim.lr_scheduler.warmup_steps = 10
     recipe.optim.lr_scheduler.constant_steps = 0
     
-    # Model optimizations
     recipe.model.config.fp8 = "hybrid"
     recipe.model.config.fp8_param = True
     recipe.model.config.recompute_granularity = "selective"
     recipe.model.config.recompute_method = "uniform"
     
-    # Disable checkpointing and logging for benchmarking
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
@@ -156,13 +130,11 @@ def train_model(model_name: str):
     recipe.trainer.val_check_interval = None
     recipe.trainer.check_val_every_n_epoch = None
     
-    # Add benchmark callback
     benchmark_callback = BenchmarkCallback(
         output_dir="./output",
         platform="auto",
         model_name=model_name,
         parallel_strategy="minimal_communication",
-        profiler_config={"enabled": False},
         framework=f"{platform_prefix}_nemo"
     )
     if recipe.trainer.callbacks is None:
@@ -175,14 +147,11 @@ def train_model(model_name: str):
 
 
 def main():
-    """Main entry point"""
     if len(sys.argv) < 2:
-        # Train both models
         logger.info("No model specified, training both llama and qwen")
         train_model("llama")
         train_model("qwen")
     else:
-        # Train specified model
         model_name = sys.argv[1].lower()
         train_model(model_name)
 

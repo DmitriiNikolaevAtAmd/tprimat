@@ -16,7 +16,6 @@ import time
 
 
 class PretrainingDataset(Dataset):
-    """Simple dataset for pretraining benchmarking"""
     def __init__(self, tokenizer, seq_length=2048, num_samples=640, use_real_data=False, data_path=None):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
@@ -26,8 +25,6 @@ class PretrainingDataset(Dataset):
         
         if self.use_real_data and data_path:
             print(f"Using real data from {data_path}")
-            # Note: For production with real data, implement indexed dataset loader here
-            # This would load from .bin/.idx files
             self.real_data_available = True
         else:
             self.real_data_available = False
@@ -36,8 +33,6 @@ class PretrainingDataset(Dataset):
         return self.num_samples
     
     def __getitem__(self, idx):
-        # Generate synthetic data for benchmarking
-        # Note: For production with real data, load from indexed dataset
         input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
         return {
             'input_ids': input_ids,
@@ -46,18 +41,14 @@ class PretrainingDataset(Dataset):
 
 
 def get_deepspeed_config(world_size=1):
-    """Get DeepSpeed configuration matching NeMo settings"""
-    # Calculate train_batch_size = micro_batch * grad_accum * world_size
-    # For world_size=1: 8 = 1 * 8 * 1
-    # For world_size=8: 64 = 1 * 8 * 8
     micro_batch = 1
     grad_accum = 8
     train_batch = micro_batch * grad_accum * world_size
     
     return {
-        "train_batch_size": train_batch,  # Auto-calculated
+        "train_batch_size": train_batch,
         "train_micro_batch_size_per_gpu": micro_batch,
-        "gradient_accumulation_steps": grad_accum,  # 64 / 8 GPUs
+        "gradient_accumulation_steps": grad_accum,
         "steps_per_print": 1,
         "gradient_clipping": 1.0,
         "prescale_gradients": False,
@@ -65,13 +56,13 @@ def get_deepspeed_config(world_size=1):
             "enabled": True
         },
         "zero_optimization": {
-            "stage": 3,  # ZeRO stage 3: full model sharding (more memory efficient)
+            "stage": 3,
             "offload_optimizer": {
-                "device": "cpu",  # Offload optimizer to CPU to save GPU memory
+                "device": "cpu",
                 "pin_memory": True
             },
             "offload_param": {
-                "device": "cpu",  # Offload parameters to CPU when not needed
+                "device": "cpu",
                 "pin_memory": True
             },
             "overlap_comm": True,
@@ -107,22 +98,17 @@ def get_deepspeed_config(world_size=1):
 
 
 def train_model(model_name, model_short_name):
-    # Set seeds
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
     np.random.seed(42)
     random.seed(42)
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-    
-    # Initialize DeepSpeed distributed backend
     deepspeed.init_distributed()
     
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     rank = int(os.environ.get('RANK', 0))
     world_size = int(os.environ.get('WORLD_SIZE', 1))
-    
-    # Detect platform and get GPU info
     if torch.cuda.is_available():
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
@@ -130,8 +116,6 @@ def train_model(model_name, model_short_name):
         platform = "amd" if is_rocm else "nvd"
         software_stack = "prim" if is_rocm else "nemo"
         software_version = torch.version.hip if is_rocm else torch.version.cuda
-        
-        # Approximate GPU cores
         gpu_cores = 16896 if "h100" in device_name.lower() else 6912
         
         gpu_info = {
@@ -146,13 +130,9 @@ def train_model(model_name, model_short_name):
     else:
         platform = "cpu"
         gpu_info = {}
-    
-    # Track metrics
     step_times = []
     loss_values = []
     learning_rates = []
-    
-    # Check if real data is available
     dataset_path = "/data/llama_dataset_text_document"
     use_real_data = os.path.exists(dataset_path + ".idx")
     
@@ -165,8 +145,6 @@ def train_model(model_name, model_short_name):
             print(f"Real data found at {dataset_path}")
         else:
             print("Real data not found, using synthetic data for benchmarking")
-    
-    # Load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
@@ -174,36 +152,25 @@ def train_model(model_name, model_short_name):
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
-    
-    # Enable gradient checkpointing
     model.gradient_checkpointing_enable()
-    
-    # Create dataset and dataloader
     dataset = PretrainingDataset(
         tokenizer=tokenizer,
         seq_length=2048,
-        num_samples=32000,  # 500 steps * 64 global batch size
+        num_samples=32000,
         use_real_data=use_real_data,
         data_path=dataset_path
     )
-    
-    # Get DeepSpeed config with proper world_size
     ds_config = get_deepspeed_config(world_size)
-    
-    # Initialize DeepSpeed
     model_engine, optimizer, dataloader, lr_scheduler = deepspeed.initialize(
         model=model,
         model_parameters=model.parameters(),
         training_data=dataset,
         config=ds_config,
     )
-    
-    # Training loop
     if rank == 0:
         print("Starting training...")
-    
     model_engine.train()
-    total_steps = 500
+    total_steps = 50
     step = 0
     start_time = time.time()
     
@@ -215,22 +182,13 @@ def train_model(model_name, model_short_name):
         
         input_ids = batch['input_ids'].to(model_engine.device)
         labels = batch['labels'].to(model_engine.device)
-        
-        # Forward pass
         outputs = model_engine(input_ids=input_ids, labels=labels)
         loss = outputs.loss
-        
-        # Backward pass
         model_engine.backward(loss)
-        
-        # Optimizer step
         model_engine.step()
-        
-        # Track metrics
         step_time = time.time() - step_start
         step_times.append(step_time)
         loss_values.append(loss.item())
-        # Get learning rate from optimizer
         current_lr = optimizer.param_groups[0]['lr'] if optimizer else 0.0003
         learning_rates.append(current_lr)
         
@@ -247,16 +205,10 @@ def train_model(model_name, model_short_name):
     if rank == 0:
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
-        
-        # Calculate final metrics (unified format)
-        if len(step_times) > 1:
-            # Skip first step (warmup)
-            step_times_no_warmup = step_times[1:]
-            
+        if len(step_times) > 10:
+            step_times_no_warmup = step_times[10:]
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
-            
-            # Calculate token-based throughput
             micro_batch = 1
             grad_accum = 8
             global_batch_size = micro_batch * grad_accum * world_size
@@ -264,8 +216,6 @@ def train_model(model_name, model_short_name):
             tokens_per_step = global_batch_size * seq_length
             tokens_per_second = tokens_per_step / avg_step_time
             tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
-            
-            # Build unified results structure
             from datetime import datetime
             import json
             from pathlib import Path
@@ -303,13 +253,9 @@ def train_model(model_name, model_short_name):
             print(f"Average step time: {avg_step_time:.3f}s")
             print(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
             print(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
-            
-            # Save results
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
             output_file = output_dir / f"train_nvd_deep_{model_short_name}.json"
-            
-            # Round all floats to 5 decimal places
             results_rounded = round_floats(results, precision=5)
             
             with open(output_file, 'w') as f:

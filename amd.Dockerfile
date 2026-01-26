@@ -16,8 +16,7 @@ ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ENV HSA_NO_SCRATCH_RECLAIM=1
 ENV HSA_ENABLE_SDMA=1
 ENV HSA_FORCE_FINE_GRAIN_PCIE=1
-ENV TRACELENS_ENABLED=1
-ENV PROFILE_ITERS="0,20"
+ENV TRACELENS_ENABLED=0
 
 ENV RCCL_DEBUG=INFO
 ENV NCCL_DEBUG=INFO
@@ -26,24 +25,12 @@ ENV NCCL_IB_DISABLE=0
 
 RUN mkdir -p /workspace/tprimat
 WORKDIR /workspace/tprimat
-
-# Copy requirements file
 COPY amd-requirements.txt /workspace/tprimat/
-
-# Install NeMo toolkit first (to establish base dependencies)
-# Using specific version compatible with ROCm
 RUN pip install --no-cache-dir "nemo_toolkit[all]" nemo_run
-
-# Install remaining requirements and fix version conflicts
-# This will upgrade/downgrade packages to compatible versions
 RUN pip install --no-cache-dir -r amd-requirements.txt
-
-# Fix specific version conflicts that NeMo may have introduced
 RUN pip install --no-cache-dir --force-reinstall \
     "packaging<26.0" \
     "cryptography>=43.0.0,<46"
-
-# Verify installations
 RUN python3 -c "import torch; print(f'PyTorch: {torch.__version__}')" && \
     python3 -c "import transformers; print(f'Transformers: {transformers.__version__}')" && \
     python3 -c "import deepspeed; print(f'DeepSpeed: {deepspeed.__version__}')" && \

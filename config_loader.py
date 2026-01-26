@@ -247,6 +247,7 @@ class Config:
         return list(self.hardware.platforms.keys())
     
     def get_profiler_config(self) -> Dict[str, Any]:
+        return {}
         """
         Get profiler configuration with hardcoded defaults.
         Only experiment.profiling (bool) is configurable in config.yaml.
