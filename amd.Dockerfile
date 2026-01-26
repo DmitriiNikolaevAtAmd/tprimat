@@ -1,5 +1,4 @@
 FROM rocm/primus:v25.11
-
 RUN apt-get update && apt-get install -y \
     git \
     neovim \
@@ -26,11 +25,7 @@ ENV NCCL_IB_DISABLE=0
 RUN mkdir -p /workspace/tprimat
 WORKDIR /workspace/tprimat
 COPY amd-requirements.txt /workspace/tprimat/
-RUN pip install --no-cache-dir "nemo_toolkit[all]" nemo_run
 RUN pip install --no-cache-dir -r amd-requirements.txt
-RUN pip install --no-cache-dir --force-reinstall \
-    "packaging<26.0" \
-    "cryptography>=43.0.0,<46"
 
 SHELL ["/usr/bin/fish", "-c"]
 CMD ["/usr/bin/fish"]

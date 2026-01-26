@@ -9,8 +9,6 @@ RUN apt-get update && apt-get install -y \
     fish \
     && rm -rf /var/lib/apt/lists/*
 
-# Remove conflicting apex package (if exists) that imports from pyramid
-# This is NOT the NVIDIA Apex library - it's a different package
 RUN pip uninstall -y apex || true
 
 ENV PYTHONUNBUFFERED=1
@@ -26,13 +24,6 @@ RUN mkdir -p /workspace/tprimat
 WORKDIR /workspace/tprimat
 COPY nvd-requirements.txt /workspace/tprimat/
 RUN pip install --no-cache-dir -r nvd-requirements.txt
-RUN pip install --no-cache-dir --force-reinstall \
-    "packaging<26.0" \
-    "cryptography>=43.0.0,<46"
-RUN python3 -c "import torch; print(f'PyTorch: {torch.__version__}')" && \
-    python3 -c "import transformers; print(f'Transformers: {transformers.__version__}')" && \
-    python3 -c "import deepspeed; print(f'DeepSpeed: {deepspeed.__version__}')" && \
-    python3 -c "import nemo; print(f'NeMo: {nemo.__version__}')"
 
 SHELL ["/usr/bin/fish", "-c"]
 CMD ["/usr/bin/fish"]

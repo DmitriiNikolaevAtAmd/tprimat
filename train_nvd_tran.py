@@ -47,11 +47,15 @@ class PretrainingDataset(IterableDataset):
         self.global_batch_size = global_batch_size
         self.use_real_data = use_real_data
         self.indexed_dataset = None
+        self._real_data_failed = False
         
         if self.use_real_data:
             try:
                 from indexed_dataset import IndexedDataset
                 self.indexed_dataset = IndexedDataset(data_path)
+                bin_size = self.indexed_dataset.bin_path.stat().st_size
+                if bin_size == 0:
+                    raise ValueError(f"Binary dataset file is empty: {self.indexed_dataset.bin_path}")
                 logger.info(f"✓ Loaded real indexed dataset from {data_path}")
                 logger.info(f"  Dataset contains {len(self.indexed_dataset)} sequences")
                 self.real_data_available = True
@@ -69,17 +73,31 @@ class PretrainingDataset(IterableDataset):
             if self.real_data_available and self.indexed_dataset is not None:
                 # Load real data and pad/truncate to seq_length
                 dataset_idx = i % len(self.indexed_dataset)
-                tokens = self.indexed_dataset[dataset_idx]
+                tokens = None
+                try:
+                    tokens = self.indexed_dataset[dataset_idx]
+                except Exception as e:
+                    if not self._real_data_failed:
+                        logger.warning(f"⚠ Real data read failed: {e}")
+                        logger.warning("  Switching to synthetic data for remaining samples")
+                        self._real_data_failed = True
+                    self.real_data_available = False
                 
                 # Pad or truncate to seq_length
-                if len(tokens) < self.seq_length:
-                    pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
-                    padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
-                    input_ids = torch.cat([tokens, padding])
+                if tokens is not None:
+                    if len(tokens) < self.seq_length:
+                        pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+                        padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+                        input_ids = torch.cat([tokens, padding])
+                    else:
+                        input_ids = tokens[:self.seq_length]
                 else:
-                    input_ids = tokens[:self.seq_length]
+                    input_ids = None
             else:
                 # Synthetic data fallback
+                input_ids = None
+
+            if input_ids is None:
                 input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
             
             yield {
@@ -114,7 +132,7 @@ def train_llama():
     model.gradient_checkpointing_enable()
     logger.info("Enabled gradient checkpointing")
     dataset_path = "/data/llama_dataset_text_document"
-    use_real_data = os.path.exists(dataset_path + ".idx")
+    use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if use_real_data:
         logger.info(f"Real data found at {dataset_path}")
@@ -234,7 +252,7 @@ def train_qwen():
     logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
     logger.info(f"  Global batch size: {global_batch_size}")
     dataset_path = "/data/llama_dataset_text_document"
-    use_real_data = os.path.exists(dataset_path + ".idx")
+    use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if use_real_data:
         logger.info(f"Real data found at {dataset_path}")
