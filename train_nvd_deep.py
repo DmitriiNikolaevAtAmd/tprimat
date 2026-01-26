@@ -183,8 +183,8 @@ def train_model(model_name, model_short_name):
         tokenizer=tokenizer,
         seq_length=2048,
         num_samples=32000,
-        use_real_data=use_real_data,
-        data_path=dataset_path
+        use_real_data=False,  # Disabled: use synthetic for consistent benchmarking
+        data_path=None
     )
     ds_config = get_deepspeed_config(world_size)
     model_engine, optimizer, dataloader, lr_scheduler = deepspeed.initialize(

@@ -181,8 +181,8 @@ def train_model(model_name: str, model_config: dict):
         dataset = PretrainingDataset(
             tokenizer=tokenizer,
             seq_length=model_config['seq_length'],
-            use_real_data=use_real_data,
-            data_path=dataset_path if use_real_data else None
+            use_real_data=False,  # Disabled: use synthetic for consistent benchmarking
+            data_path=None
         )
         
         seq_length = model_config['seq_length']

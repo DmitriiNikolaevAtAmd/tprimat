@@ -168,8 +168,8 @@ def train_model(model_name, model_short_name):
         tokenizer=tokenizer,
         seq_length=seq_length,
         num_samples=32000,
-        use_real_data=use_real_data,
-        data_path=dataset_path
+        use_real_data=False,  # Disabled: use synthetic for consistent benchmarking  
+        data_path=None
     )
     
     sampler = torch.utils.data.distributed.DistributedSampler(

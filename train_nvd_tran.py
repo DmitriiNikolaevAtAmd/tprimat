@@ -128,7 +128,7 @@ def train_llama():
         seq_length=2048,
         max_steps=50,
         global_batch_size=64,
-        use_real_data=use_real_data
+        use_real_data=False  # Disabled: use synthetic for consistent benchmarking
     )
     
     # Calculate batch size based on number of GPUs
