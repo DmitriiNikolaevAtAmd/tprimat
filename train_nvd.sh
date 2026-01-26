@@ -2,9 +2,9 @@
 set -e
 mkdir -p output
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
-torchrun --nproc_per_node=$NUM_GPUS train_all_tran.py llama
+torchrun --nproc_per_node=$NUM_GPUS train_nvd_tran.py llama
 sleep 10
-torchrun --nproc_per_node=$NUM_GPUS train_all_tran.py qwen
+torchrun --nproc_per_node=$NUM_GPUS train_nvd_tran.py qwen
 sleep 10
 torchrun --nproc_per_node=$NUM_GPUS train_nvd_mega.py llama
 sleep 10
@@ -14,6 +14,6 @@ deepspeed --num_gpus=$NUM_GPUS train_nvd_deep.py llama
 sleep 10
 deepspeed --num_gpus=$NUM_GPUS train_nvd_deep.py qwen
 sleep 10
-python3 -u train_all_nemo.py llama
+python3 -u train_nvd_nemo.py llama
 sleep 10
-python3 -u train_all_nemo.py qwen
+python3 -u train_nvd_nemo.py qwen

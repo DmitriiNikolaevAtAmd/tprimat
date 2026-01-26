@@ -14,5 +14,5 @@ torchrun --nproc_per_node="$NUM_GPUS" \
          --node_rank=0 \
          --master_addr=localhost \
          --master_port=29500 \
-         train_all_fsdp.py qwen
+         train_amd_fsdp.py qwen
 

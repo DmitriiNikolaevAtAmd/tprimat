@@ -56,8 +56,7 @@ def train_model(model_name: str):
         logger.error("CUDA is not available!")
         sys.exit(1)
     
-    is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-    platform_prefix = "amd" if is_rocm else "nvd"
+    platform_prefix = "nvd"
     
     logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
     
@@ -132,7 +131,7 @@ def train_model(model_name: str):
     
     benchmark_callback = BenchmarkCallback(
         output_dir="./output",
-        platform="auto",
+        platform="nvd",
         model_name=model_name,
         parallel_strategy="minimal_communication",
         framework=f"{platform_prefix}_nemo"

@@ -20,5 +20,5 @@ export NCCL_TIMEOUT=3600
 export TORCH_DIST_TIMEOUT=3600
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export PARALLEL="amd_optimized"
-python3 -u train_all_nemo.py llama
+python3 -u train_amd_nemo.py llama
 

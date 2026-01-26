@@ -112,10 +112,9 @@ def train_model(model_name, model_short_name):
     if torch.cuda.is_available():
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
-        is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-        platform = "amd" if is_rocm else "nvd"
-        software_stack = "prim" if is_rocm else "nemo"
-        software_version = torch.version.hip if is_rocm else torch.version.cuda
+        platform = "nvd"
+        software_stack = "nemo"
+        software_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
         gpu_cores = 16896 if "h100" in device_name.lower() else 6912
         
         gpu_info = {

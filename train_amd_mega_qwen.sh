@@ -15,8 +15,8 @@ if [ "$NUM_GPUS" -gt 1 ]; then
              --node_rank=0 \
              --master_addr=localhost \
              --master_port=29500 \
-             train_all_mega.py qwen
+             train_amd_mega.py qwen
 else
-    python3 -u train_all_mega.py qwen
+    python3 -u train_amd_mega.py qwen
 fi
 

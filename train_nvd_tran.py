@@ -76,9 +76,7 @@ def train_llama():
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    # Detect platform for output naming
-    is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-    platform_prefix = "amd" if is_rocm else "nvd"
+    platform_prefix = "nvd"
     
     model_name = "meta-llama/Llama-3.1-8B"
     logger.info(f"Loading model: {model_name}")
@@ -166,7 +164,7 @@ def train_llama():
     try:
         benchmark_callback = BenchmarkCallbackTran(
             output_dir="./output",
-            platform="auto",
+            platform="nvd",
             model_name="llama",
             parallel_strategy="ddp",
             framework=f"{platform_prefix}_tran"
@@ -189,9 +187,7 @@ def train_qwen():
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    # Detect platform for output naming
-    is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-    platform_prefix = "amd" if is_rocm else "nvd"
+    platform_prefix = "nvd"
     
     model_name = "Qwen/Qwen2.5-7B"
     logger.info(f"Loading model: {model_name}")
@@ -277,7 +273,7 @@ def train_qwen():
     try:
         benchmark_callback = BenchmarkCallbackTran(
             output_dir="./output",
-            platform="auto",
+            platform="nvd",
             model_name="qwen",
             parallel_strategy="ddp",
             framework=f"{platform_prefix}_tran"

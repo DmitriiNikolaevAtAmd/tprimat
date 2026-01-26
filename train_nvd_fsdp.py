@@ -2,9 +2,21 @@
 import os
 import sys
 import torch
+import torch.distributed as dist
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.fully_sharded_data_parallel import (
+    CPUOffload,
+    BackwardPrefetch,
+    ShardingStrategy,
+)
+from torch.distributed.fsdp.wrap import (
+    size_based_auto_wrap_policy,
+    enable_wrap,
+    wrap,
+)
+import functools
 import random
 import numpy as np
-import deepspeed
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -13,10 +25,16 @@ from transformers import (
 from torch.utils.data import Dataset, DataLoader
 import json
 import time
+from datetime import datetime
+from pathlib import Path
+
+os.environ['PYTHONUNBUFFERED'] = '1'
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 
 class PretrainingDataset(Dataset):
-    def __init__(self, tokenizer, seq_length=2048, num_samples=640, use_real_data=False, data_path=None):
+    def __init__(self, tokenizer, seq_length=2048, num_samples=32000, use_real_data=False, data_path=None):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         self.num_samples = num_samples
@@ -25,8 +43,6 @@ class PretrainingDataset(Dataset):
         
         if self.use_real_data and data_path:
             print(f"Using real data from {data_path}")
-            # Note: For production with real data, implement indexed dataset loader here
-            # This would load from .bin/.idx files
             self.real_data_available = True
         else:
             self.real_data_available = False
@@ -35,8 +51,6 @@ class PretrainingDataset(Dataset):
         return self.num_samples
     
     def __getitem__(self, idx):
-        # Generate synthetic data for benchmarking
-        # Note: For production with real data, load from indexed dataset
         input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
         return {
             'input_ids': input_ids,
@@ -44,61 +58,28 @@ class PretrainingDataset(Dataset):
         }
 
 
-def get_deepspeed_config(world_size=1):
-    micro_batch = 1
-    grad_accum = 8
-    train_batch = micro_batch * grad_accum * world_size
+def setup_distributed():
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        rank = int(os.environ['RANK'])
+        world_size = int(os.environ['WORLD_SIZE'])
+        local_rank = int(os.environ['LOCAL_RANK'])
+    else:
+        print("Not running in distributed mode")
+        rank = 0
+        world_size = 1
+        local_rank = 0
     
-    return {
-        "train_batch_size": train_batch,  # Auto-calculated
-        "train_micro_batch_size_per_gpu": micro_batch,
-        "gradient_accumulation_steps": grad_accum,
-        "steps_per_print": 1,
-        "gradient_clipping": 1.0,
-        "prescale_gradients": False,
-        "bf16": {
-            "enabled": True
-        },
-        "zero_optimization": {
-            "stage": 3,  # ZeRO stage 3: full model sharding (more memory efficient)
-            "offload_optimizer": {
-                "device": "cpu",  # Offload optimizer to CPU to save GPU memory
-                "pin_memory": True
-            },
-            "offload_param": {
-                "device": "cpu",  # Offload parameters to CPU when not needed
-                "pin_memory": True
-            },
-            "overlap_comm": True,
-            "contiguous_gradients": True,
-            "sub_group_size": 1e9,
-            "reduce_bucket_size": "auto",
-            "stage3_prefetch_bucket_size": "auto",
-            "stage3_param_persistence_threshold": "auto",
-            "stage3_max_live_parameters": 1e9,
-            "stage3_max_reuse_distance": 1e9,
-            "stage3_gather_16bit_weights_on_model_save": True
-        },
-        "optimizer": {
-            "type": "AdamW",
-            "params": {
-                "lr": 0.0003,
-                "betas": [0.9, 0.95],
-                "eps": 1e-8,
-                "weight_decay": 0.1
-            }
-        },
-        "scheduler": {
-            "type": "WarmupLR",
-            "params": {
-                "warmup_min_lr": 0.00003,
-                "warmup_max_lr": 0.0003,
-                "warmup_num_steps": 1
-            }
-        },
-        "wall_clock_breakdown": False,
-        "dump_state": False
-    }
+    if world_size > 1:
+        dist.init_process_group(backend='nccl')
+    
+    torch.cuda.set_device(local_rank)
+    
+    return rank, world_size, local_rank
+
+
+def cleanup_distributed():
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 
 def train_model(model_name, model_short_name):
@@ -109,29 +90,16 @@ def train_model(model_name, model_short_name):
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    # Initialize DeepSpeed distributed backend
-    deepspeed.init_distributed()
+    rank, world_size, local_rank = setup_distributed()
     
-    local_rank = int(os.environ.get('LOCAL_RANK', 0))
-    rank = int(os.environ.get('RANK', 0))
-    world_size = int(os.environ.get('WORLD_SIZE', 1))
-    
-    # Detect platform and get GPU info
     if torch.cuda.is_available():
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
-        platform = "amd"
-        software_stack = "deep"
-        software_version = torch.version.hip if hasattr(torch.version, 'hip') else "unknown"
+        platform = "nvd"
+        software_stack = "cuda"
+        software_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
         
-        # Approximate GPU cores based on device
-        if "mi300" in device_name.lower():
-            gpu_cores = 14592  # MI300X
-        elif "h100" in device_name.lower():
-            gpu_cores = 16896
-        else:
-            gpu_cores = 6912  # Default estimate
-        
+        gpu_cores = 16896 if "h100" in device_name.lower() else 6912
         gpu_info = {
             "device_count": world_size,
             "device_name": device_name,
@@ -145,103 +113,134 @@ def train_model(model_name, model_short_name):
         platform = "cpu"
         gpu_info = {}
     
-    # Track metrics
+    micro_batch = 1
+    grad_accum = 8
+    global_batch_size = micro_batch * grad_accum * world_size
+    seq_length = 2048
+    total_steps = 50
+    
     step_times = []
     loss_values = []
     learning_rates = []
     
-    # Check if real data is available
     dataset_path = "/data/llama_dataset_text_document"
     use_real_data = os.path.exists(dataset_path + ".idx")
     
     if rank == 0:
         print(f"Loading model: {model_name}")
-        print(f"Platform: {platform} ({'ROCm' if platform == 'amd' else 'CUDA'})")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
-        print(f"Batch config: micro_batch=1, grad_accum=8, train_batch={1*8*world_size}")
-        print(f"Using ZeRO Stage 3 with CPU offloading for memory efficiency")
+        print(f"Batch config: micro_batch={micro_batch}, grad_accum={grad_accum}, global_batch={global_batch_size}")
+        print(f"Using FSDP with FULL_SHARD strategy")
         if use_real_data:
             print(f"Real data found at {dataset_path}")
         else:
             print("Real data not found, using synthetic data for benchmarking")
     
-    # Load model and tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.pad_token = tokenizer.eos_token
+    
+    dataset = PretrainingDataset(
+        tokenizer=tokenizer,
+        seq_length=seq_length,
+        num_samples=32000,
+        use_real_data=use_real_data,
+        data_path=dataset_path
+    )
+    
+    sampler = torch.utils.data.distributed.DistributedSampler(
+        dataset,
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=True,
+    ) if world_size > 1 else None
+    
+    dataloader = DataLoader(
+        dataset,
+        batch_size=micro_batch,
+        sampler=sampler,
+        shuffle=(sampler is None),
+        num_workers=2,
+        pin_memory=True,
+    )
+    
+    if rank == 0:
+        print("Loading model...")
+    
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
         use_cache=False,
     )
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.pad_token = tokenizer.eos_token
     
-    # Enable gradient checkpointing
     model.gradient_checkpointing_enable()
     
-    # Create dataset and dataloader
-    dataset = PretrainingDataset(
-        tokenizer=tokenizer,
-        seq_length=2048,
-        num_samples=32000,  # 500 steps * 64 global batch size
-        use_real_data=use_real_data,
-        data_path=dataset_path
+    auto_wrap_policy = functools.partial(
+        size_based_auto_wrap_policy,
+        min_num_params=100_000_000,
     )
     
-    # Get DeepSpeed config with proper world_size
-    ds_config = get_deepspeed_config(world_size)
-    
-    # Initialize DeepSpeed
-    model_engine, optimizer, dataloader, lr_scheduler = deepspeed.initialize(
-        model=model,
-        model_parameters=model.parameters(),
-        training_data=dataset,
-        config=ds_config,
+    model = FSDP(
+        model,
+        auto_wrap_policy=auto_wrap_policy,
+        sharding_strategy=ShardingStrategy.FULL_SHARD,
+        cpu_offload=CPUOffload(offload_params=False),
+        backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+        device_id=torch.cuda.current_device(),
+        limit_all_gathers=True,
+        use_orig_params=False,
     )
     
-    # Training loop
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=0.0003,
+        betas=(0.9, 0.95),
+        eps=1e-8,
+        weight_decay=0.1,
+    )
+    
+    lr_scheduler = get_cosine_schedule_with_warmup(
+        optimizer,
+        num_warmup_steps=10,
+        num_training_steps=total_steps,
+    )
+    
     if rank == 0:
         print("Starting training...")
     
-    model_engine.train()
-    total_steps = 50
+    model.train()
     step = 0
     start_time = time.time()
+    data_iter = iter(dataloader)
     
-    for batch_idx, batch in enumerate(dataloader):
-        if step >= total_steps:
-            break
-        
+    for step in range(total_steps):
         step_start = time.time()
+        optimizer.zero_grad()
         
-        input_ids = batch['input_ids'].to(model_engine.device)
-        labels = batch['labels'].to(model_engine.device)
+        for _ in range(grad_accum):
+            try:
+                batch = next(data_iter)
+            except StopIteration:
+                data_iter = iter(dataloader)
+                batch = next(data_iter)
+            
+            input_ids = batch['input_ids'].to(torch.cuda.current_device())
+            labels = batch['labels'].to(torch.cuda.current_device())
+            outputs = model(input_ids=input_ids, labels=labels)
+            loss = outputs.loss / grad_accum
+            loss.backward()
         
-        # Forward pass
-        outputs = model_engine(input_ids=input_ids, labels=labels)
-        loss = outputs.loss
+        optimizer.step()
+        lr_scheduler.step()
         
-        # Backward pass
-        model_engine.backward(loss)
-        
-        # Optimizer step
-        model_engine.step()
-        
-        # Track metrics
         step_time = time.time() - step_start
         step_times.append(step_time)
-        loss_values.append(loss.item())
-        # Get learning rate from optimizer
-        current_lr = optimizer.param_groups[0]['lr'] if optimizer else 0.0003
-        learning_rates.append(current_lr)
+        loss_values.append(loss.item() * grad_accum)
+        learning_rates.append(optimizer.param_groups[0]['lr'])
         
-        step += 1
-        
-        if rank == 0 and step % 10 == 0:
-            avg_loss = sum(loss_values) / len(loss_values)
+        if rank == 0 and (step + 1) % 10 == 0:
+            avg_loss = sum(loss_values[-10:]) / min(10, len(loss_values))
             elapsed = time.time() - start_time
-            print(f"Step {step}/{total_steps}, Loss: {avg_loss:.4f}, Step Time: {step_time:.3f}s, Elapsed: {elapsed:.2f}s")
-        
-        if step >= total_steps:
-            break
+            print(f"Step {step+1}/{total_steps}, Loss: {avg_loss:.4f}, Step Time: {step_time:.3f}s, LR: {learning_rates[-1]:.6f}")
     
     if rank == 0:
         total_time = time.time() - start_time
@@ -252,19 +251,10 @@ def train_model(model_name, model_short_name):
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
             
-            # Calculate token-based throughput
-            micro_batch = 1
-            grad_accum = 8
-            global_batch_size = micro_batch * grad_accum * world_size
-            seq_length = 2048
             tokens_per_step = global_batch_size * seq_length
             tokens_per_second = tokens_per_step / avg_step_time
             tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
             
-            # Build unified results structure
-            from datetime import datetime
-            import json
-            from pathlib import Path
             from utils import round_floats
             
             results = {
@@ -277,7 +267,7 @@ def train_model(model_name, model_short_name):
                     "micro_batch_size": micro_batch,
                     "sequence_length": seq_length,
                     "num_gpus": world_size,
-                    "parallel_strategy": "zero3",
+                    "parallel_strategy": "fsdp",
                     "gradient_accumulation_steps": grad_accum,
                 },
                 "performance_metrics": {
@@ -300,18 +290,17 @@ def train_model(model_name, model_short_name):
             print(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
             print(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
             
-            # Save results
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"train_amd_deep_{model_short_name}.json"
+            output_file = output_dir / f"train_{platform}_fsdp_{model_short_name}.json"
             
-            # Round all floats to 5 decimal places
             results_rounded = round_floats(results, precision=5)
             
             with open(output_file, 'w') as f:
                 json.dump(results_rounded, f, indent=2)
             
             print(f"Results saved to {output_file}")
+    cleanup_distributed()
 
 
 def train_llama():
@@ -326,10 +315,9 @@ def main():
     os.makedirs("./output", exist_ok=True)
     
     if not torch.cuda.is_available():
-        print("CUDA/ROCm is not available!")
+        print("CUDA is not available!")
         sys.exit(1)
     
-    # Filter out DeepSpeed arguments (--local_rank, etc.)
     model_args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
     
     if len(model_args) > 0:
@@ -340,15 +328,12 @@ def main():
             train_qwen()
         else:
             print(f"Unknown model: {model}")
+            print("Usage: torchrun --nproc_per_node=N train_all_fsdp.py [model]")
+            print("  model: 'llama' or 'qwen'")
             sys.exit(1)
     else:
-        import subprocess
-        import time
-        
-        # Note: For DeepSpeed, you need to use deepspeed launcher:
-        # deepspeed --num_gpus=8 train_amd_deep.py llama
-        print("ERROR: Please specify a model: llama or qwen")
-        print("Usage: deepspeed --num_gpus=8 train_amd_deep.py [llama|qwen]")
+        print("Usage: torchrun --nproc_per_node=N train_all_fsdp.py [model]")
+        print("  model: 'llama' or 'qwen'")
         sys.exit(1)
 
 

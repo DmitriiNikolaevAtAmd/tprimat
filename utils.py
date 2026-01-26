@@ -538,10 +538,6 @@ class BenchmarkCallback(Callback):
         if torch.cuda.is_available():  # Works for both CUDA and ROCm
             torch.cuda.synchronize()
         
-        # Step profiler if enabled
-        if self.profiler is not None:
-            self.profiler.step()
-        
         step_time = time.time() - self.step_start_time
         self.step_times.append(step_time)
         

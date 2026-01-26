@@ -15,14 +15,12 @@ import time
 from pathlib import Path
 from datetime import datetime
 
-# Try to import bitsandbytes for 8-bit optimizer
 try:
     import bitsandbytes as bnb
     HAS_BITSANDBYTES = True
 except ImportError:
     HAS_BITSANDBYTES = False
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -35,7 +33,6 @@ logger = logging.getLogger(__name__)
 
 
 def set_seed(seed=42):
-    """Set random seed for reproducibility."""
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
@@ -44,18 +41,9 @@ def set_seed(seed=42):
 
 
 def train_model(model_name: str, model_config: dict):
-    """
-    Train a model using Megatron-LM native APIs.
-    
-    Args:
-        model_name: Name of the model ('llama' or 'qwen')
-        model_config: Configuration dictionary with model parameters
-    """
     logger.info(f"=" * 80)
     logger.info(f"Starting Mega-LM training for {model_name}")
     logger.info(f"=" * 80)
-    
-    # Initialize distributed training
     rank = int(os.environ.get('RANK', 0))
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     world_size = int(os.environ.get('WORLD_SIZE', 1))
@@ -66,22 +54,15 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"Initialized distributed training: rank={rank}, world_size={world_size}")
     else:
         logger.info("Running in single-GPU mode")
-    
     set_seed(42)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-    
-    # Detect platform and get GPU info
     if torch.cuda.is_available():
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
-        is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
-        platform = "amd" if is_rocm else "nvd"
-        software_stack = "prim" if is_rocm else "nemo"
-        software_version = torch.version.hip if is_rocm else torch.version.cuda
-        
-        # Approximate GPU cores (will update with utils function if needed)
-        gpu_cores = 16896 if "h100" in device_name.lower() else 6912  # H100 or A100 default
-        
+        platform = "nvd"
+        software_stack = "nemo"
+        software_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
+        gpu_cores = 16896 if "h100" in device_name.lower() else 6912
         gpu_info = {
             "device_count": world_size,
             "device_name": device_name,
@@ -94,8 +75,6 @@ def train_model(model_name: str, model_config: dict):
     else:
         platform = "cpu"
         gpu_info = {}
-    
-    # Track step times and losses for unified format
     step_times = []
     loss_values = []
     learning_rates = []
@@ -111,10 +90,7 @@ def train_model(model_name: str, model_config: dict):
         )
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        
         logger.info(f"Loading model: {model_config['hf_model']}")
-        
-        # Load model with low CPU memory mode for single GPU
         if world_size == 1:
             logger.info("Single GPU detected - using memory optimization")
             model = AutoModelForCausalLM.from_pretrained(
@@ -122,7 +98,7 @@ def train_model(model_name: str, model_config: dict):
                 torch_dtype=torch.bfloat16,
                 trust_remote_code=True,
                 low_cpu_mem_usage=True,
-                device_map="auto"  # Automatic device placement
+                device_map="auto"
             )
         else:
             model = AutoModelForCausalLM.from_pretrained(
@@ -130,16 +106,11 @@ def train_model(model_name: str, model_config: dict):
                 torch_dtype=torch.bfloat16,
                 trust_remote_code=True
             )
-            # Apply tensor parallelism manually (simplified version)
             device = torch.device(f'cuda:{local_rank}')
             model = model.to(device)
-        
-        # Enable gradient checkpointing for memory efficiency
         if hasattr(model, 'gradient_checkpointing_enable'):
             model.gradient_checkpointing_enable()
             logger.info("Enabled gradient checkpointing")
-        
-        # Use DDP for data parallelism
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
             device = torch.device(f'cuda:{local_rank}')
@@ -150,8 +121,6 @@ def train_model(model_name: str, model_config: dict):
                 find_unused_parameters=False
             )
             logger.info(f"Wrapped model with DDP on device {local_rank}")
-        
-        # Check if real data is available
         dataset_path = "/data/llama_dataset_text_document"
         use_real_data = os.path.exists(dataset_path + ".idx")
         
@@ -161,13 +130,9 @@ def train_model(model_name: str, model_config: dict):
             logger.info("      To use real data, implement indexed dataset loader")
         else:
             logger.info("Real data not found, using synthetic data for benchmarking")
-        
-        # Create dataset
         seq_length = model_config['seq_length']
         batch_size = model_config['micro_batch_size']
         num_steps = model_config['num_steps']
-        
-        # Setup optimizer - use 8-bit for memory efficiency on all GPUs
         if HAS_BITSANDBYTES:
             optimizer = bnb.optim.Adam8bit(
                 model.parameters(),
@@ -184,7 +149,6 @@ def train_model(model_name: str, model_config: dict):
                 eps=1e-8
             )
             logger.warning("bitsandbytes not available, using standard Adam (higher memory)")
-        
         logger.info(f"Configuration:")
         logger.info(f"  Sequence length: {seq_length}")
         logger.info(f"  Micro batch size: {batch_size}")
@@ -193,8 +157,6 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"  Training steps: {num_steps}")
         logger.info(f"  Learning rate: {model_config['learning_rate']}")
         logger.info(f"  Precision: bfloat16")
-        
-        # Training loop
         model.train()
         logger.info("Starting training...")
         training_start = time.time()
@@ -204,11 +166,8 @@ def train_model(model_name: str, model_config: dict):
             optimizer.zero_grad()
             
             step_losses = []
-            
             for micro_step in range(model_config['grad_accum_steps']):
-                # Generate synthetic data
                 if world_size == 1:
-                    # For single GPU with device_map="auto", use model's device
                     device = next(model.parameters()).device
                 input_ids = torch.randint(
                     0, tokenizer.vocab_size,
@@ -216,33 +175,21 @@ def train_model(model_name: str, model_config: dict):
                     device=device
                 )
                 labels = input_ids.clone()
-                
-                # Forward pass
                 with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                     outputs = model(input_ids=input_ids, labels=labels)
                     loss = outputs.loss / model_config['grad_accum_steps']
-                
-                # Backward pass
                 loss.backward()
                 step_losses.append(loss.item() * model_config['grad_accum_steps'])
-            
-            # Optimizer step
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             
             step_time = time.time() - step_start
             avg_loss = sum(step_losses) / len(step_losses)
-            
-            # Calculate throughput
             tokens_per_step = batch_size * seq_length * model_config['grad_accum_steps'] * world_size
             throughput = tokens_per_step / step_time
-            
-            # Track metrics
             step_times.append(step_time)
             loss_values.append(avg_loss)
-            learning_rates.append(model_config['learning_rate'])  # Fixed LR for now
-            
-            # Log metrics
+            learning_rates.append(model_config['learning_rate'])
             if rank == 0:
                 logger.info(
                     f"Step {step + 1}/{num_steps} | "
@@ -250,28 +197,20 @@ def train_model(model_name: str, model_config: dict):
                     f"Time: {step_time:.3f}s | "
                     f"Throughput: {throughput:.0f} tokens/s"
                 )
-            
-            # Memory stats every 5 steps
             if rank == 0 and (step + 1) % 5 == 0:
                 if torch.cuda.is_available():
                     allocated = torch.cuda.memory_allocated(device) / 1e9
                     reserved = torch.cuda.memory_reserved(device) / 1e9
                     logger.info(f"GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
-        
         training_time = time.time() - training_start
         if rank == 0 and len(step_times) > 10:
             step_times_no_warmup = step_times[10:]
-            
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
-            
-            # Calculate token-based throughput
             global_batch_size = batch_size * world_size * model_config['grad_accum_steps']
             tokens_per_step = global_batch_size * seq_length
             tokens_per_second = tokens_per_step / avg_step_time
             tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
-            
-            # Build unified results structure
             results = {
                 "platform": platform,
                 "gpu_info": gpu_info,
@@ -308,13 +247,9 @@ def train_model(model_name: str, model_config: dict):
             logger.info(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
             logger.info(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
             logger.info(f"=" * 80)
-            
-            # Save results
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
             output_file = output_dir / f"train_{platform}_mega_{model_name}.json"
-            
-            # Round all floats to 5 decimal places (matching BenchmarkCallback)
             from utils import round_floats
             results_rounded = round_floats(results, precision=5)
             
@@ -340,7 +275,7 @@ def train_model(model_name: str, model_config: dict):
             }
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"train_{platform}_mega_{model_name}.json"
+            output_file = output_dir / f"train_nvd_mega_{model_name}.json"
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2)
         raise
@@ -386,16 +321,13 @@ def main():
     os.environ['HSA_FORCE_FINE_GRAIN_PCIE'] = '1'
     os.environ['RCCL_DEBUG'] = 'INFO'
     os.environ['NCCL_DEBUG'] = 'INFO'
-    
-    # Create output directory
     output_dir = Path(__file__).parent / "output"
     output_dir.mkdir(exist_ok=True)
     
-    logger.info("Environment configured for NVIDIA GPU training")
+    logger.info("Environment configured for GPU training")
     logger.info(f"Output directory: {output_dir}")
     
     if len(sys.argv) < 2:
-        # No model specified, train all models
         logger.info("No model specified, training all models")
         train_llama()
         train_qwen()
