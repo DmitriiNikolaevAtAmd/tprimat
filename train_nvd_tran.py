@@ -46,22 +46,42 @@ class PretrainingDataset(IterableDataset):
         self.max_steps = max_steps
         self.global_batch_size = global_batch_size
         self.use_real_data = use_real_data
+        self.indexed_dataset = None
         
         if self.use_real_data:
-            logger.info(f"Using real data from {data_path}")
             try:
-                from transformers import TextDataset
+                from indexed_dataset import IndexedDataset
+                self.indexed_dataset = IndexedDataset(data_path)
+                logger.info(f"✓ Loaded real indexed dataset from {data_path}")
+                logger.info(f"  Dataset contains {len(self.indexed_dataset)} sequences")
                 self.real_data_available = True
             except Exception as e:
-                logger.warning(f"Could not load real data: {e}. Falling back to synthetic data.")
+                logger.warning(f"⚠ Could not load real data: {e}")
+                logger.warning(f"  Falling back to synthetic data")
                 self.use_real_data = False
                 self.real_data_available = False
         else:
             self.real_data_available = False
         
     def __iter__(self):
-        for _ in range(self.max_steps * self.global_batch_size):
-            input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
+        total_samples = self.max_steps * self.global_batch_size
+        for i in range(total_samples):
+            if self.real_data_available and self.indexed_dataset is not None:
+                # Load real data and pad/truncate to seq_length
+                dataset_idx = i % len(self.indexed_dataset)
+                tokens = self.indexed_dataset[dataset_idx]
+                
+                # Pad or truncate to seq_length
+                if len(tokens) < self.seq_length:
+                    pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+                    padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+                    input_ids = torch.cat([tokens, padding])
+                else:
+                    input_ids = tokens[:self.seq_length]
+            else:
+                # Synthetic data fallback
+                input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
+            
             yield {
                 'input_ids': input_ids,
                 'labels': input_ids.clone(),

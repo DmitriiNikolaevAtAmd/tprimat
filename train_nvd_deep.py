@@ -22,10 +22,19 @@ class PretrainingDataset(Dataset):
         self.num_samples = num_samples
         self.use_real_data = use_real_data
         self.data_path = data_path
+        self.indexed_dataset = None
         
         if self.use_real_data and data_path:
-            print(f"Using real data from {data_path}")
-            self.real_data_available = True
+            try:
+                from indexed_dataset import IndexedDataset
+                self.indexed_dataset = IndexedDataset(data_path)
+                print(f"✓ Loaded real indexed dataset from {data_path}")
+                print(f"  Dataset contains {len(self.indexed_dataset)} sequences")
+                self.real_data_available = True
+            except Exception as e:
+                print(f"⚠ Could not load real data: {e}")
+                print(f"  Falling back to synthetic data")
+                self.real_data_available = False
         else:
             self.real_data_available = False
         
@@ -33,7 +42,23 @@ class PretrainingDataset(Dataset):
         return self.num_samples
     
     def __getitem__(self, idx):
-        input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
+        if self.real_data_available and self.indexed_dataset is not None:
+            # Load real data and pad/truncate to seq_length
+            dataset_idx = idx % len(self.indexed_dataset)
+            tokens = self.indexed_dataset[dataset_idx]
+            
+            # Pad or truncate to seq_length
+            if len(tokens) < self.seq_length:
+                # Pad with tokenizer pad token
+                pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+                padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+                input_ids = torch.cat([tokens, padding])
+            else:
+                input_ids = tokens[:self.seq_length]
+        else:
+            # Synthetic data fallback
+            input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
+        
         return {
             'input_ids': input_ids,
             'labels': input_ids.clone(),
@@ -85,11 +110,13 @@ def get_deepspeed_config(world_size=1):
             }
         },
         "scheduler": {
-            "type": "WarmupLR",
+            "type": "WarmupDecayLR",
             "params": {
                 "warmup_min_lr": 0.00003,
                 "warmup_max_lr": 0.0003,
-                "warmup_num_steps": 1
+                "warmup_num_steps": 10,
+                "total_num_steps": 50,
+                "warmup_type": "linear"
             }
         },
         "wall_clock_breakdown": False,

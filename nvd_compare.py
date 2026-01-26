@@ -63,6 +63,7 @@ def load_nvidia_benchmarks(results_dir: str) -> Dict[str, Dict]:
                     'tran': 'Transformers',
                     'deep': 'DeepSpeed',
                     'nemo': 'NeMo',
+                    'fsdp': 'FSDP',
                     'nvd': 'NVIDIA'  # Fallback
                 }.get(framework, framework.upper())
                 
@@ -113,6 +114,9 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
         # NeMo - Purple shades
         'nemo-llama': {'color': '#9B59B6', 'marker': 'o', 'label': 'NeMo Llama', 'linestyle': '-'},
         'nemo-qwen':  {'color': '#BB8FCE', 'marker': 's', 'label': 'NeMo Qwen', 'linestyle': '--'},
+        # FSDP - Red shades
+        'fsdp-llama': {'color': '#C41E3A', 'marker': 'o', 'label': 'FSDP Llama', 'linestyle': '-'},
+        'fsdp-qwen':  {'color': '#E74C3C', 'marker': 's', 'label': 'FSDP Qwen', 'linestyle': '--'},
     }
     
     # Extract training config for calculations (use first available)
@@ -226,40 +230,39 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
                 ha='center', va='center', transform=ax3.transAxes)
         ax3.set_title('Step Duration over Time', fontweight='bold', fontsize=14)
     
-    # 4. Framework Comparison - Average Step Time (Bar Chart)
+    # 4. Learning Rate over Time (Line Chart)
     ax4 = axes[3]
-    labels = []
-    values = []
-    colors_list = []
+    has_data = False
     
     for key in ordered_keys:
-        if key in benchmarks and key in style_map:
-            perf = benchmarks[key]['performance_metrics']
-            step_time = perf.get('avg_step_time_seconds')
-            if step_time:
-                labels.append(style_map[key]['label'])
-                values.append(step_time)
-                colors_list.append(style_map[key]['color'])
+        if key in benchmarks and 'learning_rates' in benchmarks[key] and key in style_map:
+            learning_rates = benchmarks[key]['learning_rates']
+            if learning_rates:
+                steps = range(len(learning_rates))
+                style = style_map[key]
+                ax4.plot(steps, learning_rates, 
+                        marker=style['marker'], 
+                        linestyle=style['linestyle'],
+                        color=style['color'], 
+                        label=style['label'], 
+                        linewidth=2, 
+                        markersize=2, 
+                        markevery=max(1, len(learning_rates)//50),
+                        alpha=0.85)
+                has_data = True
     
-    if values:
-        x_pos = np.arange(len(labels))
-        bars = ax4.bar(x_pos, values, color=colors_list, alpha=0.8, edgecolor='#333333', linewidth=1.5)
-        ax4.set_ylabel('Time (seconds)', fontweight='bold', fontsize=12)
-        ax4.set_title('Average Step Time (Lower is Better)', fontweight='bold', fontsize=14, pad=10)
-        ax4.set_xticks(x_pos)
-        ax4.set_xticklabels(labels, rotation=45, ha='right', fontsize=9)
-        ax4.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
-        
-        # Add value labels on bars
-        for bar, value in zip(bars, values):
-            height = bar.get_height()
-            ax4.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{value:.2f}s',
-                    ha='center', va='bottom', fontweight='bold', fontsize=9)
+    if has_data:
+        ax4.set_xlabel('Step', fontweight='bold', fontsize=11)
+        ax4.set_ylabel('Learning Rate', fontweight='bold', fontsize=12)
+        ax4.set_title('Learning Rate Schedule', fontweight='bold', fontsize=14, pad=10)
+        ax4.legend(fontsize=9, loc='best', framealpha=0.9)
+        ax4.grid(alpha=0.3, linestyle='--', linewidth=0.5)
+        # Use scientific notation for y-axis if values are small
+        ax4.ticklabel_format(style='scientific', axis='y', scilimits=(0,0))
     else:
-        ax4.text(0.5, 0.5, 'Step time data not available', 
+        ax4.text(0.5, 0.5, 'Learning rate data not available', 
                 ha='center', va='center', transform=ax4.transAxes)
-        ax4.set_title('Average Step Time', fontweight='bold', fontsize=14)
+        ax4.set_title('Learning Rate Schedule', fontweight='bold', fontsize=14)
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
@@ -398,6 +401,7 @@ def main():
         print("  - train_nvd_mega_llama.json, train_nvd_mega_qwen.json (Megatron)")
         print("  - train_nvd_tran_llama.json, train_nvd_tran_qwen.json (Transformers)")
         print("  - train_nvd_deep_llama.json, train_nvd_deep_qwen.json (DeepSpeed)")
+        print("  - train_nvd_fsdp_llama.json, train_nvd_fsdp_qwen.json (FSDP)")
         print("  - train_nvd_nemo_llama.json, train_nvd_nemo_qwen.json (NeMo)")
         print("  Note: NeMo scripts now auto-detect platform and output with appropriate prefix")
         print("\n  Note: Only files with platform='nvd' will be included")

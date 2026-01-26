@@ -32,6 +32,59 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class PretrainingDataset:
+    """Simple dataset class for Megatron training"""
+    def __init__(self, tokenizer, seq_length=2048, use_real_data=False, data_path=None):
+        self.tokenizer = tokenizer
+        self.seq_length = seq_length
+        self.indexed_dataset = None
+        
+        if use_real_data and data_path:
+            try:
+                from indexed_dataset import IndexedDataset
+                self.indexed_dataset = IndexedDataset(data_path)
+                logger.info(f"✓ Loaded real indexed dataset from {data_path}")
+                logger.info(f"  Dataset contains {len(self.indexed_dataset)} sequences")
+                self.real_data_available = True
+            except Exception as e:
+                logger.warning(f"⚠ Could not load real data: {e}")
+                logger.warning(f"  Falling back to synthetic data")
+                self.real_data_available = False
+        else:
+            self.real_data_available = False
+        
+        self.iteration = 0
+    
+    def get_batch(self, batch_size, device):
+        """Get a batch of data (either real or synthetic)"""
+        if self.real_data_available and self.indexed_dataset is not None:
+            # Load real data
+            batch_tokens = []
+            for _ in range(batch_size):
+                dataset_idx = self.iteration % len(self.indexed_dataset)
+                tokens = self.indexed_dataset[dataset_idx]
+                
+                # Pad or truncate to seq_length
+                if len(tokens) < self.seq_length:
+                    pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+                    padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+                    input_ids = torch.cat([tokens, padding])
+                else:
+                    input_ids = tokens[:self.seq_length]
+                
+                batch_tokens.append(input_ids)
+                self.iteration += 1
+            
+            return torch.stack(batch_tokens).to(device)
+        else:
+            # Synthetic data fallback
+            return torch.randint(
+                0, self.tokenizer.vocab_size,
+                (batch_size, self.seq_length),
+                device=device
+            )
+
+
 def set_seed(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -124,12 +177,14 @@ def train_model(model_name: str, model_config: dict):
         dataset_path = "/data/llama_dataset_text_document"
         use_real_data = os.path.exists(dataset_path + ".idx")
         
-        if use_real_data:
-            logger.info(f"Real data found at {dataset_path}")
-            logger.info("Note: Currently using synthetic data for consistent benchmarking")
-            logger.info("      To use real data, implement indexed dataset loader")
-        else:
-            logger.info("Real data not found, using synthetic data for benchmarking")
+        # Create dataset loader
+        dataset = PretrainingDataset(
+            tokenizer=tokenizer,
+            seq_length=model_config['seq_length'],
+            use_real_data=use_real_data,
+            data_path=dataset_path if use_real_data else None
+        )
+        
         seq_length = model_config['seq_length']
         batch_size = model_config['micro_batch_size']
         num_steps = model_config['num_steps']
@@ -149,6 +204,17 @@ def train_model(model_name: str, model_config: dict):
                 eps=1e-8
             )
             logger.warning("bitsandbytes not available, using standard Adam (higher memory)")
+        
+        # Add LR scheduler with warmup and cosine decay
+        from transformers import get_cosine_schedule_with_warmup
+        num_warmup_steps = 10
+        num_training_steps = model_config['num_steps']
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_training_steps
+        )
+        
         logger.info(f"Configuration:")
         logger.info(f"  Sequence length: {seq_length}")
         logger.info(f"  Micro batch size: {batch_size}")
@@ -156,6 +222,7 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"  Gradient accumulation: {model_config['grad_accum_steps']}")
         logger.info(f"  Training steps: {num_steps}")
         logger.info(f"  Learning rate: {model_config['learning_rate']}")
+        logger.info(f"  LR scheduler: Cosine with {num_warmup_steps} warmup steps")
         logger.info(f"  Precision: bfloat16")
         model.train()
         logger.info("Starting training...")
@@ -169,11 +236,9 @@ def train_model(model_name: str, model_config: dict):
             for micro_step in range(model_config['grad_accum_steps']):
                 if world_size == 1:
                     device = next(model.parameters()).device
-                input_ids = torch.randint(
-                    0, tokenizer.vocab_size,
-                    (batch_size, seq_length),
-                    device=device
-                )
+                
+                # Get batch from dataset (real or synthetic)
+                input_ids = dataset.get_batch(batch_size, device)
                 labels = input_ids.clone()
                 with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                     outputs = model(input_ids=input_ids, labels=labels)
@@ -182,6 +247,7 @@ def train_model(model_name: str, model_config: dict):
                 step_losses.append(loss.item() * model_config['grad_accum_steps'])
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
+            scheduler.step()
             
             step_time = time.time() - step_start
             avg_loss = sum(step_losses) / len(step_losses)
@@ -189,7 +255,8 @@ def train_model(model_name: str, model_config: dict):
             throughput = tokens_per_step / step_time
             step_times.append(step_time)
             loss_values.append(avg_loss)
-            learning_rates.append(model_config['learning_rate'])
+            current_lr = optimizer.param_groups[0]['lr']
+            learning_rates.append(current_lr)
             if rank == 0:
                 logger.info(
                     f"Step {step + 1}/{num_steps} | "
