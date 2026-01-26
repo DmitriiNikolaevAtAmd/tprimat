@@ -90,6 +90,10 @@ def train_llama():
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
+    # Detect platform for output naming
+    is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+    platform_prefix = "amd" if is_rocm else "nvd"
+    
     model_name = "meta-llama/Llama-3.1-8B"
     
     # Load model and tokenizer
@@ -186,7 +190,7 @@ def train_llama():
             model_name="llama",
             parallel_strategy="ddp",
             profiler_config={"enabled": False},
-            framework="nvd_tran"
+            framework=f"{platform_prefix}_tran"
         )
         trainer.add_callback(benchmark_callback)
     except Exception as e:
@@ -205,6 +209,10 @@ def train_qwen():
     random.seed(42)
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    
+    # Detect platform for output naming
+    is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+    platform_prefix = "amd" if is_rocm else "nvd"
     
     model_name = "Qwen/Qwen2.5-7B"
     
@@ -302,7 +310,7 @@ def train_qwen():
             model_name="qwen",
             parallel_strategy="ddp",
             profiler_config={"enabled": False},
-            framework="nvd_tran"
+            framework=f"{platform_prefix}_tran"
         )
         trainer.add_callback(benchmark_callback)
     except Exception as e:

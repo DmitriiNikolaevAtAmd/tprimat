@@ -1,10 +1,51 @@
+#!/usr/bin/env python3
+"""
+NeMo Training Script with Environment Configuration (Platform-Agnostic)
+
+This script trains LLMs using NVIDIA NeMo framework with config.yaml settings.
+Works on both AMD (ROCm) and NVIDIA (CUDA) GPUs.
+
+Usage:
+    python train_all_nemo_cfg.py              # Train both llama and qwen
+    python train_all_nemo_cfg.py llama        # Train only llama
+    python train_all_nemo_cfg.py qwen         # Train only qwen
+
+Output:
+    - AMD: train_amd_nemo_<model>.json
+    - NVIDIA: train_nvd_nemo_<model>.json
+"""
 from nemo.collections import llm
 import nemo_run as run
 from utils import BenchmarkCallback
 from config_loader import load_config
 import os
+import sys
 
-def run_pretrain():
+
+def get_model_config(model_name: str, config):
+    """Get model-specific configuration"""
+    configs = {
+        "llama": {
+            "display_name": "Llama 3.1 8B",
+            "recipe_fn": llm.llama31_8b.train_recipe,
+            "config_obj": config.models.llama,
+        },
+        "qwen": {
+            "display_name": "Qwen 2.5 7B",
+            "recipe_fn": llm.qwen25_7b.train_recipe,
+            "config_obj": config.models.qwen,
+        }
+    }
+    
+    if model_name not in configs:
+        print(f"[!] Unknown model: {model_name}. Supported: {list(configs.keys())}")
+        sys.exit(1)
+    
+    return configs[model_name]
+
+
+def run_pretrain(model_name: str):
+    """Run pretraining for specified model"""
     # Load configuration
     config = load_config()
     
@@ -24,8 +65,11 @@ def run_pretrain():
     # Set deterministic behavior for reproducibility
     os.environ['PYTHONHASHSEED'] = str(seed)
     
+    # Get model configuration
+    model_cfg = get_model_config(model_name, config)
+    print(f"  * Training model: {model_cfg['display_name']}")
+    
     # Get model name and parallelism settings from config
-    model_name = "qwen"
     # Allow overriding parallelism strategy via environment variable (for different configurations)
     parallel_strategy = os.environ.get('PARALLEL', config.get_methodology())
     print(f"  * Using parallelism strategy: {parallel_strategy}")
@@ -43,8 +87,8 @@ def run_pretrain():
     tp_size = parallelism['tensor_model_parallel_size']
     pp_size = parallelism['pipeline_model_parallel_size']
     
-    recipe = llm.qwen25_7b.train_recipe(
-        name=f"{config.models.qwen.name}_pretrain",
+    recipe = model_cfg['recipe_fn'](
+        name=f"{model_cfg['config_obj'].name}_pretrain",
         dir=config.paths.nemo.data_dir,
         num_nodes=1,
         num_gpus_per_node=num_gpus,
@@ -74,9 +118,9 @@ def run_pretrain():
     tokenizer_path = None
     
     # Priority 1: Model-specific paths
-    if hasattr(config.models.qwen, 'dataset_path') and config.models.qwen.dataset_path:
-        dataset_path = config.models.qwen.dataset_path
-        tokenizer_path = config.models.qwen.tokenizer_path
+    if hasattr(model_cfg['config_obj'], 'dataset_path') and model_cfg['config_obj'].dataset_path:
+        dataset_path = model_cfg['config_obj'].dataset_path
+        tokenizer_path = model_cfg['config_obj'].tokenizer_path
     # Priority 2: Global training data paths
     elif hasattr(config.training.data, 'dataset_path') and config.training.data.dataset_path:
         dataset_path = config.training.data.dataset_path
@@ -86,10 +130,10 @@ def run_pretrain():
     if dataset_path and tokenizer_path:
         print(f"  * Using real data: {dataset_path}")
         
-        # Use NeMo's AutoTokenizer wrapper for Qwen 2.5 (has unique_identifiers attribute)
+        # Use NeMo's AutoTokenizer wrapper (has unique_identifiers attribute)
         # The tokenizer must match what was used to preprocess the data
         from nemo.collections.common.tokenizers.huggingface.auto_tokenizer import AutoTokenizer as NeMoAutoTokenizer
-        print(f"  * Loading Qwen 2.5 tokenizer from: {tokenizer_path}")
+        print(f"  * Loading {model_cfg['display_name']} tokenizer from: {tokenizer_path}")
         tokenizer = NeMoAutoTokenizer(tokenizer_path)
         
         # Replace MockDataModule with PreTrainingDataModule for real data
@@ -160,12 +204,25 @@ def run_pretrain():
     recipe.trainer.callbacks.append(benchmark_callback)
     
     # 8. EXECUTE
+    print(f"  * Starting {model_cfg['display_name']} training...")
     run.run(recipe, direct=True)
+    print(f"  * {model_cfg['display_name']} training completed!")
 
-if __name__ == "__main__":
-    import sys
+
+def main():
+    """Main entry point with profiler support"""
     import shutil
     import subprocess
+    
+    # Determine which model to train
+    if len(sys.argv) < 2:
+        # Train both models
+        print("No model specified, training both llama and qwen")
+        models_to_train = ["llama", "qwen"]
+    else:
+        # Train specified model
+        model_name = sys.argv[1].lower()
+        models_to_train = [model_name]
     
     # Check if we should wrap with Nsight profiler
     config = load_config()
@@ -179,40 +236,50 @@ if __name__ == "__main__":
         if shutil.which('nsys') is None:
             print("[!] Nsight profiling enabled but 'nsys' not found in PATH")
             print("   Running without profiling...")
-            run_pretrain()
+            for model_name in models_to_train:
+                run_pretrain(model_name)
         else:
-            # Build profile output path
-            parallel_strategy = os.environ.get('PARALLEL', config.get_methodology())
-            output_dir = config.get_output_dir()
-            profile_output = os.path.join(output_dir, f"profile_cuda_qwen_{parallel_strategy}")
-            
-            # Get nsight config
-            trace = profiler_config.get('trace', 'cuda,nvtx,osrt,cudnn,cublas')
-            cuda_memory = 'true' if profiler_config.get('cuda_memory_usage', True) else 'false'
-            capture_range = profiler_config.get('capture_range', 'cudaProfilerApi')
-            stats = 'true' if profiler_config.get('stats', True) else 'false'
-            
-            print(f"  * NVIDIA Nsight Systems profiling enabled")
-            print(f"   Output: {profile_output}.nsys-rep")
-            print()
-            
-            # Re-launch with nsys wrapper
-            nsys_cmd = [
-                'nsys', 'profile',
-                '-o', profile_output,
-                '--trace', trace,
-                f'--cuda-memory-usage={cuda_memory}',
-                '--capture-range', capture_range,
-                f'--stats={stats}',
-                '--force-overwrite=true',
-                '--', sys.executable, __file__
-            ]
-            
-            # Pass through environment
-            env = os.environ.copy()
-            env['NSYS_PROFILING_SESSION_ID'] = '1'  # Prevent infinite recursion
-            
-            result = subprocess.run(nsys_cmd, env=env)
-            sys.exit(result.returncode)
+            # Run with profiling for each model
+            for model_name in models_to_train:
+                # Build profile output path
+                parallel_strategy = os.environ.get('PARALLEL', config.get_methodology())
+                output_dir = config.get_output_dir()
+                profile_output = os.path.join(output_dir, f"profile_cuda_{model_name}_{parallel_strategy}")
+                
+                # Get nsight config
+                trace = profiler_config.get('trace', 'cuda,nvtx,osrt,cudnn,cublas')
+                cuda_memory = 'true' if profiler_config.get('cuda_memory_usage', True) else 'false'
+                capture_range = profiler_config.get('capture_range', 'cudaProfilerApi')
+                stats = 'true' if profiler_config.get('stats', True) else 'false'
+                
+                print(f"  * NVIDIA Nsight Systems profiling enabled for {model_name}")
+                print(f"   Output: {profile_output}.nsys-rep")
+                print()
+                
+                # Re-launch with nsys wrapper
+                nsys_cmd = [
+                    'nsys', 'profile',
+                    '-o', profile_output,
+                    '--trace', trace,
+                    f'--cuda-memory-usage={cuda_memory}',
+                    '--capture-range', capture_range,
+                    f'--stats={stats}',
+                    '--force-overwrite=true',
+                    '--', sys.executable, __file__, model_name
+                ]
+                
+                # Pass through environment
+                env = os.environ.copy()
+                env['NSYS_PROFILING_SESSION_ID'] = '1'  # Prevent infinite recursion
+                
+                result = subprocess.run(nsys_cmd, env=env)
+                if result.returncode != 0:
+                    sys.exit(result.returncode)
     else:
-        run_pretrain()
+        # Run without profiling
+        for model_name in models_to_train:
+            run_pretrain(model_name)
+
+
+if __name__ == "__main__":
+    main()

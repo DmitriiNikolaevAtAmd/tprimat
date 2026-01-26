@@ -1,4 +1,19 @@
 #!/usr/bin/env python3
+"""
+NeMo Training Script (Platform-Agnostic)
+
+This script trains LLMs using NVIDIA NeMo framework.
+Works on both AMD (ROCm) and NVIDIA (CUDA) GPUs.
+
+Usage:
+    python train_all_nemo.py              # Train both llama and qwen
+    python train_all_nemo.py llama        # Train only llama
+    python train_all_nemo.py qwen         # Train only qwen
+
+Output:
+    - AMD: train_amd_nemo_<model>.json
+    - NVIDIA: train_nvd_nemo_<model>.json
+"""
 import os
 import sys
 
@@ -28,16 +43,48 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
+def get_model_config(model_name: str):
+    """Get model-specific configuration"""
+    configs = {
+        "llama": {
+            "display_name": "Llama 3.1 8B",
+            "recipe_fn": llm.llama31_8b.pretrain_recipe,
+            "recipe_name": "llama31_8b_pretrain",
+            "tokenizer_path": "meta-llama/Llama-3.1-8B",
+        },
+        "qwen": {
+            "display_name": "Qwen 2.5 7B",
+            "recipe_fn": llm.qwen25_7b.pretrain_recipe,
+            "recipe_name": "qwen25_7b_pretrain",
+            "tokenizer_path": "Qwen/Qwen2.5-7B",
+        }
+    }
+    
+    if model_name not in configs:
+        logger.error(f"Unknown model: {model_name}. Supported: {list(configs.keys())}")
+        sys.exit(1)
+    
+    return configs[model_name]
+
+
+def train_model(model_name: str):
+    """Train a model using NeMo framework"""
     os.makedirs("./output", exist_ok=True)
     
     if not torch.cuda.is_available():
         logger.error("CUDA is not available!")
         sys.exit(1)
     
+    # Detect platform for output naming
+    is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+    platform_prefix = "amd" if is_rocm else "nvd"
+    
     logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
     
-    logger.info("Setting up Llama 3.1 8B training...")
+    # Get model configuration
+    config = get_model_config(model_name)
+    
+    logger.info(f"Setting up {config['display_name']} training...")
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
     np.random.seed(42)
@@ -45,14 +92,15 @@ def main():
     os.environ['PYTHONHASHSEED'] = '42'
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    logger.info("Creating Llama training recipe...")
-    recipe = llm.llama31_8b.pretrain_recipe(
-        name="llama31_8b_pretrain",
+    logger.info(f"Creating {config['display_name']} training recipe...")
+    recipe = config['recipe_fn'](
+        name=config['recipe_name'],
         dir="/data",
         num_nodes=1,
         num_gpus_per_node=8,
     )
     
+    # Configure parallelism strategy
     recipe.trainer.strategy = MegatronStrategy(
         tensor_model_parallel_size=2,
         pipeline_model_parallel_size=1,
@@ -61,12 +109,13 @@ def main():
         sequence_parallel=True,
     )
     
+    # Configure data
     dataset_path = "/data/llama_dataset_text_document"
-    tokenizer_path = "meta-llama/Llama-3.1-8B"
     
     if os.path.exists(dataset_path + ".idx"):
+        logger.info(f"Using real data: {dataset_path}")
         from nemo.collections.common.tokenizers.huggingface.auto_tokenizer import AutoTokenizer as NeMoAutoTokenizer
-        tokenizer = NeMoAutoTokenizer(tokenizer_path)
+        tokenizer = NeMoAutoTokenizer(config['tokenizer_path'])
         from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
         recipe.data = PreTrainingDataModule(
             paths=[dataset_path],
@@ -77,10 +126,12 @@ def main():
             num_workers=2,
         )
     else:
+        logger.info("Using synthetic data for benchmarking")
         recipe.data.micro_batch_size = 1
         recipe.data.global_batch_size = 64
         recipe.data.seq_length = 2048
     
+    # Training configuration
     recipe.trainer.max_steps = 500
     recipe.optim.config.lr = 0.0003
     recipe.optim.config.min_lr = 0.00003
@@ -89,10 +140,14 @@ def main():
     recipe.optim.config.adam_beta2 = 0.95
     recipe.optim.lr_scheduler.warmup_steps = 1
     recipe.optim.lr_scheduler.constant_steps = 0
+    
+    # Model optimizations
     recipe.model.config.fp8 = "hybrid"
     recipe.model.config.fp8_param = True
     recipe.model.config.recompute_granularity = "selective"
     recipe.model.config.recompute_method = "uniform"
+    
+    # Disable checkpointing and logging for benchmarking
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
@@ -101,21 +156,35 @@ def main():
     recipe.trainer.val_check_interval = None
     recipe.trainer.check_val_every_n_epoch = None
     
+    # Add benchmark callback
     benchmark_callback = BenchmarkCallback(
         output_dir="./output",
         platform="auto",
-        model_name="llama",
+        model_name=model_name,
         parallel_strategy="minimal_communication",
         profiler_config={"enabled": False},
-        framework="nvd_nemo"
+        framework=f"{platform_prefix}_nemo"
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []
     recipe.trainer.callbacks.append(benchmark_callback)
     
-    logger.info("Starting Llama training...")
+    logger.info(f"Starting {config['display_name']} training...")
     run.run(recipe, direct=True)
-    logger.info("Llama training completed!")
+    logger.info(f"{config['display_name']} training completed!")
+
+
+def main():
+    """Main entry point"""
+    if len(sys.argv) < 2:
+        # Train both models
+        logger.info("No model specified, training both llama and qwen")
+        train_model("llama")
+        train_model("qwen")
+    else:
+        # Train specified model
+        model_name = sys.argv[1].lower()
+        train_model(model_name)
 
 
 if __name__ == "__main__":

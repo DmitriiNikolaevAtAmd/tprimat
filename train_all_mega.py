@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-Megatron-LM Training Script for NVIDIA GPUs
+Megatron-LM Training Script (Platform-Agnostic)
 
 This is a standalone script that trains LLMs using Megatron-LM.
+Works on both AMD (ROCm) and NVIDIA (CUDA) GPUs.
 No shell wrapper needed - all environment setup is handled internally.
 
 Usage:
-    python train_nvd_mega.py              # Train both llama and qwen
-    python train_nvd_mega.py llama        # Train only llama
-    python train_nvd_mega.py qwen         # Train only qwen
+    python train_all_mega.py              # Train both llama and qwen
+    python train_all_mega.py llama        # Train only llama
+    python train_all_mega.py qwen         # Train only qwen
+
+Output:
+    - AMD: train_amd_mega_<model>.json
+    - NVIDIA: train_nvd_mega_<model>.json
 """
 import os
 import sys
@@ -354,7 +359,7 @@ def train_model(model_name: str, model_config: dict):
             }
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"train_{platform}_mega_{model_name}.json"
+            output_file = output_dir / f"train_nvd_mega_{model_name}.json"
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2)
         raise
@@ -409,7 +414,7 @@ def main():
     output_dir = Path(__file__).parent / "output"
     output_dir.mkdir(exist_ok=True)
     
-    logger.info("Environment configured for NVIDIA GPU training")
+    logger.info("Environment configured for GPU training")
     logger.info(f"Output directory: {output_dir}")
     
     if len(sys.argv) < 2:

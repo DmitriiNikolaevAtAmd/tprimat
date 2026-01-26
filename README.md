@@ -73,17 +73,22 @@ TPrimat is a comprehensive benchmarking suite that enables **apples-to-apples co
 ### ⚡ Run Single Framework
 
 ```bash
-# NVIDIA examples
-python3 train_nvd_nemo_llama.py
+# Platform-agnostic (auto-detects AMD/NVIDIA)
+python3 train_all_nemo.py llama
+python3 train_all_nemo.py qwen
 python3 train_all_tran.py llama
-deepspeed --num_gpus=8 train_nvd_deep.py llama
+torchrun --nproc_per_node=8 train_all_mega.py llama
 
-# AMD examples  
-./train_amd_nemo_llama.sh
-./train_amd_tran_llama.sh
-./train_amd_deep_llama.sh
-./train_amd_fsdp_llama.sh
-./train_amd_prim_llama.sh  # AMD-optimized (best performance)
+# Configurable scripts (use config.yaml settings)
+python3 train_all_nemo_cfg.py llama              # NeMo with config
+./train_amd_prim_llama_cfg.sh                    # Primus with config
+./train_amd_prim_qwen_cfg.sh                     # Primus Qwen with config
+
+# Platform-specific examples
+deepspeed --num_gpus=8 train_nvd_deep.py llama  # NVIDIA DeepSpeed
+./train_amd_deep_llama.sh                        # AMD DeepSpeed
+./train_amd_prim_llama.sh                        # AMD Primus
+./train_amd_fsdp_llama.sh                        # AMD FSDP
 ```
 
 ### 📊 Compare Results
@@ -105,30 +110,33 @@ python3 compare.py --platform nvidia
 
 ### NVIDIA Frameworks
 
-| Framework | Identifier | Script | Description | Parallelism |
-|-----------|-----------|--------|-------------|-------------|
-| **NeMo** | `nemo` | `train_nvd_nemo_llama.py` | NVIDIA's production framework | TP/PP/DP |
-| **Megatron** | `mega` | `train_nvd_mega.py` | Model parallelism baseline | TP/PP/DP |
-| **DeepSpeed** | `deep` | `train_nvd_deep.py` | Memory-efficient ZeRO-3 | ZeRO-3 |
-| **Transformers** | `tran` | `train_all_tran.py` | HuggingFace portable baseline | DP |
+| Framework | Identifier | Script | Configurable | Description | Parallelism |
+|-----------|-----------|--------|--------------|-------------|-------------|
+| **NeMo** | `nemo` | `train_all_nemo.py` | `train_all_nemo_cfg.py` | Cross-platform NeMo framework | TP/PP/DP |
+| **Megatron** | `mega` | `train_nvd_mega.py` | - | Model parallelism baseline | TP/PP/DP |
+| **DeepSpeed** | `deep` | `train_nvd_deep.py` | - | Memory-efficient ZeRO-3 | ZeRO-3 |
+| **Transformers** | `tran` | `train_all_tran.py` | - | HuggingFace portable baseline | DP |
 
 ### AMD Frameworks
 
-| Framework | Identifier | Script | Description | Parallelism |
-|-----------|-----------|--------|-------------|-------------|
-| **Primus** | `prim` | `train_amd_prim_llama.sh` | AMD-optimized (best perf) | TP/PP/DP |
-| **NeMo** | `nemo` | `train_amd_nemo_llama.sh` | Cross-platform comparison | TP/PP/DP |
-| **Transformers** | `tran` | `train_amd_tran_llama.sh` | HuggingFace portable | DP |
-| **DeepSpeed** | `deep` | `train_amd_deep_llama.sh` | Memory-efficient ZeRO-3 | ZeRO-3 |
-| **FSDP** | `fsdp` | `train_amd_fsdp_llama.sh` | PyTorch native sharding | Full Shard |
-| **Megatron-DS** | `mgds` | `train_amd_mgds_llama.sh` | Hybrid parallelism (optional) | TP/PP/ZeRO |
+| Framework | Identifier | Script | Configurable | Description | Parallelism |
+|-----------|-----------|--------|--------------|-------------|-------------|
+| **Primus** | `prim` | `train_amd_prim_llama.sh` | `train_amd_prim_llama_cfg.sh` | AMD-optimized (best perf) | TP/PP/DP |
+| **NeMo** | `nemo` | `train_amd_nemo_llama.sh` | `train_all_nemo_cfg.py` | Cross-platform comparison | TP/PP/DP |
+| **Transformers** | `tran` | `train_amd_tran_llama.sh` | - | HuggingFace portable | DP |
+| **DeepSpeed** | `deep` | `train_amd_deep_llama.sh` | - | Memory-efficient ZeRO-3 | ZeRO-3 |
+| **FSDP** | `fsdp` | `train_amd_fsdp_llama.sh` | - | PyTorch native sharding | Full Shard |
+| **Megatron-DS** | `mgds` | `train_amd_mgds_llama.sh` | - | Hybrid parallelism (optional) | TP/PP/ZeRO |
 
 ### Platform-Agnostic Frameworks
 
 These scripts work on **both** NVIDIA and AMD (auto-detect platform):
 
+- `train_all_nemo.py` - NVIDIA NeMo (standard)
+- `train_all_nemo_cfg.py` - NVIDIA NeMo (configurable via `config.yaml`)
 - `train_all_tran.py` - HuggingFace Transformers
 - `train_all_fsdp.py` - PyTorch FSDP
+- `train_all_mega.py` - Megatron-LM
 - `train_all_mgds.py` - Megatron-DeepSpeed
 
 ---
@@ -179,7 +187,7 @@ export PRIMUS_PATH="/workspace/Primus"  # For AMD Primus
 ./train_amd.sh  # AMD
 
 # Run specific framework + model
-python3 train_nvd_nemo_llama.py    # NVIDIA NeMo + Llama
+python3 train_all_nemo.py llama    # NeMo + Llama (auto-detects platform)
 ./train_amd_nemo_llama.sh                # AMD NeMo + Llama
 ./train_amd_prim_qwen.sh                     # AMD Primus + Qwen
 ```
@@ -251,7 +259,7 @@ All scripts follow a consistent naming pattern:
 
 | Prefix | Platform | Example |
 |--------|----------|---------|
-| `nvd_` | NVIDIA-specific | `train_nvd_nemo_llama.py` |
+| `nvd_` | NVIDIA platform | `train_nvd_mega.py`, `train_nvd_deep.py` |
 | `amd_` | AMD-specific | `train_amd_nemo_llama.sh` |
 | `prim_` | AMD Primus | `train_amd_prim_llama.sh` |
 | (none) | Platform-agnostic | `train_all_tran.py` |
@@ -261,8 +269,8 @@ All scripts follow a consistent naming pattern:
 ```bash
 # NVIDIA-specific (nvd_ prefix)
 train_nvd.sh       # Run all NVIDIA frameworks
-train_nvd_nemo_llama.py      # NVIDIA NeMo
-train_nvd_mega.py      # Megatron-LM
+train_all_nemo.py        # NeMo (platform-agnostic)
+train_nvd_mega.py        # Megatron-LM
 train_nvd_deep.py      # DeepSpeed
 train_nvd_docker.sh          # NVIDIA Docker launcher
 
@@ -644,7 +652,7 @@ tprimat/
 │
 ├── NVIDIA Scripts (nvd_ prefix)
 │   ├── train_nvd.sh       # Run all NVIDIA frameworks
-│   ├── train_nvd_nemo_llama.py      # NeMo
+│   ├── train_all_nemo.py            # NeMo (platform-agnostic)
 │   ├── train_nvd_mega.py      # Megatron
 │   ├── train_nvd_deep.py      # DeepSpeed
 │   └── train_nvd_docker.sh          # Docker launcher
@@ -759,7 +767,19 @@ For questions or issues, please open a GitHub issue or contact [your contact inf
 
 This project provides two types of scripts:
 
-- **Standard scripts** - Simple, standalone with defaults
-- **Config-based scripts (`_env`)** - Load from `config.yaml`
+### Standard Scripts
+- Simple, standalone with hardcoded defaults
+- Quick to run, no configuration needed
+- Examples: `train_all_nemo.py`, `train_amd_prim_llama.sh`
 
-See [SCRIPT_VARIANTS.md](SCRIPT_VARIANTS.md) for details on when to use each.
+### Configurable Scripts (`_cfg`)
+- Load settings from `config.yaml`
+- Flexible parallelism strategies
+- Configurable training parameters
+- Examples: `train_all_nemo_cfg.py`, `train_amd_prim_llama_cfg.sh`, `train_amd_prim_qwen_cfg.sh`
+
+**When to use configurable scripts:**
+- Experimenting with different parallelism strategies (TP/PP/DP)
+- Custom training hyperparameters
+- Platform-specific optimizations
+- Profiling and detailed benchmarking

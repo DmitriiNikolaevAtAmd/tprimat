@@ -389,6 +389,7 @@ def main():
         print("  - train_nvd_tran_llama.json, train_nvd_tran_qwen.json (Transformers)")
         print("  - train_nvd_deep_llama.json, train_nvd_deep_qwen.json (DeepSpeed)")
         print("  - train_nvd_nemo_llama.json, train_nvd_nemo_qwen.json (NeMo)")
+        print("  Note: NeMo scripts now auto-detect platform and output with appropriate prefix")
         print("\n  Note: Only files with platform='nvd' will be included")
         return 1
     

@@ -342,6 +342,7 @@ def main():
         print("    - train_nvd_tran_llama.json, train_nvd_tran_qwen.json (Transformers)")
         print("    - train_nvd_deep_llama.json, train_nvd_deep_qwen.json (DeepSpeed)")
         print("    - train_nvd_nemo_llama.json, train_nvd_nemo_qwen.json (NeMo)")
+        print("    - train_amd_nemo_llama.json, train_amd_nemo_qwen.json (NeMo on AMD)")
         print("  AMD frameworks:")
         print("    - train_amd_prim_llama.json, train_amd_prim_qwen.json (Primus)")
         return 1
