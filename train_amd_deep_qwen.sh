@@ -19,5 +19,5 @@ deepspeed --num_gpus="$NUM_GPUS" \
           --num_nodes=1 \
           --master_addr=localhost \
           --master_port=29500 \
-          train_nvd_deep.py qwen
+          train_amd_deep.py qwen
 
