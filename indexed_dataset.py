@@ -78,7 +78,8 @@ class IndexedDataset:
     def bin_file(self):
         """Lazy file handle - opens once per process"""
         if self._bin_file is None:
-            self._bin_file = open(self.bin_path, 'rb')
+            # Use buffered binary reading with explicit buffer size
+            self._bin_file = open(self.bin_path, 'rb', buffering=8192*1024)
         return self._bin_file
     
     def __len__(self):
@@ -89,13 +90,31 @@ class IndexedDataset:
         if idx < 0 or idx >= len(self):
             raise IndexError(f"Index {idx} out of range [0, {len(self)})")
         
-        # Get pointer and length
-        pointer = self.seq_pointers[idx]
-        length = self.seq_lengths[idx]
+        # Get pointer and length (convert to Python int to avoid numpy type issues)
+        pointer = int(self.seq_pointers[idx])
+        length = int(self.seq_lengths[idx])
         
-        # Seek to position and read data
-        self.bin_file.seek(pointer)
-        data = self.bin_file.read(length * np.dtype(self.dtype).itemsize)
+        # Validate pointer and length
+        if pointer < 0:
+            raise ValueError(f"Invalid pointer {pointer} at index {idx}")
+        if length <= 0:
+            raise ValueError(f"Invalid length {length} at index {idx}")
+        
+        bytes_to_read = length * np.dtype(self.dtype).itemsize
+        
+        # Read data using pread to avoid seek issues in multi-threaded/multi-process context
+        import os
+        try:
+            fd = self.bin_file.fileno()
+            data = os.pread(fd, bytes_to_read, pointer)
+        except (AttributeError, OSError):
+            # Fallback to seek if pread not available or fails
+            self.bin_file.seek(pointer, os.SEEK_SET)
+            data = self.bin_file.read(bytes_to_read)
+        
+        # Verify we read the expected amount
+        if len(data) != bytes_to_read:
+            raise IOError(f"Expected to read {bytes_to_read} bytes but got {len(data)}")
         
         # Convert to numpy array
         tokens = np.frombuffer(data, dtype=self.dtype)
