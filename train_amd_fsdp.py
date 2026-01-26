@@ -172,8 +172,6 @@ def train_model(model_name, model_short_name):
         use_cache=False,
     )
     
-    model.gradient_checkpointing_enable()
-    
     auto_wrap_policy = functools.partial(
         size_based_auto_wrap_policy,
         min_num_params=100_000_000,
