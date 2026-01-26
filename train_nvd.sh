@@ -6,6 +6,10 @@ torchrun --nproc_per_node=$NUM_GPUS train_nvd_tran.py llama
 sleep 10
 torchrun --nproc_per_node=$NUM_GPUS train_nvd_tran.py qwen
 sleep 10
+torchrun --nproc_per_node=$NUM_GPUS train_nvd_fsdp.py llama
+sleep 10
+torchrun --nproc_per_node=$NUM_GPUS train_nvd_fsdp.py qwen
+sleep 10
 torchrun --nproc_per_node=$NUM_GPUS train_nvd_mega.py llama
 sleep 10
 torchrun --nproc_per_node=$NUM_GPUS train_nvd_mega.py qwen
