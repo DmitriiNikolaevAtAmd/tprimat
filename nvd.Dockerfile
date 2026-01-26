@@ -19,5 +19,23 @@ ENV NCCL_NET_GDR_LEVEL=PHB
 RUN mkdir -p /workspace/tprimat
 WORKDIR /workspace/tprimat
 
+# Copy requirements file (NeMo is already installed in base image)
+COPY nvd-requirements.txt /workspace/tprimat/
+
+# Install additional requirements
+# Note: NeMo is pre-installed in the base image
+RUN pip install --no-cache-dir -r nvd-requirements.txt
+
+# Fix specific version conflicts
+RUN pip install --no-cache-dir --force-reinstall \
+    "packaging<26.0" \
+    "cryptography>=43.0.0,<46"
+
+# Verify installations
+RUN python3 -c "import torch; print(f'PyTorch: {torch.__version__}')" && \
+    python3 -c "import transformers; print(f'Transformers: {transformers.__version__}')" && \
+    python3 -c "import deepspeed; print(f'DeepSpeed: {deepspeed.__version__}')" && \
+    python3 -c "import nemo; print(f'NeMo: {nemo.__version__}')"
+
 SHELL ["/usr/bin/fish", "-c"]
 CMD ["/usr/bin/fish"]

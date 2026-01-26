@@ -12,9 +12,8 @@ tokenizers>=0.15.0
 deepspeed>=0.12.0
 
 # NeMo Framework (AMD/ROCm compatible version)
-# nemo-toolkit[all]>=1.20.0
-# Note: May need to build from source for ROCm compatibility
-# git clone https://github.com/NVIDIA/NeMo.git && cd NeMo && pip install -e .
+# Install nemo_toolkit (without [all] extras to avoid conflicts)
+# Note: NeMo works on ROCm via PyTorch's unified API
 
 # AMD Primus framework (ROCm-optimized, installed from base image)
 # primus @ git+https://github.com/amd/primus.git
@@ -27,7 +26,7 @@ deepspeed>=0.12.0
 # Flash Attention for ROCm
 # flash-attn (ROCm-compatible version)
 ninja
-packaging
+packaging<26.0  # Pin for compatibility with mlflow, pyvers
 
 # Megatron-DeepSpeed (optional, install separately)
 # git clone https://github.com/microsoft/Megatron-DeepSpeed.git
@@ -39,6 +38,7 @@ sentencepiece
 protobuf
 pydantic>=2.0.0
 pyyaml
+cryptography>=43.0.0,<46  # Pin for mlflow compatibility
 
 # Monitoring and logging
 tensorboard

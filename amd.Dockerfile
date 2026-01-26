@@ -27,5 +27,27 @@ ENV NCCL_IB_DISABLE=0
 RUN mkdir -p /workspace/tprimat
 WORKDIR /workspace/tprimat
 
+# Copy requirements file
+COPY amd-requirements.txt /workspace/tprimat/
+
+# Install NeMo toolkit first (to establish base dependencies)
+# Using specific version compatible with ROCm
+RUN pip install --no-cache-dir "nemo_toolkit[all]" nemo_run
+
+# Install remaining requirements and fix version conflicts
+# This will upgrade/downgrade packages to compatible versions
+RUN pip install --no-cache-dir -r amd-requirements.txt
+
+# Fix specific version conflicts that NeMo may have introduced
+RUN pip install --no-cache-dir --force-reinstall \
+    "packaging<26.0" \
+    "cryptography>=43.0.0,<46"
+
+# Verify installations
+RUN python3 -c "import torch; print(f'PyTorch: {torch.__version__}')" && \
+    python3 -c "import transformers; print(f'Transformers: {transformers.__version__}')" && \
+    python3 -c "import deepspeed; print(f'DeepSpeed: {deepspeed.__version__}')" && \
+    python3 -c "import nemo; print(f'NeMo: {nemo.__version__}')"
+
 SHELL ["/usr/bin/fish", "-c"]
 CMD ["/usr/bin/fish"]

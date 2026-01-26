@@ -19,12 +19,14 @@ bitsandbytes>=0.41.0
 # Performance
 flash-attn>=2.0.0
 ninja
+packaging<26.0  # Pin for compatibility with mlflow, pyvers
 
 # Utilities
 scipy
 sentencepiece
 protobuf
 pydantic
+cryptography>=43.0.0,<46  # Pin for mlflow compatibility
 
 # Monitoring
 tensorboard
