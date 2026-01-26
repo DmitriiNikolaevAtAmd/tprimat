@@ -118,7 +118,7 @@ fi
 export EXP="$PATCHED_CONFIG"
 
 
-bash ./examples/train_train.sh \
+bash ./examples/train.sh \
     --train_iters $TRAIN_ITERS \
     --lr $LEARNING_RATE \
     --min_lr $MIN_LEARNING_RATE \

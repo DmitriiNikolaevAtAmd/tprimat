@@ -17,7 +17,7 @@ mkdir -p "$TPRIMAT_PATH/output"
 cd "$PRIMUS_PATH"
 export EXP="examples/megatron/configs/MI300X/llama3.1_8B-BF16-pretrain.yaml"
 
-bash ./examples/train_train.sh \
+bash ./examples/train.sh \
     --train_iters 10 \
     --lr 0.0003 \
     --min_lr 0.00003 \
