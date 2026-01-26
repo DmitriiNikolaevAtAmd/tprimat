@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-"""
-Plain Mega-LM training script for NVIDIA GPUs.
-Uses native Megatron-LM APIs directly (not NeMo wrapper).
-"""
 import os
 import sys
 
-# Force unbuffered output
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -156,8 +151,18 @@ def train_model(model_name: str, model_config: dict):
             )
             logger.info(f"Wrapped model with DDP on device {local_rank}")
         
-        # Create dummy dataset
-        logger.info("Creating synthetic dataset...")
+        # Check if real data is available
+        dataset_path = "/data/llama_dataset_text_document"
+        use_real_data = os.path.exists(dataset_path + ".idx")
+        
+        if use_real_data:
+            logger.info(f"Real data found at {dataset_path}")
+            logger.info("Note: Currently using synthetic data for consistent benchmarking")
+            logger.info("      To use real data, implement indexed dataset loader")
+        else:
+            logger.info("Real data not found, using synthetic data for benchmarking")
+        
+        # Create dataset
         seq_length = model_config['seq_length']
         batch_size = model_config['micro_batch_size']
         num_steps = model_config['num_steps']

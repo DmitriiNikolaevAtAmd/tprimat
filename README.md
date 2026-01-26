@@ -211,27 +211,99 @@ All plain scripts use proper Python logging with real-time output:
 
 ### Output File Naming Convention
 
-All benchmark results follow a consistent naming pattern:
+All benchmark result files follow a consistent naming standard.
+
+#### Standard Format
 
 ```
-output/train_<framework>_<model>.json
+train_{framework}_{model}.json
 ```
 
-**Framework names:**
-- `tran` - Transformers (Transformers)
-- `nemo` - NVD NeMo
-- `primus` - AMD Prim (AMD-specific)
+**Components:**
+1. `train_` - Fixed prefix for all benchmark results
+2. `{framework}` - Framework identifier (see table below)
+3. `{model}` - Model name (`llama` or `qwen`)
+4. `.json` - File extension
 
-**Examples:**
-- `output/train_tran_llama.json` - Transformers Llama
-- `output/train_nemo_llama.json` - NeMo Llama
-- `output/train_prim_qwen.json` - Prim Qwen (AMD)
+#### Framework Identifiers
 
-**Benefits:**
-- Framework and model immediately identifiable from filename
-- Easy to compare results across frameworks for the same model
-- Simple to parse and process programmatically
-- Consistent across all platforms (NVD/AMD)
+**NVIDIA Frameworks:**
+
+| Framework    | Identifier | Example                  | Description                        |
+|--------------|------------|--------------------------|-------------------------------------|
+| Megatron     | `mega`     | `train_mega_llama.json`  | Native Megatron-LM                 |
+| Transformers | `tran`     | `train_tran_qwen.json`   | HuggingFace Transformers with DDP  |
+| DeepSpeed    | `deep`     | `train_deep_llama.json`  | Microsoft DeepSpeed with ZeRO-3    |
+| NeMo         | `nemo`     | `train_nemo_qwen.json`   | NVIDIA NeMo Framework              |
+
+**AMD Frameworks:**
+
+| Framework | Identifier | Example                  | Description                    |
+|-----------|------------|--------------------------|--------------------------------|
+| Primus    | `prim`     | `train_prim_llama.json`  | AMD Primus (ROCm optimized)    |
+
+#### Model Names
+
+| Model           | Identifier | Full Name             |
+|-----------------|------------|-----------------------|
+| Llama 3.1 8B    | `llama`    | meta-llama/Llama-3.1-8B |
+| Qwen 2.5 7B     | `qwen`     | Qwen/Qwen2.5-7B       |
+
+#### Complete Examples
+
+**NVIDIA Results:**
+```
+output/
+├── train_mega_llama.json    # Megatron + Llama 3.1 8B
+├── train_mega_qwen.json     # Megatron + Qwen 2.5 7B
+├── train_tran_llama.json    # Transformers + Llama 3.1 8B
+├── train_tran_qwen.json     # Transformers + Qwen 2.5 7B
+├── train_deep_llama.json    # DeepSpeed + Llama 3.1 8B
+├── train_deep_qwen.json     # DeepSpeed + Qwen 2.5 7B
+├── train_nemo_llama.json    # NeMo + Llama 3.1 8B
+└── train_nemo_qwen.json     # NeMo + Qwen 2.5 7B
+```
+
+**AMD Results:**
+```
+output/
+├── train_prim_llama.json    # Primus + Llama 3.1 8B
+└── train_prim_qwen.json     # Primus + Qwen 2.5 7B
+```
+
+#### Benefits
+
+1. **Easy Identification**: Instantly see framework, model, and platform
+2. **Consistent Sorting**: Alphabetical sorting groups by framework
+3. **Pattern Matching**: Simple glob patterns work everywhere
+4. **Self-Documenting**: File name tells you what's inside
+5. **Tool Compatibility**: All scripts use the same pattern
+
+#### Archive Files
+
+Archived results follow a platform-based naming convention:
+
+| Archive File        | Contents                         |
+|---------------------|----------------------------------|
+| `nvd-output.zip`    | All NVIDIA `train_*_*.json`     |
+| `amd-output.zip`    | All AMD `train_prim_*.json`     |
+
+Archives contain only the JSON files without directory structure.
+
+#### Validation
+
+To verify all files follow the naming convention:
+
+```bash
+cd output
+ls train_*.json | while read f; do
+    echo "$f: $(jq -r '.platform' "$f") / $(jq -r '.gpu_info.software_stack' "$f")"
+done
+```
+
+Expected output shows consistent naming across all frameworks.
+
+**Note:** JSON format consistency is enforced automatically by the `BenchmarkCallback` class in `utils.py`, ensuring all output files follow the standard structure
 
 ### Troubleshooting Logs
 
@@ -1495,13 +1567,16 @@ output/  (or --output-dir path)
 └── training_qwen.log              # Complete training logs
 ```
 
-**Backward Compatibility:**
+**File Naming Standard:**
 
-The comparison tools support both new and old naming conventions:
-- **New format**: `train_{framework}_{model}.json` (e.g., `train_nemo_llama.json`, `train_prim_qwen.json`)
-- **Old format**: `benchmark_{platform}_{model}.json` (e.g., `benchmark_cuda_llama.json`, `benchmark_rocm_qwen.json`)
+All benchmark results use the standardized format:
+- **Format**: `train_{framework}_{model}.json`
+- **Examples**:
+  - `train_nemo_llama.json` (NeMo + Llama on NVIDIA)
+  - `train_mega_qwen.json` (Megatron + Qwen on NVIDIA)
+  - `train_prim_llama.json` (Primus + Llama on AMD)
 
-Both formats can be used interchangeably with `compare.py` and other analysis tools.
+This consistent naming makes it easy to identify framework, model, and results at a glance.
 
 ### Benchmark JSON Structure
 

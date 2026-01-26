@@ -23,14 +23,14 @@ for DIR in "${OUTPUT_DIRS[@]}"; do
         INDEX="${DIR_NAME#output-}"
         OUTPUT_FILE="${OUTPUT_BASE}/compare-${INDEX}.png"
         
-        train_count=$(find "$DIR" -name "train_*.json" 2>/dev/null | wc -l)
-        benchmark_count=$(find "$DIR" -name "benchmark_*.json" 2>/dev/null | wc -l)
-        total_count=$((train_count + benchmark_count))
+        json_count=$(find "$DIR" -name "train_*.json" 2>/dev/null | wc -l)
         
-        if [ "$total_count" -eq 0 ]; then
+        if [ "$json_count" -eq 0 ]; then
+            echo "  ⚠ Skipping $DIR (no train_*.json files found)"
             continue
         fi
         
+        echo "  📊 Comparing results from $DIR ($json_count JSON file(s))"
         python3 compare.py --results-dir "$DIR" --output "$OUTPUT_FILE"
     fi
 done

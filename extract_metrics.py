@@ -5,7 +5,8 @@ Extract benchmark metrics from Primus training logs.
 Usage:
     python3 extract_metrics.py \
         --log-file primus_training.log \
-        --output benchmark_results/train_prim_manual.json \
+        --model-name llama \
+        --output output/train_prim_llama.json \
         --num-gpus 8 \
         --global-batch-size 128 \
         --sequence-length 2048

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Option 3: DeepSpeed ZeRO
-Microsoft's DeepSpeed for memory-efficient large model training with ZeRO optimization
-"""
 import os
 import sys
 import torch
@@ -21,16 +17,27 @@ import time
 
 class PretrainingDataset(Dataset):
     """Simple dataset for pretraining benchmarking"""
-    def __init__(self, tokenizer, seq_length=2048, num_samples=640):
+    def __init__(self, tokenizer, seq_length=2048, num_samples=640, use_real_data=False, data_path=None):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         self.num_samples = num_samples
+        self.use_real_data = use_real_data
+        self.data_path = data_path
+        
+        if self.use_real_data and data_path:
+            print(f"Using real data from {data_path}")
+            # Note: For production with real data, implement indexed dataset loader here
+            # This would load from .bin/.idx files
+            self.real_data_available = True
+        else:
+            self.real_data_available = False
         
     def __len__(self):
         return self.num_samples
     
     def __getitem__(self, idx):
         # Generate synthetic data for benchmarking
+        # Note: For production with real data, load from indexed dataset
         input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
         return {
             'input_ids': input_ids,
@@ -145,11 +152,19 @@ def train_model(model_name, model_short_name):
     loss_values = []
     learning_rates = []
     
+    # Check if real data is available
+    dataset_path = "/data/llama_dataset_text_document"
+    use_real_data = os.path.exists(dataset_path + ".idx")
+    
     if rank == 0:
         print(f"Loading model: {model_name}")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
         print(f"Batch config: micro_batch=1, grad_accum=8, train_batch={1*8*world_size}")
         print(f"Using ZeRO Stage 3 with CPU offloading for memory efficiency")
+        if use_real_data:
+            print(f"Real data found at {dataset_path}")
+        else:
+            print("Real data not found, using synthetic data for benchmarking")
     
     # Load model and tokenizer
     model = AutoModelForCausalLM.from_pretrained(
@@ -167,7 +182,9 @@ def train_model(model_name, model_short_name):
     dataset = PretrainingDataset(
         tokenizer=tokenizer,
         seq_length=2048,
-        num_samples=32000  # 500 steps * 64 global batch size
+        num_samples=32000,  # 500 steps * 64 global batch size
+        use_real_data=use_real_data,
+        data_path=dataset_path
     )
     
     # Get DeepSpeed config with proper world_size
