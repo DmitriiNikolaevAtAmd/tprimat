@@ -11,6 +11,7 @@ export HSA_ENABLE_SDMA=1
 export NCCL_DEBUG=INFO
 export RCCL_DEBUG=INFO
 export USE_TF=NO
+export USE_APEX=NO
 
 if [ "$NUM_GPUS" -gt 1 ]; then
     torchrun --nproc_per_node="$NUM_GPUS" \

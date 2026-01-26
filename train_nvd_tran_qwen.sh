@@ -8,6 +8,7 @@ mkdir -p "$HF_HOME"
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 export USE_TF=NO
+export USE_APEX=NO
 
 if [ "$NUM_GPUS" -gt 1 ]; then
     torchrun --nproc_per_node="$NUM_GPUS" \
