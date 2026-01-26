@@ -3,8 +3,9 @@
 set -e
 
 
-NUM_GPUS="${CONFIG_AMD_NUM_GPUS:-8}"
-OUTPUT_DIR="${CONFIG_OUTPUT_DIR:-./output}"
+# Hardcoded configuration for standalone execution
+NUM_GPUS=8
+OUTPUT_DIR="./output"
 
 mkdir -p "$OUTPUT_DIR"
 

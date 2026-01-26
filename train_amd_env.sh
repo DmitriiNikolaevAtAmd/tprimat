@@ -13,5 +13,3 @@ set -e
 ./train_amd_fsdp_qwen.sh
 ./train_amd_mega_llama.sh
 ./train_amd_mega_qwen.sh
-./train_amd_mgds_llama.sh
-./train_amd_mgds_qwen.sh

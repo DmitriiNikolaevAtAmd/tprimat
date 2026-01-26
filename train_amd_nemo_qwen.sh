@@ -3,16 +3,17 @@
 set -e
 
 
-MODEL="${CONFIG_QWEN_NAME:-qwen}"
-NUM_GPUS="${CONFIG_AMD_NUM_GPUS:-8}"
+# Hardcoded configuration for standalone execution
+MODEL="qwen"
+NUM_GPUS=8
 
-TP="${CONFIG_QWEN_AMD_TP:-1}"
-PP="${CONFIG_QWEN_AMD_PP:-1}"
-GACC="${CONFIG_QWEN_AMD_GACC:-16}"
+TP=1
+PP=1
+GACC=16
 
 DP=$((NUM_GPUS / (TP * PP)))
 
-OUTPUT_DIR="${CONFIG_OUTPUT_DIR:-./output}"
+OUTPUT_DIR="./output"
 mkdir -p "$OUTPUT_DIR"
 
 

@@ -48,7 +48,7 @@ TPrimat is a comprehensive benchmarking suite that enables **apples-to-apples co
 | Platform | GPU | Memory | Software Stack | Frameworks |
 |----------|-----|--------|----------------|------------|
 | **NVIDIA** | H100 80GB | 80GB HBM3 | CUDA 12.8 | NeMo, Megatron, DeepSpeed, Transformers |
-| **AMD** | MI300X | 192GB HBM3 | ROCm 6.x | Primus, NeMo, DeepSpeed, Transformers, FSDP, Megatron-DS |
+| **AMD** | MI300X | 192GB HBM3 | ROCm 6.x | Primus, NeMo, DeepSpeed, Transformers, FSDP, Megatron |
 
 ---
 
@@ -126,7 +126,6 @@ python3 compare.py --platform nvidia
 | **Transformers** | `tran` | `train_amd_tran_llama.sh` | - | HuggingFace portable | DP |
 | **DeepSpeed** | `deep` | `train_amd_deep_llama.sh` | - | Memory-efficient ZeRO-3 | ZeRO-3 |
 | **FSDP** | `fsdp` | `train_amd_fsdp_llama.sh` | - | PyTorch native sharding | Full Shard |
-| **Megatron-DS** | `mgds` | `train_amd_mgds_llama.sh` | - | Hybrid parallelism (optional) | TP/PP/ZeRO |
 
 ### Platform-Agnostic Frameworks
 
@@ -137,7 +136,6 @@ These scripts work on **both** NVIDIA and AMD (auto-detect platform):
 - `train_all_tran.py` - HuggingFace Transformers
 - `train_all_fsdp.py` - PyTorch FSDP
 - `train_all_mega.py` - Megatron-LM
-- `train_all_mgds.py` - Megatron-DeepSpeed
 
 ---
 
@@ -243,7 +241,6 @@ export CONFIG_OUTPUT_DIR=./output
 
 # Framework paths
 export PRIMUS_PATH=/workspace/Primus
-export MEGATRON_DEEPSPEED_PATH=/workspace/Megatron-DeepSpeed
 
 # HuggingFace token
 export HF_TOKEN="your_token_here"
@@ -290,7 +287,7 @@ train_amd_prim_qwen.sh           # Primus + Qwen
 # Platform-agnostic (works on both)
 train_all_tran.py          # HuggingFace Transformers
 train_all_fsdp.py          # PyTorch FSDP
-train_all_mgds.py        # Megatron-DeepSpeed
+train_all_mega.py          # Megatron-LM
 ```
 
 ### Benefits
@@ -316,8 +313,7 @@ output/
 ├── train_nvd_deep_llama.json  # DeepSpeed + Llama
 ├── train_nvd_tran_llama.json  # Transformers + Llama
 ├── train_fsdp_llama.json      # FSDP + Llama
-├── train_amd_prim_llama.json      # Primus + Llama (AMD)
-└── train_mgds_llama.json    # Megatron-DS + Llama
+└── train_amd_prim_llama.json      # Primus + Llama (AMD)
 ```
 
 ### JSON Structure
@@ -360,7 +356,7 @@ output/
 | Transformers | `tran` |
 | FSDP | `fsdp` |
 | Primus | `prim` |
-| Megatron-DeepSpeed | `mgds` |
+| Megatron | `mega` |
 
 **Pattern**: `train_<framework>_<model>.json`
 
@@ -542,14 +538,6 @@ export PRIMUS_PATH=/workspace/Primus
 git clone https://github.com/amd/Primus.git
 ```
 
-#### Megatron-DeepSpeed Not Found
-
-```bash
-# Clone and set path
-git clone https://github.com/microsoft/Megatron-DeepSpeed.git
-export MEGATRON_DEEPSPEED_PATH=/workspace/Megatron-DeepSpeed
-```
-
 ### GPU Verification
 
 ```bash
@@ -663,7 +651,6 @@ tprimat/
 │   ├── train_amd_tran_llama.sh      # Transformers + Llama
 │   ├── train_amd_deep_llama.sh      # DeepSpeed + Llama
 │   ├── train_amd_fsdp_llama.sh      # FSDP + Llama
-│   ├── train_amd_mgds_llama.sh    # Megatron-DS + Llama
 │   └── train_amd_docker.sh          # Docker launcher
 │
 ├── Primus (AMD-optimized)
@@ -674,7 +661,7 @@ tprimat/
 ├── Platform-Agnostic
 │   ├── train_all_tran.py          # HuggingFace Transformers
 │   ├── train_all_fsdp.py          # PyTorch FSDP
-│   └── train_all_mgds.py        # Megatron-DeepSpeed
+│   └── train_all_mega.py          # Megatron-LM
 │
 ├── Training Implementations
 │   ├── train_nemo_llama.py        # NeMo Llama trainer
@@ -731,7 +718,7 @@ If you use TPrimat in your research, please cite:
 
 **TPrimat provides:**
 
-✅ **6 frameworks on AMD** (Primus, NeMo, Transformers, DeepSpeed, FSDP, Megatron-DS)  
+✅ **6 frameworks on AMD** (Primus, NeMo, Transformers, DeepSpeed, FSDP, Megatron)  
 ✅ **4 frameworks on NVIDIA** (NeMo, Megatron, DeepSpeed, Transformers)  
 ✅ **Unified benchmarking** across platforms  
 ✅ **Consistent naming** (nvd_, amd_, prim_ prefixes)  

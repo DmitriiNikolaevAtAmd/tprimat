@@ -41,20 +41,30 @@ def load_nvidia_benchmarks(results_dir: str) -> Dict[str, Dict]:
                 continue
             
             # Extract framework and model name from filename
-            # Format: train_{framework}_{model}.json (e.g., "train_mega_llama")
+            # Format: train_nvd_{framework}_{model}.json (e.g., "train_nvd_mega_llama")
             filename = json_file.stem
             parts = filename.split('_')
-            if len(parts) >= 3:
-                framework = parts[1]  # mega/tran/deep/nemo
-                model_name = parts[2]  # llama or qwen
-                
+            
+            framework = None
+            model_name = None
+            
+            if len(parts) >= 4 and parts[1] == 'nvd':
+                framework = parts[2]  # mega/tran/deep/nemo
+                model_name = parts[3]  # llama or qwen
+            elif len(parts) >= 3:
+                # Fallback for old naming format
+                framework = parts[1]
+                model_name = parts[2]
+            
+            if framework and model_name:
                 # Normalize framework names for display
                 framework_display = {
                     'mega': 'Megatron',
                     'tran': 'Transformers',
                     'deep': 'DeepSpeed',
-                    'nemo': 'NeMo'
-                }.get(framework, framework)
+                    'nemo': 'NeMo',
+                    'nvd': 'NVIDIA'  # Fallback
+                }.get(framework, framework.upper())
                 
                 # Store with key like "mega-llama"
                 key = f"{framework}-{model_name}"

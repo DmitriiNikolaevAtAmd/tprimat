@@ -320,8 +320,6 @@ paths:
   nemo:
     data_dir: "/data"
     checkpoint_dir: "/checkpoints"
-  megatron_deepspeed:
-    installation: "${MEGATRON_DEEPSPEED_PATH:-/workspace/Megatron-DeepSpeed}"
   tprimat:
     base_dir: "."
     output_dir: "./output"
@@ -384,15 +382,3 @@ frameworks:
       default_precision: "bf16"
       supports_fp8: true
   
-  megatron_deepspeed:
-    description: "Megatron-DeepSpeed (hybrid parallelism)"
-    supported_platforms: ["nvidia", "amd"]
-    amd:
-      enabled: true
-      requires_rocm: true
-      requires_installation: true
-      parallel_strategies: ["data", "tensor", "pipeline", "zero1"]
-      default_precision: "bf16"
-      default_zero_stage: 1  # ZeRO-1 compatible with model parallelism
-      backend: "nccl"
-
