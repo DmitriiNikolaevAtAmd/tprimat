@@ -24,7 +24,7 @@ from utils import BenchmarkCallbackTran
 try:
     import bitsandbytes as bnb
     HAS_BITSANDBYTES = True
-except ImportError:
+except (ImportError, RuntimeError):
     HAS_BITSANDBYTES = False
 
 logging.basicConfig(
