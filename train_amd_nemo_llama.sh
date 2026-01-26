@@ -24,5 +24,6 @@ export RCCL_DEBUG=INFO
 
 export PARALLEL="amd_optimized"
 
-python3 -u train_nemo_llama.py
+# Use the NVD NeMo script (works on both platforms)
+python3 -u train_nvd_nemo_llama.py
 
