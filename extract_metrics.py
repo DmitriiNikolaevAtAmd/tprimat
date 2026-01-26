@@ -6,7 +6,7 @@ Usage:
     python3 extract_metrics.py \
         --log-file primus_training.log \
         --model-name llama \
-        --output output/train_prim_llama.json \
+        --output output/train_amd_prim_llama.json \
         --num-gpus 8 \
         --global-batch-size 128 \
         --sequence-length 2048
@@ -164,7 +164,7 @@ Examples:
   # With explicit output path
   python3 extract_metrics.py \\
       --log-file primus_training.log \\
-      --output output/train_prim_llama.json \\
+      --output output/train_amd_prim_llama.json \\
       --num-gpus 8 \\
       --global-batch-size 128 \\
       --sequence-length 2048

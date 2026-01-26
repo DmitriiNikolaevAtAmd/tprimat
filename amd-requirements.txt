@@ -5,27 +5,50 @@
 transformers>=4.36.0
 accelerate>=0.25.0
 datasets>=2.14.0
+tokenizers>=0.15.0
 
-# AMD-specific frameworks
-# deepspeed (ROCm-compatible version if available)
-# nemo-toolkit[all]>=1.20.0 (if ROCm compatible)
+# Distributed training frameworks
+# DeepSpeed with ROCm support (check compatibility with your ROCm version)
+deepspeed>=0.12.0
 
-# AMD Primus framework (if available via pip or git)
+# NeMo Framework (AMD/ROCm compatible version)
+# nemo-toolkit[all]>=1.20.0
+# Note: May need to build from source for ROCm compatibility
+# git clone https://github.com/NVIDIA/NeMo.git && cd NeMo && pip install -e .
+
+# AMD Primus framework (ROCm-optimized, installed from base image)
 # primus @ git+https://github.com/amd/primus.git
 
-# Memory optimization (ROCm-compatible)
-# bitsandbytes-rocm (if available)
+# Memory optimization
+# bitsandbytes for ROCm (if available)
+# bitsandbytes-rocm
 
-# Performance
-# flash-attn (ROCm version if available)
+# Performance optimizations
+# Flash Attention for ROCm
+# flash-attn (ROCm-compatible version)
 ninja
+packaging
+
+# Megatron-DeepSpeed (optional, install separately)
+# git clone https://github.com/microsoft/Megatron-DeepSpeed.git
 
 # Utilities
 scipy
+numpy>=1.24.0
 sentencepiece
 protobuf
-pydantic
+pydantic>=2.0.0
+pyyaml
 
-# Monitoring
+# Monitoring and logging
 tensorboard
 wandb
+
+# Optional: Model conversion and optimization
+onnx
+einops
+
+# Development tools
+pytest
+black
+isort

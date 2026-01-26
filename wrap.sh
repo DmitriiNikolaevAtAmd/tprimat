@@ -17,7 +17,7 @@ if [ -n "$NVD_FILES" ]; then
 fi
 
 # Archive AMD results (without directory structure)
-AMD_FILES=$(cd output && ls train_prim_*.json 2>/dev/null || true)
+AMD_FILES=$(cd output && ls train_amd_prim_*.json 2>/dev/null || true)
 if [ -n "$AMD_FILES" ]; then
     cd output
     zip -q ../amd-output.zip $AMD_FILES

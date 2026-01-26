@@ -399,7 +399,7 @@ def main():
             train_qwen()
         else:
             logger.error(f"Unknown model: {model}")
-            logger.error("Usage: python run_mega_plain.py [model]")
+            logger.error("Usage: python train_nvd_mega.py [model]")
             logger.error("  model: 'llama' or 'qwen' (optional, trains all if omitted)")
             sys.exit(1)
 

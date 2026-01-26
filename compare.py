@@ -343,7 +343,7 @@ def main():
         print("    - train_deep_llama.json, train_deep_qwen.json (DeepSpeed)")
         print("    - train_nemo_llama.json, train_nemo_qwen.json (NeMo)")
         print("  AMD frameworks:")
-        print("    - train_prim_llama.json, train_prim_qwen.json (Primus)")
+        print("    - train_amd_prim_llama.json, train_amd_prim_qwen.json (Primus)")
         return 1
     
     # Detect which platforms are available

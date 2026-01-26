@@ -351,7 +351,7 @@ def main():
         
         # Note: For Deep, you typically need to use deepspeed launcher
         # instead of python directly:
-        # deepspeed --num_gpus=8 run_deep_plain.py llama
+        # deepspeed --num_gpus=8 train_deep.py llama
         subprocess.run([sys.executable, __file__, "llama"])
         time.sleep(10)
         subprocess.run([sys.executable, __file__, "qwen"])

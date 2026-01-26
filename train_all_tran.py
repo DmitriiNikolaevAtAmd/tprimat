@@ -341,7 +341,7 @@ def main():
             train_qwen()
         else:
             logger.error(f"Unknown model: {model}")
-            logger.error("Usage: python run_tran_plain.py [model]")
+            logger.error("Usage: python train_all_tran.py [model]")
             logger.error("  model: 'llama' or 'qwen' (optional, trains all if omitted)")
             sys.exit(1)
 

@@ -63,7 +63,7 @@ def extract_metrics(log_file: str, model: str, parallel_strategy: str, output_di
     from config_loader import load_config
     config = load_config()
     
-    output_path = os.path.join(output_dir, f"train_prim_{model}.json")
+    output_path = os.path.join(output_dir, f"train_amd_prim_{model}.json")
     print(f"  Extracting metrics to: {output_path}")
     
     # Get num_gpus based on detected platform (default to nvidia if detection fails)
@@ -120,9 +120,9 @@ def run_nemo_training(model: str, output_dir: str) -> bool:
     return result.returncode == 0
 
 
-def run_primus_training(model: str, output_dir: str) -> bool:
+def train_amd_prim_training(model: str, output_dir: str) -> bool:
     """Run Primus training script."""
-    script = f"./run_primus_{model}.sh"
+    script = f"./train_amd_prim_{model}.sh"
     if not os.path.isfile(script):
         print(f"  ✗ Primus script not found: {script}")
         return False
@@ -154,7 +154,7 @@ def run_benchmarks(models: List[str], runs: int, output_dir: str, use_nemo: bool
             if use_nemo:
                 ok = run_nemo_training(model, output_dir)
             else:
-                ok = run_primus_training(model, output_dir)
+                ok = train_amd_prim_training(model, output_dir)
             
             if ok:
                 if run == runs:

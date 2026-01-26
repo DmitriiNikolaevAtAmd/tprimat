@@ -320,8 +320,79 @@ paths:
   nemo:
     data_dir: "/data"
     checkpoint_dir: "/checkpoints"
+  megatron_deepspeed:
+    installation: "${MEGATRON_DEEPSPEED_PATH:-/workspace/Megatron-DeepSpeed}"
   tprimat:
     base_dir: "."
     output_dir: "./output"
     logs_dir: "./output"
+
+frameworks:
+  # Framework-specific configurations for AMD implementations
+  nemo:
+    description: "NVIDIA NeMo Framework (supports ROCm)"
+    supported_platforms: ["nvidia", "amd"]
+    amd:
+      enabled: true
+      requires_rocm: true
+      parallel_strategies: ["data", "tensor", "pipeline"]
+      default_precision: "bf16"
+      supports_fp8: true
+  
+  transformers:
+    description: "HuggingFace Transformers with DDP"
+    supported_platforms: ["nvidia", "amd"]
+    amd:
+      enabled: true
+      requires_rocm: true
+      parallel_strategies: ["data"]
+      default_precision: "bf16"
+      gradient_checkpointing: true
+      backend: "nccl"  # Works with ROCm
+  
+  deepspeed:
+    description: "Microsoft DeepSpeed with ZeRO"
+    supported_platforms: ["nvidia", "amd"]
+    amd:
+      enabled: true
+      requires_rocm: true
+      parallel_strategies: ["zero1", "zero2", "zero3"]
+      default_zero_stage: 3
+      default_precision: "bf16"
+      cpu_offload: true
+      backend: "nccl"
+  
+  fsdp:
+    description: "PyTorch FSDP (Fully Sharded Data Parallel)"
+    supported_platforms: ["nvidia", "amd"]
+    amd:
+      enabled: true
+      requires_rocm: true
+      parallel_strategies: ["full_shard", "shard_grad_op"]
+      default_sharding_strategy: "FULL_SHARD"
+      default_precision: "bf16"
+      gradient_checkpointing: true
+      backend: "nccl"
+  
+  primus:
+    description: "AMD Primus (ROCm-optimized Megatron)"
+    supported_platforms: ["amd"]
+    amd:
+      enabled: true
+      requires_rocm: true
+      parallel_strategies: ["data", "tensor", "pipeline"]
+      default_precision: "bf16"
+      supports_fp8: true
+  
+  megatron_deepspeed:
+    description: "Megatron-DeepSpeed (hybrid parallelism)"
+    supported_platforms: ["nvidia", "amd"]
+    amd:
+      enabled: true
+      requires_rocm: true
+      requires_installation: true
+      parallel_strategies: ["data", "tensor", "pipeline", "zero1"]
+      default_precision: "bf16"
+      default_zero_stage: 1  # ZeRO-1 compatible with model parallelism
+      backend: "nccl"
 

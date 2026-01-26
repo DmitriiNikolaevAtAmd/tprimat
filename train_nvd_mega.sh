@@ -15,12 +15,7 @@ mkdir -p "$TPRIMAT_PATH/output"
 
 cd "$TPRIMAT_PATH"
 
-# Train Llama 3.1 8B with Megatron (without Primus)
-echo "Training Llama 3.1 8B with Megatron..."
-python3 run_mega_plain.py llama
+python3 train_nvd_mega.py llama
 
-# Train Qwen 2.5 7B with Megatron (without Primus)
-echo "Training Qwen 2.5 7B with Megatron..."
-python3 run_mega_plain.py qwen
+python3 train_nvd_mega.py qwen
 
-echo "All Megatron training completed!"
