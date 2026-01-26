@@ -11,7 +11,9 @@ DP=$((NUM_GPUS / (TP * PP)))
 
 OUTPUT_DIR="./output"
 mkdir -p "$OUTPUT_DIR"
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export HF_HOME="./cache"
+mkdir -p "$HF_HOME"
+export PYTORCH_ALLOC_CONF=expandable_segments:True
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export NCCL_DEBUG=INFO

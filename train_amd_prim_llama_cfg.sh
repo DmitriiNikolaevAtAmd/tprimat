@@ -26,7 +26,7 @@ GACC="${CONFIG_LLAMA_AMD_GACC:-16}"
 
 
 ACT_CHECKPOINT="${CONFIG_AMD_ACT_CHECKPOINT:-false}"
-export PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True'
+export PYTORCH_ALLOC_CONF='expandable_segments:True'
 
 NLAYERS=32
 if [[ "$MODEL" == "qwen" ]]; then NLAYERS=28; fi
@@ -37,7 +37,8 @@ WARMUP_STEPS="${CONFIG_WARMUP_STEPS:-10}"
 WEIGHT_DECAY="${CONFIG_WEIGHT_DECAY:-0.1}"
 cleanup() {
 }mkdir -p "$OUTPUT_DIR"
-
+export HF_HOME="./cache"
+mkdir -p "$HF_HOME"
 if [ ! -d "$PRIMUS_PATH" ]; then
     exit 1
 fi

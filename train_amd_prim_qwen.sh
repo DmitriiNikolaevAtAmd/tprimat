@@ -3,7 +3,7 @@ set -e
 TPRIMAT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
 
-export PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True'
+export PYTORCH_ALLOC_CONF='expandable_segments:True'
 export PYTHONHASHSEED="42"
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
