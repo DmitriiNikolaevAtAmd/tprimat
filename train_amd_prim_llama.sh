@@ -14,8 +14,24 @@ export NCCL_DEBUG=INFO
 
 mkdir -p "$TPRIMAT_PATH/output"
 
+# Validate Primus path exists
+if [ ! -d "$PRIMUS_PATH" ]; then
+    echo "ERROR: Primus directory not found at: $PRIMUS_PATH"
+    echo "Please set PRIMUS_PATH environment variable or ensure /workspace/Primus exists"
+    exit 1
+fi
+
+# Validate config file exists
+CONFIG_FILE="examples/megatron/configs/MI300X/llama3.1_8B-BF16-pretrain.yaml"
+if [ ! -f "$PRIMUS_PATH/$CONFIG_FILE" ]; then
+    echo "ERROR: Config file not found at: $PRIMUS_PATH/$CONFIG_FILE"
+    echo "Available configs:"
+    ls -1 "$PRIMUS_PATH/examples/megatron/configs/MI300X/" 2>/dev/null | grep -i llama || echo "  (none found)"
+    exit 1
+fi
+
 cd "$PRIMUS_PATH"
-export EXP="examples/megatron/configs/MI300X/llama3.1_8B-BF16-pretrain.yaml"
+export EXP="$CONFIG_FILE"
 
 bash ./examples/train.sh \
     --train_iters 10 \
