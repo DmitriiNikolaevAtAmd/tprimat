@@ -109,7 +109,7 @@ def train_model(model_name: str):
     
     recipe.trainer.max_steps = 50
     recipe.optim.config.lr = 0.0003
-    recipe.optim.config.min_lr = 0.00003
+    recipe.optim.config.min_lr = 0.0
     recipe.optim.config.weight_decay = 0.1
     recipe.optim.config.adam_beta1 = 0.9
     recipe.optim.config.adam_beta2 = 0.95
