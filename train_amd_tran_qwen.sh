@@ -12,6 +12,7 @@ export NCCL_DEBUG=INFO
 export RCCL_DEBUG=INFO
 export USE_TF=NO
 export USE_APEX=NO
+export TRANSFORMERS_NO_APEX=1
 
 if [ "$NUM_GPUS" -gt 1 ]; then
     torchrun --nproc_per_node="$NUM_GPUS" \

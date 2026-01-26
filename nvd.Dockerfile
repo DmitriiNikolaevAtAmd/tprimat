@@ -9,12 +9,18 @@ RUN apt-get update && apt-get install -y \
     fish \
     && rm -rf /var/lib/apt/lists/*
 
+# Remove conflicting apex package (if exists) that imports from pyramid
+# This is NOT the NVIDIA Apex library - it's a different package
+RUN pip uninstall -y apex || true
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONHASHSEED=42
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ENV NCCL_DEBUG=INFO
 ENV NCCL_IB_DISABLE=0
 ENV NCCL_NET_GDR_LEVEL=PHB
+ENV USE_APEX=NO
+ENV TRANSFORMERS_NO_APEX=1
 
 RUN mkdir -p /workspace/tprimat
 WORKDIR /workspace/tprimat
