@@ -1,2 +1,2 @@
 #!/bin/bash
-rm -rf cache output __pycache__
+rm -rf cache output __pycache__ torchelastic_*

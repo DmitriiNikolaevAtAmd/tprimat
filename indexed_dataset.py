@@ -57,8 +57,8 @@ class IndexedDataset:
                 dtype=np.int32
             )
         
-        # Open binary file for reading
-        self.bin_file = open(self.bin_path, 'rb')
+        # Don't open binary file here - will open lazily per process
+        self._bin_file = None
         
     def _code_to_dtype(self, code):
         """Convert dtype code to numpy dtype"""
@@ -73,6 +73,13 @@ class IndexedDataset:
             8: np.uint16,
         }
         return dtype_map.get(code, np.int64)
+    
+    @property
+    def bin_file(self):
+        """Lazy file handle - opens once per process"""
+        if self._bin_file is None:
+            self._bin_file = open(self.bin_path, 'rb')
+        return self._bin_file
     
     def __len__(self):
         return len(self.seq_lengths)
@@ -95,8 +102,20 @@ class IndexedDataset:
         return torch.from_numpy(tokens.astype(np.int64))
     
     def __del__(self):
-        if hasattr(self, 'bin_file'):
-            self.bin_file.close()
+        if hasattr(self, '_bin_file') and self._bin_file is not None:
+            self._bin_file.close()
+    
+    def __getstate__(self):
+        """Handle pickling for multiprocessing"""
+        state = self.__dict__.copy()
+        # Don't pickle the file handle
+        state['_bin_file'] = None
+        return state
+    
+    def __setstate__(self, state):
+        """Handle unpickling for multiprocessing"""
+        self.__dict__.update(state)
+        # File will be opened lazily in the new process
 
 
 def check_indexed_dataset_exists(path):
