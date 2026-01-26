@@ -94,11 +94,14 @@ class IndexedDataset:
         pointer = int(self.seq_pointers[idx])
         length = int(self.seq_lengths[idx])
         
-        # Validate pointer and length
+        # Handle empty sequences - return a minimal token sequence
+        if length <= 0:
+            # Return a single EOS token for empty sequences
+            return torch.tensor([0], dtype=torch.long)
+        
+        # Validate pointer
         if pointer < 0:
             raise ValueError(f"Invalid pointer {pointer} at index {idx}")
-        if length <= 0:
-            raise ValueError(f"Invalid length {length} at index {idx}")
         
         bytes_to_read = length * np.dtype(self.dtype).itemsize
         
