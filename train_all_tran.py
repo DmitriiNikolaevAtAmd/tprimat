@@ -186,7 +186,7 @@ def train_llama():
             model_name="llama",
             parallel_strategy="ddp",
             profiler_config={"enabled": False},
-            framework="tran"
+            framework="nvd_tran"
         )
         trainer.add_callback(benchmark_callback)
     except Exception as e:
@@ -302,7 +302,7 @@ def train_qwen():
             model_name="qwen",
             parallel_strategy="ddp",
             profiler_config={"enabled": False},
-            framework="tran"
+            framework="nvd_tran"
         )
         trainer.add_callback(benchmark_callback)
     except Exception as e:

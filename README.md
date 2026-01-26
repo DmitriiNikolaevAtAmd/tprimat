@@ -302,11 +302,11 @@ All frameworks produce unified JSON output:
 
 ```
 output/
-├── train_nemo_llama.json      # NeMo + Llama 3.1 8B
-├── train_nemo_qwen.json       # NeMo + Qwen 2.5 7B
-├── train_mega_llama.json      # Megatron + Llama
-├── train_deep_llama.json      # DeepSpeed + Llama
-├── train_tran_llama.json      # Transformers + Llama
+├── train_nvd_nemo_llama.json  # NeMo + Llama 3.1 8B
+├── train_nvd_nemo_qwen.json   # NeMo + Qwen 2.5 7B
+├── train_nvd_mega_llama.json  # Megatron + Llama
+├── train_nvd_deep_llama.json  # DeepSpeed + Llama
+├── train_nvd_tran_llama.json  # Transformers + Llama
 ├── train_fsdp_llama.json      # FSDP + Llama
 ├── train_amd_prim_llama.json      # Primus + Llama (AMD)
 └── train_mgds_llama.json    # Megatron-DS + Llama

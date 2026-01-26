@@ -307,7 +307,7 @@ def train_model(model_name, model_short_name):
             # Save results
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"train_deep_{model_short_name}.json"
+            output_file = output_dir / f"train_nvd_deep_{model_short_name}.json"
             
             # Round all floats to 5 decimal places
             results_rounded = round_floats(results, precision=5)

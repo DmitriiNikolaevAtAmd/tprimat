@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""
+Megatron-LM Training Script for NVIDIA GPUs
+
+This is a standalone script that trains LLMs using Megatron-LM.
+No shell wrapper needed - all environment setup is handled internally.
+
+Usage:
+    python train_nvd_mega.py              # Train both llama and qwen
+    python train_nvd_mega.py llama        # Train only llama
+    python train_nvd_mega.py qwen         # Train only qwen
+"""
 import os
 import sys
 
@@ -315,7 +326,7 @@ def train_model(model_name: str, model_config: dict):
             # Save results
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"train_mega_{model_name}.json"
+            output_file = output_dir / f"train_nvd_mega_{model_name}.json"
             
             # Round all floats to 5 decimal places (matching BenchmarkCallback)
             from utils import round_floats
@@ -343,7 +354,7 @@ def train_model(model_name: str, model_config: dict):
             }
             output_dir = Path("output")
             output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"train_mega_{model_name}.json"
+            output_file = output_dir / f"train_nvd_mega_{model_name}.json"
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2)
         raise
@@ -385,6 +396,22 @@ def train_qwen():
 
 def main():
     """Main entry point."""
+    # Set environment variables (from train_nvd_mega.sh)
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    os.environ['PYTHONHASHSEED'] = '42'
+    os.environ['HSA_NO_SCRATCH_RECLAIM'] = '1'
+    os.environ['HSA_ENABLE_SDMA'] = '1'
+    os.environ['HSA_FORCE_FINE_GRAIN_PCIE'] = '1'
+    os.environ['RCCL_DEBUG'] = 'INFO'
+    os.environ['NCCL_DEBUG'] = 'INFO'
+    
+    # Create output directory
+    output_dir = Path(__file__).parent / "output"
+    output_dir.mkdir(exist_ok=True)
+    
+    logger.info("Environment configured for NVIDIA GPU training")
+    logger.info(f"Output directory: {output_dir}")
+    
     if len(sys.argv) < 2:
         # No model specified, train all models
         logger.info("No model specified, training all models")
@@ -399,8 +426,10 @@ def main():
             train_qwen()
         else:
             logger.error(f"Unknown model: {model}")
-            logger.error("Usage: python train_nvd_mega.py [model]")
-            logger.error("  model: 'llama' or 'qwen' (optional, trains all if omitted)")
+            logger.error("\nUsage:")
+            logger.error("  python train_nvd_mega.py              # Train both models")
+            logger.error("  python train_nvd_mega.py llama        # Train only Llama")
+            logger.error("  python train_nvd_mega.py qwen         # Train only Qwen")
             sys.exit(1)
 
 

@@ -107,7 +107,7 @@ def main():
         model_name="llama",
         parallel_strategy="minimal_communication",
         profiler_config={"enabled": False},
-        framework="nemo"
+        framework="nvd_nemo"
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []

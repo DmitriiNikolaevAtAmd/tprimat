@@ -385,17 +385,17 @@ def main():
     if not benchmarks:
         print("\n  x No NVIDIA benchmark results found!")
         print(f"\nExpected files in {args.results_dir}/:")
-        print("  - train_mega_llama.json, train_mega_qwen.json (Megatron)")
-        print("  - train_tran_llama.json, train_tran_qwen.json (Transformers)")
-        print("  - train_deep_llama.json, train_deep_qwen.json (DeepSpeed)")
-        print("  - train_nemo_llama.json, train_nemo_qwen.json (NeMo)")
+        print("  - train_nvd_mega_llama.json, train_nvd_mega_qwen.json (Megatron)")
+        print("  - train_nvd_tran_llama.json, train_nvd_tran_qwen.json (Transformers)")
+        print("  - train_nvd_deep_llama.json, train_nvd_deep_qwen.json (DeepSpeed)")
+        print("  - train_nvd_nemo_llama.json, train_nvd_nemo_qwen.json (NeMo)")
         print("\n  Note: Only files with platform='nvd' will be included")
         return 1
     
     print(f"\n  Found {len(benchmarks)} NVIDIA benchmark(s)")
     
-    # Generate comparison plot
-    output_path = os.path.join(args.results_dir, args.output)
+    # Generate comparison plot (save in root directory, not results_dir)
+    output_path = args.output
     print(f"\nGenerating comparison plot: {output_path}")
     try:
         create_nvidia_comparison_plot(benchmarks, output_path)
