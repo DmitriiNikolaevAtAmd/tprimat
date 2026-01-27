@@ -139,6 +139,12 @@ def verify_dataset(path: str, seq_length: int, num_sequences: int):
     print(f"  Verified OK")
 
 
+TOKENIZERS = {
+    "llama": "meta-llama/Llama-3.1-8B",
+    "qwen": "Qwen/Qwen2.5-7B",
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Encode JSONL to Megatron format")
     parser.add_argument(
@@ -148,16 +154,10 @@ def main():
         help="Input clean JSONL file",
     )
     parser.add_argument(
-        "--output",
+        "--output-dir",
         type=str,
-        default="/data/tprimat/allenai-c4-100k",
-        help="Output prefix (creates .bin and .idx files)",
-    )
-    parser.add_argument(
-        "--tokenizer",
-        type=str,
-        default="meta-llama/Llama-3.1-8B",
-        help="HuggingFace tokenizer",
+        default="/data/tprimat",
+        help="Output directory for encoded datasets",
     )
     parser.add_argument(
         "--seq-length",
@@ -167,7 +167,14 @@ def main():
     )
     
     args = parser.parse_args()
-    encode_dataset(args.input, args.output, args.tokenizer, args.seq_length)
+    
+    # Encode for each tokenizer
+    for model_name, tokenizer_name in TOKENIZERS.items():
+        output_prefix = f"{args.output_dir}/allenai-c4-100k-{model_name}"
+        print(f"\n{'='*60}")
+        print(f"Encoding for {model_name.upper()}")
+        print(f"{'='*60}")
+        encode_dataset(args.input, output_prefix, tokenizer_name, args.seq_length)
 
 
 if __name__ == "__main__":

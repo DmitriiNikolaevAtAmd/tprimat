@@ -104,9 +104,9 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     try:
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
-        vocab_size = tokenizer.vocab_size
+        vocab_size = len(tokenizer)  # includes added tokens
         print(f"  Tokenizer: {tokenizer_name}")
-        print(f"  Vocab size: {vocab_size:,}")
+        print(f"  Vocab size: {vocab_size:,} (base: {tokenizer.vocab_size:,})")
     except Exception as e:
         warnings.append(f"Could not load tokenizer: {e}")
         vocab_size = None
@@ -188,19 +188,19 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
         return True
 
 
+DATASETS = {
+    "llama": ("allenai-c4-100k-llama", "meta-llama/Llama-3.1-8B"),
+    "qwen": ("allenai-c4-100k-qwen", "Qwen/Qwen2.5-7B"),
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Verify encoded Megatron dataset")
     parser.add_argument(
-        "--input",
+        "--input-dir",
         type=str,
-        default="/data/tprimat/allenai-c4-100k",
-        help="Input prefix (.bin and .idx files)",
-    )
-    parser.add_argument(
-        "--tokenizer",
-        type=str,
-        default="meta-llama/Llama-3.1-8B",
-        help="HuggingFace tokenizer for validation",
+        default="/data/tprimat",
+        help="Directory containing encoded datasets",
     )
     parser.add_argument(
         "--samples",
@@ -211,8 +211,17 @@ def main():
     
     args = parser.parse_args()
     
-    success = verify_dataset(args.input, args.tokenizer, args.samples)
-    sys.exit(0 if success else 1)
+    all_success = True
+    for model_name, (dataset_name, tokenizer_name) in DATASETS.items():
+        input_prefix = f"{args.input_dir}/{dataset_name}"
+        print(f"\n{'='*60}")
+        print(f"Verifying {model_name.upper()} dataset: {input_prefix}")
+        print(f"{'='*60}")
+        success = verify_dataset(input_prefix, tokenizer_name, args.samples)
+        if not success:
+            all_success = False
+    
+    sys.exit(0 if all_success else 1)
 
 
 if __name__ == "__main__":
