@@ -8,9 +8,17 @@ export PYTHONHASHSEED="42"
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
+
+# Suppress warnings for cleaner output
+export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
+export TOKENIZERS_PARALLELISM=false
+export TRANSFORMERS_VERBOSITY=error
+export HF_HUB_DISABLE_PROGRESS_BARS=1
+
 # Disable debug logging for better performance
 export RCCL_DEBUG=WARN
 export NCCL_DEBUG=WARN
+export GLOO_LOG_LEVEL=WARN
 
 # RCCL network interface
 export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-ens51np0}"
@@ -100,6 +108,11 @@ if [ ! -f "$TRAIN_SCRIPT" ]; then
     exit 1
 fi
 
+# Filter noisy library messages that can't be suppressed via env vars
+filter_noise() {
+    grep -v -E "(^\[Primus CLI\]|^\[Primus\] sys\.path|^Supported flash-attn versions|^\[aiter\]|^fused_indices_to_multihot|^\[PrimusPatch\]|^\[Gloo\] Rank|waiting for baton release)"
+}
+
 bash "$TRAIN_SCRIPT" \
     --train_iters 50 \
     --lr 0.0003 \
@@ -108,7 +121,7 @@ bash "$TRAIN_SCRIPT" \
     --lr_decay_style cosine \
     --lr_decay_iters 50 \
     --weight_decay 0.1 \
-    2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama.log"
+    2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama_raw.log" | filter_noise | tee "$TPRIMAT_PATH/output/training_main_llama.log"
 
 cd "$TPRIMAT_PATH"
 
