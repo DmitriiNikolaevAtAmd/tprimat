@@ -61,8 +61,23 @@ class PretrainingDataset:
             # Load real data
             batch_tokens = []
             for _ in range(batch_size):
-                dataset_idx = self.iteration % len(self.indexed_dataset)
-                tokens = self.indexed_dataset[dataset_idx]
+                base_idx = self.iteration
+                tokens = None
+                last_error = None
+                for attempt in range(3):
+                    dataset_idx = (base_idx + attempt) % len(self.indexed_dataset)
+                    try:
+                        tokens = self.indexed_dataset[dataset_idx]
+                        self.iteration = base_idx + attempt + 1
+                        break
+                    except Exception as e:
+                        last_error = e
+                        if not getattr(self, "_read_error_logged", False):
+                            logger.warning(f"⚠ Real data read failed: {e}")
+                            logger.warning("  Retrying with next sequence")
+                            self._read_error_logged = True
+                if tokens is None:
+                    raise IOError(f"Real data read failed after retries: {last_error}")
                 
                 # Pad or truncate to seq_length
                 if len(tokens) < self.seq_length:
@@ -73,7 +88,6 @@ class PretrainingDataset:
                     input_ids = tokens[:self.seq_length]
                 
                 batch_tokens.append(input_ids)
-                self.iteration += 1
             
             return torch.stack(batch_tokens).to(device)
         else:
