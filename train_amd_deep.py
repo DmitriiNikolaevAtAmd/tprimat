@@ -239,18 +239,24 @@ def train_model(model_name, model_short_name):
     
     # Initialize DeepSpeed
     dataloader_workers = 0 if use_real_data else 2
+    sampler = torch.utils.data.distributed.DistributedSampler(
+        dataset,
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=True,
+    ) if world_size > 1 else None
     dataloader = DataLoader(
         dataset,
         batch_size=micro_batch,
-        shuffle=True,
+        sampler=sampler,
+        shuffle=(sampler is None),
         num_workers=dataloader_workers,
         pin_memory=True,
         drop_last=True,
     )
-    model_engine, optimizer, dataloader, lr_scheduler = deepspeed.initialize(
+    model_engine, optimizer, _, lr_scheduler = deepspeed.initialize(
         model=model,
         model_parameters=model.parameters(),
-        training_data=dataloader,
         config=ds_config,
     )
     
