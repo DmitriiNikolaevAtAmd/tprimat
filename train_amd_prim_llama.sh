@@ -71,10 +71,10 @@ import yaml
 with open('$PATCHED_CONFIG', 'r') as f:
     config = yaml.safe_load(f)
 
-# Parallelism settings (matching nvd_nemo but with TP=1)
+# Parallelism settings (TP=1 means pure data parallel)
 config['tensor_model_parallel_size'] = 1
 config['pipeline_model_parallel_size'] = 1
-config['sequence_parallel'] = True
+config['sequence_parallel'] = False  # sequence_parallel requires TP > 1
 
 # Batch settings (matching nvd_nemo exactly)
 config['global_batch_size'] = 64
