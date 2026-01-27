@@ -207,7 +207,7 @@ def train_model(model_name: str, model_config: dict):
         
         # Add LR scheduler with warmup and cosine decay
         from transformers import get_cosine_schedule_with_warmup
-        num_warmup_steps = 10
+        num_warmup_steps = 50
         num_training_steps = model_config['num_steps']
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
@@ -271,7 +271,7 @@ def train_model(model_name: str, model_config: dict):
                     logger.info(f"GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
         training_time = time.time() - training_start
         if rank == 0 and len(step_times) > 10:
-            step_times_no_warmup = step_times[10:]
+            step_times_no_warmup = step_times[50:]
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
             global_batch_size = batch_size * world_size * model_config['grad_accum_steps']
@@ -358,7 +358,7 @@ def train_llama():
         'seq_length': 2048,
         'micro_batch_size': 1,
         'grad_accum_steps': 8,
-        'num_steps': 50,
+        'num_steps': 500,
         'learning_rate': 3e-4,
         'tensor_parallel': 1,
         'pipeline_parallel': 1,
@@ -372,7 +372,7 @@ def train_qwen():
         'seq_length': 2048,
         'micro_batch_size': 1,
         'grad_accum_steps': 8,
-        'num_steps': 50,
+        'num_steps': 500,
         'learning_rate': 3e-4,
         'tensor_parallel': 1,
         'pipeline_parallel': 1,

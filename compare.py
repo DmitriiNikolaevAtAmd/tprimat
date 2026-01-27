@@ -7,7 +7,7 @@ Compares AMD and NVIDIA GPU training performance with:
 - Visual plots and analysis
 
 Usage:
-    python3 compare.py [--results-dir ./output]
+    python3 compare.py [--results-dir ./output] [--framework nemo]
 """
 
 import argparse
@@ -36,41 +36,92 @@ def load_all_benchmark_results(results_dir: str) -> Dict[str, Dict]:
                 data = json.load(f)
             
             # Extract model name from filename
-            # Format: train_{framework}_{model}.json (e.g., "train_nemo_llama")
+            # Supported formats:
+            # - train_{framework}_{model}.json (e.g., train_nemo_llama)
+            # - train_{platform}_{framework}_{model}.json (e.g., train_nvd_nemo_llama)
             filename = json_file.stem
             parts = filename.split('_')
-                if len(parts) >= 3:
-                    framework = parts[1]  # mega/tran/deep/nemo/prim
-                    model_name = parts[2]  # llama or qwen
-                    
-                    # Map framework to platform
-                    if framework in ['mega', 'tran', 'deep', 'nemo']:
-                        platform = "nvidia"
-                    elif framework in ['prim']:
-                        platform = "amd"
-                    else:
-                        # Fallback: check platform field in JSON
-                        platform = data.get('platform', 'unknown')
-                    
-                    # Store with key like "nvidia-llama"
-                    key = f"{platform}-{model_name}"
-                    data['model_name'] = model_name
-                    data['platform_key'] = platform
-                    benchmarks[key] = data
-                    
-                    print(f"[+] Loaded: {key} from {json_file.name}")
-            except Exception as e:
-                print(f"[!] Error loading {json_file}: {e}")
+            platform = "unknown"
+            framework = "unknown"
+            model_name = "unknown"
+            if len(parts) >= 4 and parts[1] in ("nvd", "amd"):
+                platform = "nvidia" if parts[1] == "nvd" else "amd"
+                framework = parts[2]
+                model_name = parts[3]
+            elif len(parts) >= 3:
+                framework = parts[1]
+                model_name = parts[2]
+                if framework in ['mega', 'tran', 'deep', 'nemo', 'fsdp']:
+                    platform = "nvidia"
+                elif framework in ['prim', 'amd']:
+                    platform = "amd"
+                else:
+                    platform = data.get('platform', 'unknown')
+            
+            if model_name == "unknown" or platform == "unknown":
+                print(f"[!] Skipping unrecognized file name: {json_file.name}")
+                continue
+            
+            # Store with key like "nvidia-nemo-llama"
+            key = f"{platform}-{framework}-{model_name}"
+            data['model_name'] = model_name
+            data['platform_key'] = platform
+            data['framework'] = framework
+            benchmarks[key] = data
+            
+            print(f"[+] Loaded: {key} from {json_file.name}")
+        except Exception as e:
+            print(f"[!] Error loading {json_file}: {e}")
     
     return benchmarks
+
+
+def pick_default_framework(benchmarks: Dict[str, Dict]) -> str | None:
+    """Pick a framework with the best cross-platform coverage."""
+    frameworks = {}
+    for key, data in benchmarks.items():
+        framework = data.get("framework", "unknown")
+        platform = data.get("platform_key", "unknown")
+        model_name = data.get("model_name", "unknown")
+        if framework == "unknown" or platform == "unknown" or model_name == "unknown":
+            continue
+        frameworks.setdefault(framework, set()).add((platform, model_name))
+    
+    best_framework = None
+    best_score = 0
+    for framework, combos in frameworks.items():
+        has_cross_platform = any(
+            ("nvidia", model) in combos and ("amd", model) in combos
+            for model in ("llama", "qwen")
+        )
+        score = len(combos) + (100 if has_cross_platform else 0)
+        if score > best_score:
+            best_score = score
+            best_framework = framework
+    
+    return best_framework
 
 
 # ============================================================================
 # PLOTTING
 # ============================================================================
 
-def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "compare.png"):
+def create_comparison_plot(
+    benchmarks: Dict[str, Dict],
+    output_file: str = "compare.png",
+    framework_filter: str | None = None,
+):
     """Create visual comparison of all platform-model combinations."""
+    
+    def find_key(platform: str, model_name: str) -> str | None:
+        if framework_filter:
+            candidate = f"{platform}-{framework_filter}-{model_name}"
+            return candidate if candidate in benchmarks else None
+        matches = [
+            key for key in benchmarks.keys()
+            if key.startswith(f"{platform}-") and key.endswith(f"-{model_name}")
+        ]
+        return sorted(matches)[0] if matches else None
     
     # Detect which platforms are available
     has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
@@ -115,14 +166,17 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     values = []
     colors_list = []
     
-    for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks:
-            perf = benchmarks[key]['performance_metrics']
-            tps_gpu = perf.get('tokens_per_second_per_gpu')
-            if tps_gpu:
-                labels.append(style_map[key]['label'])
-                values.append(tps_gpu)
-                colors_list.append(style_map[key]['color'])
+    for platform in ("nvidia", "amd"):
+        for model_name in ("llama", "qwen"):
+            suffix = f"{platform}-{model_name}"
+            key = find_key(platform, model_name)
+            if key:
+                perf = benchmarks[key]['performance_metrics']
+                tps_gpu = perf.get('tokens_per_second_per_gpu')
+                if tps_gpu:
+                    labels.append(style_map[suffix]['label'])
+                    values.append(tps_gpu)
+                    colors_list.append(style_map[suffix]['color'])
     
     if values:
         bars = ax1.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
@@ -145,21 +199,24 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     ax2 = axes[1]
     has_data = False
     
-    for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks and 'loss_values' in benchmarks[key]:
-            loss_values = benchmarks[key]['loss_values']
-            if loss_values:
-                steps = range(len(loss_values))
-                style = style_map[key]
-                ax2.plot(steps, loss_values, 
-                        marker=style['marker'], 
-                        linestyle=style['linestyle'],
-                        color=style['color'], 
-                        label=style['label'], 
-                        linewidth=1.5, 
-                        markersize=2, 
-                        alpha=0.85)
-                has_data = True
+    for platform in ("nvidia", "amd"):
+        for model_name in ("llama", "qwen"):
+            suffix = f"{platform}-{model_name}"
+            key = find_key(platform, model_name)
+            if key and 'loss_values' in benchmarks[key]:
+                loss_values = benchmarks[key]['loss_values']
+                if loss_values:
+                    steps = range(len(loss_values))
+                    style = style_map[suffix]
+                    ax2.plot(steps, loss_values, 
+                            marker=style['marker'], 
+                            linestyle=style['linestyle'],
+                            color=style['color'], 
+                            label=style['label'], 
+                            linewidth=1.5, 
+                            markersize=2, 
+                            alpha=0.85)
+                    has_data = True
     
     if has_data:
         ax2.set_xlabel('Step', fontweight='bold', fontsize=10)
@@ -176,21 +233,24 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     ax3 = axes[2]
     has_data = False
     
-    for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks and 'learning_rates' in benchmarks[key]:
-            lr_values = benchmarks[key]['learning_rates']
-            if lr_values:
-                steps = range(len(lr_values))
-                style = style_map[key]
-                ax3.plot(steps, lr_values, 
-                        marker=style['marker'], 
-                        linestyle=style['linestyle'],
-                        color=style['color'], 
-                        label=style['label'], 
-                        linewidth=1.5, 
-                        markersize=2, 
-                        alpha=0.85)
-                has_data = True
+    for platform in ("nvidia", "amd"):
+        for model_name in ("llama", "qwen"):
+            suffix = f"{platform}-{model_name}"
+            key = find_key(platform, model_name)
+            if key and 'learning_rates' in benchmarks[key]:
+                lr_values = benchmarks[key]['learning_rates']
+                if lr_values:
+                    steps = range(len(lr_values))
+                    style = style_map[suffix]
+                    ax3.plot(steps, lr_values, 
+                            marker=style['marker'], 
+                            linestyle=style['linestyle'],
+                            color=style['color'], 
+                            label=style['label'], 
+                            linewidth=1.5, 
+                            markersize=2, 
+                            alpha=0.85)
+                    has_data = True
     
     if has_data:
         ax3.set_xlabel('Step', fontweight='bold', fontsize=10)
@@ -208,25 +268,28 @@ def create_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "comp
     ax4 = axes[3]
     has_data = False
     
-    for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks and 'step_times' in benchmarks[key]:
-            step_times = benchmarks[key]['step_times']
-            if step_times:
-                steps = range(len(step_times))
-                style = style_map[key]
-                ax4.plot(steps, step_times, 
-                        marker=style['marker'], 
-                        linestyle=style['linestyle'],
-                        color=style['color'], 
-                        label=style['label'], 
-                        linewidth=1.5, 
-                        markersize=2, 
-                        alpha=0.85)
-                
-                # Add average line annotation
-                avg_time = sum(step_times) / len(step_times)
-                ax4.axhline(y=avg_time, color=style['color'], linestyle=':', alpha=0.3, linewidth=0.8)
-                has_data = True
+    for platform in ("nvidia", "amd"):
+        for model_name in ("llama", "qwen"):
+            suffix = f"{platform}-{model_name}"
+            key = find_key(platform, model_name)
+            if key and 'step_times' in benchmarks[key]:
+                step_times = benchmarks[key]['step_times']
+                if step_times:
+                    steps = range(len(step_times))
+                    style = style_map[suffix]
+                    ax4.plot(steps, step_times, 
+                            marker=style['marker'], 
+                            linestyle=style['linestyle'],
+                            color=style['color'], 
+                            label=style['label'], 
+                            linewidth=1.5, 
+                            markersize=2, 
+                            alpha=0.85)
+                    
+                    # Add average line annotation
+                    avg_time = sum(step_times) / len(step_times)
+                    ax4.axhline(y=avg_time, color=style['color'], linestyle=':', alpha=0.3, linewidth=0.8)
+                    has_data = True
     
     if has_data:
         ax4.set_xlabel('Step', fontweight='bold', fontsize=10)
@@ -328,6 +391,8 @@ def main():
                        help='Directory containing benchmark JSON files (default: OUTPUT_DIR env var or ./output)')
     parser.add_argument('--output', default='compare.png',
                        help='Output filename for the comparison plot (default: compare.png)')
+    parser.add_argument('--framework', default=None,
+                       help='Framework filter (e.g., nemo, deep, fsdp). Auto-detects if omitted.')
     
     args = parser.parse_args()
     
@@ -342,14 +407,15 @@ def main():
         print("    - train_nvd_tran_llama.json, train_nvd_tran_qwen.json (Transformers)")
         print("    - train_nvd_deep_llama.json, train_nvd_deep_qwen.json (DeepSpeed)")
         print("    - train_nvd_nemo_llama.json, train_nvd_nemo_qwen.json (NeMo)")
-        print("    - train_amd_nemo_llama.json, train_amd_nemo_qwen.json (NeMo on AMD)")
         print("  AMD frameworks:")
+        print("    - train_amd_nemo_llama.json, train_amd_nemo_qwen.json (NeMo)")
         print("    - train_amd_prim_llama.json, train_amd_prim_qwen.json (Primus)")
         return 1
     
     # Detect which platforms are available
     has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
     has_amd = any(key.startswith('amd-') for key in benchmarks.keys())
+    framework_filter = args.framework or pick_default_framework(benchmarks)
     
     print(f"\n  * Found {len(benchmarks)} benchmark(s):")
     for key in sorted(benchmarks.keys()):
@@ -368,10 +434,15 @@ def main():
     elif not has_amd:
         print("ℹ️  Note: Generating NVIDIA-only comparison (no AMD data)")
     
+    if framework_filter:
+        print(f"\n  * Using framework filter: {framework_filter}")
+    else:
+        print("\n  * No framework filter selected; using first matching per model/platform")
+    
     # Generate comparison plot with all models
     print(f"\nGenerating comparison plot: {args.output}")
     try:
-        create_comparison_plot(benchmarks, args.output)
+        create_comparison_plot(benchmarks, args.output, framework_filter=framework_filter)
     except Exception as e:
         print(f"[!] Could not generate plot: {e}")
         import traceback
@@ -384,8 +455,21 @@ def main():
     print(f"\n{'Configuration':<25} {'Tokens/sec/GPU':>15} {'Avg Step Time':>15} {'Avg Loss':>12}")
     print("-" * 100)
     
-    for key in ['nvidia-llama', 'nvidia-qwen', 'amd-llama', 'amd-qwen']:
-        if key in benchmarks:
+    def find_key(platform: str, model_name: str) -> str | None:
+        if framework_filter:
+            candidate = f"{platform}-{framework_filter}-{model_name}"
+            return candidate if candidate in benchmarks else None
+        matches = [
+            key for key in benchmarks.keys()
+            if key.startswith(f"{platform}-") and key.endswith(f"-{model_name}")
+        ]
+        return sorted(matches)[0] if matches else None
+    
+    for platform in ["nvidia", "amd"]:
+        for model_name in ["llama", "qwen"]:
+            key = find_key(platform, model_name)
+            if not key:
+                continue
             data = benchmarks[key]
             perf = data['performance_metrics']
             tps_gpu = perf.get('tokens_per_second_per_gpu', 0)

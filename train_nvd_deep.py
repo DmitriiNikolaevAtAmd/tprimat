@@ -186,7 +186,7 @@ def train_model(model_name, model_short_name):
     if rank == 0:
         print("Starting training...")
     model_engine.train()
-    total_steps = 50
+    total_steps = 500
     step = 0
     start_time = time.time()
     
@@ -222,7 +222,7 @@ def train_model(model_name, model_short_name):
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
         if len(step_times) > 10:
-            step_times_no_warmup = step_times[10:]
+            step_times_no_warmup = step_times[50:]
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
             micro_batch = 1

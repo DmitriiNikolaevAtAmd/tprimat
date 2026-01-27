@@ -142,7 +142,7 @@ def train_model(model_name, model_short_name):
     grad_accum = 8
     global_batch_size = micro_batch * grad_accum * world_size
     seq_length = 2048
-    total_steps = 50
+    total_steps = 500
     
     step_times = []
     loss_values = []
@@ -223,7 +223,7 @@ def train_model(model_name, model_short_name):
     
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer,
-        num_warmup_steps=10,
+        num_warmup_steps=50,
         num_training_steps=total_steps,
     )
     
@@ -269,7 +269,7 @@ def train_model(model_name, model_short_name):
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
         if len(step_times) > 10:
-            step_times_no_warmup = step_times[10:]
+            step_times_no_warmup = step_times[50:]
             
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
