@@ -8,7 +8,7 @@ from pathlib import Path
 from collections import Counter
 
 
-DTYPE = np.int32
+DTYPE = np.dtype(np.int32)
 DTYPE_CODE = 4
 
 
