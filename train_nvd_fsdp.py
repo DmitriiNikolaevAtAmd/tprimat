@@ -63,7 +63,20 @@ class PretrainingDataset(Dataset):
         if self.real_data_available and self.indexed_dataset is not None:
             # Load real data and pad/truncate to seq_length
             dataset_idx = idx % len(self.indexed_dataset)
-            tokens = self.indexed_dataset[dataset_idx]
+            tokens = None
+            last_error = None
+            for attempt in range(3):
+                try:
+                    tokens = self.indexed_dataset[(dataset_idx + attempt) % len(self.indexed_dataset)]
+                    break
+                except Exception as e:
+                    last_error = e
+                    if not getattr(self, "_read_error_logged", False):
+                        print(f"⚠ Real data read failed: {e}")
+                        print("  Retrying with next sequence")
+                        self._read_error_logged = True
+            if tokens is None:
+                raise IOError(f"Real data read failed after retries: {last_error}")
             
             # Pad or truncate to seq_length
             if len(tokens) < self.seq_length:
