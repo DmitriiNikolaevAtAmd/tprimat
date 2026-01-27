@@ -29,10 +29,7 @@ ENV NCCL_NET_GDR_LEVEL=PHB
 ENV NCCL_IB_DISABLE=0
 ENV RCCL_MSCCL_ENABLE=0
 
-# HuggingFace token - pass at runtime: docker run -e HF_TOKEN=xxx
-# Required for gated models like Llama 3.1
-ENV HF_TOKEN=""
-ENV HUGGINGFACE_HUB_TOKEN=""
+# HuggingFace cache directory
 ENV HF_HOME="/workspace/cache/huggingface"
 
 # Create directories
