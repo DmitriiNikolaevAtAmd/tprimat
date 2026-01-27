@@ -22,7 +22,8 @@ ENV RCCL_DEBUG=WARN
 ENV NCCL_DEBUG=WARN
 ENV NCCL_NET_GDR_LEVEL=PHB
 ENV NCCL_IB_DISABLE=0
-ENV NCCL_SOCKET_IFNAME=eth0
+# Remove NCCL_SOCKET_IFNAME - let RCCL auto-detect the network interface
+# If you get "no socket interface found", check container network with: ip addr
 ENV RCCL_MSCCL_ENABLE=0
 
 RUN mkdir -p /workspace/tprimat

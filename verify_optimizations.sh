@@ -38,8 +38,8 @@ fi
 
 echo ""
 
-# Check 2: Dockerfile debug logging
-echo "[2] Checking amd.Dockerfile debug settings..."
+# Check 2: Dockerfile debug logging and network settings
+echo "[2] Checking amd.Dockerfile settings..."
 if grep -q "RCCL_DEBUG=WARN" "$SCRIPT_DIR/amd.Dockerfile"; then
     echo "    ✓ RCCL_DEBUG set to WARN"
 else
@@ -52,6 +52,13 @@ if grep -q "NCCL_DEBUG=WARN" "$SCRIPT_DIR/amd.Dockerfile"; then
 else
     echo "    ✗ NCCL_DEBUG still at INFO (causes overhead)"
     ERRORS=$((ERRORS + 1))
+fi
+
+if grep -q 'NCCL_SOCKET_IFNAME=eth0' "$SCRIPT_DIR/amd.Dockerfile"; then
+    echo "    ✗ NCCL_SOCKET_IFNAME hardcoded to eth0 (causes 'no socket interface' error)"
+    ERRORS=$((ERRORS + 1))
+else
+    echo "    ✓ NCCL_SOCKET_IFNAME not hardcoded (auto-detect in training script)"
 fi
 
 echo ""
