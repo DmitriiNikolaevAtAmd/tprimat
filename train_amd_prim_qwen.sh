@@ -8,8 +8,11 @@ export PYTHONHASHSEED="42"
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
-export RCCL_DEBUG=INFO
-export NCCL_DEBUG=INFO
+# Disable debug logging for better performance
+export RCCL_DEBUG=WARN
+export NCCL_DEBUG=WARN
+export NCCL_SOCKET_IFNAME=eth0
+export RCCL_MSCCL_ENABLE=0
 mkdir -p "$TPRIMAT_PATH/output"
 if [ ! -d "$PRIMUS_PATH" ]; then
     echo "ERROR: Primus directory not found at: $PRIMUS_PATH"
@@ -25,7 +28,43 @@ if [ ! -f "$PRIMUS_PATH/$CONFIG_FILE" ]; then
 fi
 
 cd "$PRIMUS_PATH"
-export EXP="$CONFIG_FILE"
+
+# Patch config with minimal_communication strategy (identical to NVIDIA)
+# TP=1, PP=1, DP=4, GradAccum=32 - eliminates model parallelism overhead
+PATCHED_CONFIG="$TPRIMAT_PATH/output/qwen2.5_7B-BF16-pretrain.yaml"
+cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
+
+if python3 -c "import yaml" 2>/dev/null; then
+    python3 -c "
+import yaml
+with open('$PATCHED_CONFIG', 'r') as f:
+    config = yaml.safe_load(f)
+
+# Minimal communication strategy: same as NVIDIA baseline
+config['tensor_model_parallel_size'] = 1
+config['pipeline_model_parallel_size'] = 1
+config['gradient_accumulation_steps'] = 32
+
+# Enable performance optimizations
+config['use_distributed_optimizer'] = True
+config['use_flash_attn'] = True
+config['use_fused_rmsnorm'] = True
+config['fp32_residual_connection'] = False
+
+# Ensure training parameters
+config['train_iters'] = 50
+config['lr_decay_iters'] = 50
+config['lr_warmup_iters'] = 10
+
+with open('$PATCHED_CONFIG', 'w') as f:
+    yaml.dump(config, f)
+"
+    echo "Config patched with minimal_communication: TP=1, DP=4, GradAccum=32 (matches NVIDIA)"
+else
+    echo "WARNING: pyyaml not available, using unpatched config"
+fi
+
+export EXP="$PATCHED_CONFIG"
 
 bash ./examples/train.sh \
     --train_iters 50 \

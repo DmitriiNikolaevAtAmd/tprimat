@@ -91,10 +91,10 @@ parallelism:
         data_parallel_size: 2            # 8/(4*1) = 2
         gradient_accumulation_steps: 64  # 128/(1*2) = 64
       amd:
-        tensor_model_parallel_size: 1    # TP=1 (leverage 192GB memory)
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallelism - minimal overhead)
         pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 8            # 8/(1*1) = 8
-        gradient_accumulation_steps: 16  # 128/(1*8) = 16
+        data_parallel_size: 2            # 2/(1*1) = 2 (match NVIDIA's DP)
+        gradient_accumulation_steps: 64  # 128/(1*2) = 64 (match NVIDIA's sync frequency)
     qwen:
       nvidia:
         tensor_model_parallel_size: 4    # TP=4
@@ -102,10 +102,10 @@ parallelism:
         data_parallel_size: 1            # 8/(4*2) = 1
         gradient_accumulation_steps: 128 # 128/(1*1) = 128
       amd:
-        tensor_model_parallel_size: 1    # TP=1 (leverage 192GB memory)
+        tensor_model_parallel_size: 1    # TP=1 (no tensor parallelism - minimal overhead)
         pipeline_model_parallel_size: 1  # PP=1
-        data_parallel_size: 8            # 8/(1*1) = 8
-        gradient_accumulation_steps: 16  # 128/(1*8) = 16
+        data_parallel_size: 1            # 1/(1*1) = 1 (single GPU group)
+        gradient_accumulation_steps: 128 # 128/(1*1) = 128 (match NVIDIA's sync frequency)
   
   # Truly Identical: All platforms use exactly the same parallelism settings.
   # Ensures apples-to-apples comparison across hardware.
