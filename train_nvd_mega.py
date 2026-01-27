@@ -285,7 +285,10 @@ def train_model(model_name: str, model_config: dict):
                     logger.info(f"GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
         training_time = time.time() - training_start
         if rank == 0 and len(step_times) > 10:
-            step_times_no_warmup = step_times[50:]
+            warmup_steps = min(10, len(step_times))
+            step_times_no_warmup = step_times[warmup_steps:]
+            if not step_times_no_warmup:
+                step_times_no_warmup = step_times
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
             global_batch_size = batch_size * world_size * model_config['grad_accum_steps']
