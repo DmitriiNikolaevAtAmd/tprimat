@@ -12,36 +12,8 @@ export HSA_FORCE_FINE_GRAIN_PCIE=1
 export RCCL_DEBUG=WARN
 export NCCL_DEBUG=WARN
 
-# Detect network interface for RCCL
-# RCCL needs a valid network interface for bootstrapping
-echo "[*] Detecting network interfaces..."
-INTERFACES=$(ip -o link show | grep -v "lo:" | awk -F': ' '{print $2}' | tr '\n' ' ')
-echo "    Available interfaces: $INTERFACES"
-
-# Try to find a valid interface (prefer ib*, then bond*, then ens*, then eth*, then any)
-SOCKET_IF=""
-for pattern in "ib" "bond" "ens" "enp" "eth"; do
-    FOUND=$(ip -o link show | grep -v "lo:" | awk -F': ' '{print $2}' | grep "^${pattern}" | head -1)
-    if [ -n "$FOUND" ]; then
-        SOCKET_IF="$FOUND"
-        break
-    fi
-done
-
-# Fallback: use first non-loopback interface
-if [ -z "$SOCKET_IF" ]; then
-    SOCKET_IF=$(ip -o link show | grep -v "lo:" | awk -F': ' '{print $2}' | head -1)
-fi
-
-if [ -n "$SOCKET_IF" ]; then
-    echo "    Using interface: $SOCKET_IF"
-    export NCCL_SOCKET_IFNAME="$SOCKET_IF"
-else
-    echo "    WARNING: No valid interface found, RCCL may fail"
-    echo "    Make sure container is started with --network=host"
-    unset NCCL_SOCKET_IFNAME
-fi
-
+# RCCL network interface
+export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-ens51np0}"
 export RCCL_MSCCL_ENABLE=0
 mkdir -p "$TPRIMAT_PATH/output"
 if [ ! -d "$PRIMUS_PATH" ]; then
