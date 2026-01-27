@@ -3,12 +3,12 @@ import os
 import sys
 import torch
 import random
+import math
 import numpy as np
 import deepspeed
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    get_cosine_schedule_with_warmup,
 )
 from torch.utils.data import Dataset, DataLoader
 import json
@@ -114,6 +114,31 @@ def get_deepspeed_config(world_size=1):
     }
 
 
+class SimpleCosineScheduler:
+    def __init__(self, optimizer, base_lr, warmup_steps, total_steps):
+        self.optimizer = optimizer
+        self.base_lr = base_lr
+        self.warmup_steps = max(1, warmup_steps)
+        self.total_steps = max(1, total_steps)
+        self.step_num = 0
+    
+    def _lr_for_step(self, step):
+        if step < self.warmup_steps:
+            return self.base_lr * float(step + 1) / float(self.warmup_steps)
+        progress = (step - self.warmup_steps) / max(1, self.total_steps - self.warmup_steps)
+        return 0.5 * self.base_lr * (1.0 + math.cos(math.pi * progress))
+    
+    def step(self):
+        lr = self._lr_for_step(self.step_num)
+        for group in self.optimizer.param_groups:
+            group['lr'] = lr
+        self.step_num += 1
+        return lr
+    
+    def get_last_lr(self):
+        return [self.optimizer.param_groups[0]['lr']]
+
+
 def train_model(model_name, model_short_name):
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
@@ -190,10 +215,12 @@ def train_model(model_name, model_short_name):
     num_warmup_steps = 10
     use_external_scheduler = False
     if lr_scheduler is None:
-        lr_scheduler = get_cosine_schedule_with_warmup(
+        base_lr = optimizer.param_groups[0]['lr'] if optimizer and optimizer.param_groups else 0.0003
+        lr_scheduler = SimpleCosineScheduler(
             optimizer,
-            num_warmup_steps=num_warmup_steps,
-            num_training_steps=total_steps
+            base_lr=base_lr,
+            warmup_steps=num_warmup_steps,
+            total_steps=total_steps
         )
         use_external_scheduler = True
     
