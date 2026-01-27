@@ -93,10 +93,6 @@ def encode_dataset(
         lengths = np.full(num_sequences, seq_length, dtype=np.int32)
         f.write(lengths.tobytes())
     
-    # Verify
-    print(f"\nVerifying...")
-    verify_dataset(output_prefix, seq_length, num_sequences)
-    
     bin_size = bin_path.stat().st_size
     idx_size = idx_path.stat().st_size
     
@@ -110,7 +106,7 @@ def encode_dataset(
 
 
 def write_nemo_index(output_prefix: str, tokens_array: np.ndarray, seq_length: int, num_sequences: int):
-    """Write NeMo/Megatron format dataset (lengths → doc_indices → pointers)."""
+    """Write NeMo/Megatron format dataset (lengths → pointers → doc_indices)."""
     
     bin_path = Path(f"{output_prefix}.bin")
     idx_path = Path(f"{output_prefix}.idx")
@@ -123,87 +119,32 @@ def write_nemo_index(output_prefix: str, tokens_array: np.ndarray, seq_length: i
     with open(bin_path, "wb") as f:
         tokens_array.tofile(f)
     
-    # Index file with NeMo order: lengths → doc_indices (N+1) → pointers (N+1)
+    # Index file with NeMo/Megatron order: lengths → pointers → doc_indices
+    # Based on Megatron _IndexReader which reads in this exact order
     print(f"  Writing {idx_path}...")
     with open(idx_path, "wb") as f:
         f.write(b'MMIDIDX\x00\x00')
         f.write(struct.pack('<Q', 1))
         f.write(struct.pack('<B', DTYPE_CODE))
-        f.write(struct.pack('<Q', num_sequences))
-        f.write(struct.pack('<Q', num_sequences))
+        f.write(struct.pack('<Q', num_sequences))  # num_sequences
+        f.write(struct.pack('<Q', num_sequences))  # num_documents
         
-        # NeMo order: lengths first
+        # 1. Sequence lengths (N elements, int32)
         lengths = np.full(num_sequences, seq_length, dtype=np.int32)
         f.write(lengths.tobytes())
         
-        # doc_indices with N+1 elements (critical for NeMo assertion)
+        # 2. Sequence pointers (N elements, int64)
+        pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
+        f.write(pointers.tobytes())
+        
+        # 3. Document indices (N+1 elements, int64)
+        # Critical: doc_indices[-1] must equal num_sequences for NeMo assertion
         doc_indices = np.arange(num_sequences + 1, dtype=np.int64)
         f.write(doc_indices.tobytes())
-        
-        # pointers with N+1 elements
-        pointers = np.arange(num_sequences + 1, dtype=np.int64) * bytes_per_seq
-        f.write(pointers.tobytes())
-    
-    # Verify NeMo format
-    verify_nemo_dataset(output_prefix, seq_length, num_sequences)
     
     bin_size = bin_path.stat().st_size
     idx_size = idx_path.stat().st_size
-    print(f"  NeMo dataset: {bin_size / 1024 / 1024:.1f} MB bin, {idx_size / 1024:.1f} KB idx")
-
-
-def verify_nemo_dataset(path: str, seq_length: int, num_sequences: int):
-    """Verify NeMo dataset format."""
-    idx_path = Path(f"{path}.idx")
-    
-    with open(idx_path, 'rb') as f:
-        magic = f.read(9)
-        assert magic == b'MMIDIDX\x00\x00', f"Invalid magic: {magic}"
-        f.read(8)  # version
-        f.read(1)  # dtype
-        num_seqs = struct.unpack('<Q', f.read(8))[0]
-        num_docs = struct.unpack('<Q', f.read(8))[0]
-        
-        lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
-        doc_indices = np.frombuffer(f.read((num_docs + 1) * 8), dtype=np.int64)
-        
-        # Critical NeMo assertion
-        assert len(lengths) == doc_indices[-1], \
-            f"NeMo check failed: len(lengths)={len(lengths)} != doc_indices[-1]={doc_indices[-1]}"
-    
-    print(f"  NeMo format verified OK")
-
-
-def verify_dataset(path: str, seq_length: int, num_sequences: int):
-    """Verify dataset integrity."""
-    bin_path = Path(f"{path}.bin")
-    idx_path = Path(f"{path}.idx")
-    
-    bytes_per_seq = seq_length * DTYPE.itemsize
-    expected_bin_size = num_sequences * bytes_per_seq
-    actual_bin_size = bin_path.stat().st_size
-    
-    assert actual_bin_size == expected_bin_size, \
-        f"Binary size {actual_bin_size} != expected {expected_bin_size}"
-    
-    with open(idx_path, 'rb') as f:
-        magic = f.read(9)
-        assert magic == b'MMIDIDX\x00\x00', f"Invalid magic: {magic}"
-        
-        f.read(8)  # version
-        f.read(1)  # dtype
-        
-        num_docs = struct.unpack('<Q', f.read(8))[0]
-        num_seqs = struct.unpack('<Q', f.read(8))[0]
-        assert num_docs == num_sequences and num_seqs == num_sequences
-    
-    # Spot check first sequence
-    with open(bin_path, 'rb') as f:
-        first_seq = np.frombuffer(f.read(bytes_per_seq), dtype=DTYPE)
-        assert len(first_seq) == seq_length
-        assert np.all(first_seq >= 0)
-    
-    print(f"  Verified OK")
+    print(f"  Done: {bin_size / 1024 / 1024:.1f} MB bin, {idx_size / 1024:.1f} KB idx")
 
 
 TOKENIZERS = {

@@ -22,7 +22,7 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     warnings = []
     
     print(f"Verifying {input_prefix}...")
-    print(f"  Format: {'NeMo' if is_nemo_format else 'Standard'}")
+    print(f"  Format: {'NeMo' if is_nemo_format else 'Mega'}")
     
     # Check files exist
     if not bin_path.exists():
@@ -55,24 +55,35 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
                 warnings.append(f"num_docs ({num_docs}) != num_seqs ({num_seqs})")
             
             if is_nemo_format:
-                # NeMo order: lengths → doc_indices (N+1) → pointers (N+1)
+                # NeMo/Megatron order: lengths → pointers → doc_indices
                 lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
+                pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
                 doc_indices = np.frombuffer(f.read((num_docs + 1) * 8), dtype=np.int64)
-                pointers = np.frombuffer(f.read((num_seqs + 1) * 8), dtype=np.int64)
                 
-                # NeMo critical assertion
+                print(f"  NeMo format detected:")
+                print(f"    - lengths array: {len(lengths)} elements")
+                print(f"    - pointers array: {len(pointers)} elements")
+                print(f"    - doc_indices array: {len(doc_indices)} elements (N+1)")
+                
+                # NeMo critical assertion: sequence_lengths.shape[0] == document_indices[-1]
                 if len(lengths) != doc_indices[-1]:
-                    errors.append(f"NeMo check: len(lengths)={len(lengths)} != doc_indices[-1]={doc_indices[-1]}")
+                    errors.append(f"NeMo assertion FAILED: len(lengths)={len(lengths)} != doc_indices[-1]={doc_indices[-1]}")
                 else:
-                    print(f"  NeMo assertion OK: lengths={len(lengths)}, doc_indices[-1]={doc_indices[-1]}")
+                    print(f"  NeMo assertion PASSED: len(lengths)={len(lengths)} == doc_indices[-1]={doc_indices[-1]}")
                 
-                # Remove extra pointer element for standard checks
-                pointers = pointers[:-1]
+                # Verify doc_indices structure: should be [0, 1, 2, ..., N]
+                expected_doc_indices = np.arange(num_docs + 1, dtype=np.int64)
+                if not np.array_equal(doc_indices, expected_doc_indices):
+                    errors.append(f"NeMo doc_indices malformed: expected [0..{num_docs}], got [{doc_indices[0]}..{doc_indices[-1]}]")
             else:
-                # Standard order: doc_idx → pointers → lengths
-                f.seek(9 + 8 + 1 + 8 + 8 + num_docs * 8)  # Skip doc_idx
+                # Mega format order: doc_idx → pointers → lengths
+                print(f"  Mega format detected:")
+                doc_idx = np.frombuffer(f.read(num_docs * 8), dtype=np.int64)
                 pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
                 lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
+                print(f"    - doc_idx array: {len(doc_idx)} elements")
+                print(f"    - pointers array: {len(pointers)} elements")
+                print(f"    - lengths array: {len(lengths)} elements")
         
         print(f"  Sequences: {num_seqs:,}")
         print(f"  Seq length: {lengths[0] if len(lengths) > 0 else 'N/A'}")
