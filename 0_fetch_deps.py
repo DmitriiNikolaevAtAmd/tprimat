@@ -6,8 +6,8 @@ from datasets import load_dataset
 
 
 MODELS = {
-    "meta-llama/Llama-3.1-8B": "meta-llama--llama-31-8b",
-    "Qwen/Qwen2.5-7B": "qwen--qwen25-7b",
+    "meta-llama/Llama-3.1-8B": "meta-llama-llama-31-8b",
+    "Qwen/Qwen2.5-7B": "qwen-qwen25-7b",
 }
 
 
