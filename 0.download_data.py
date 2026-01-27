@@ -68,7 +68,7 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="/data/c4_1M.jsonl",
+        default="/data/allenai-c4-1m-raw.jsonl",
         help="Output JSONL file path",
     )
     parser.add_argument(
