@@ -13,6 +13,7 @@ import logging
 from transformers import (
     AutoModelForCausalLM, 
     AutoTokenizer,
+    AutoConfig,
     Trainer,
     TrainingArguments,
     DataCollatorForLanguageModeling
@@ -110,14 +111,15 @@ def train_llama():
     platform_prefix = "amd"
     
     model_name = "meta-llama/Llama-3.1-8B"
-    logger.info(f"Loading model: {model_name}")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
+    logger.info(f"Initializing model: {model_name} (random weights)")
+    # Load config and create model with random weights (no pretrained download)
+    config = AutoConfig.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_config(
+        config,
         torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",  # Use Flash Attention 2 if available
-        use_cache=False,
-        low_cpu_mem_usage=True
+        attn_implementation="flash_attention_2",
     )
+    model.config.use_cache = False
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
     
@@ -221,15 +223,16 @@ def train_qwen():
     platform_prefix = "amd"
     
     model_name = "Qwen/Qwen2.5-7B"
-    logger.info(f"Loading model: {model_name}")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
+    logger.info(f"Initializing model: {model_name} (random weights)")
+    # Load config and create model with random weights (no pretrained download)
+    config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_config(
+        config,
         torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",  # Use Flash Attention 2 if available
-        use_cache=False,
-        low_cpu_mem_usage=True
+        attn_implementation="flash_attention_2",
     )
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model.config.use_cache = False
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
     
     # Enable gradient checkpointing for memory efficiency

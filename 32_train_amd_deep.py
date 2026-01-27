@@ -9,6 +9,7 @@ import deepspeed
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    AutoConfig,
 )
 from torch.utils.data import Dataset, DataLoader
 import json
@@ -212,13 +213,14 @@ def train_model(model_name, model_short_name):
         else:
             print("Real data not found, using synthetic data for benchmarking")
     
-    # Load model and tokenizer
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
+    # Load config and create model with random weights (no pretrained download)
+    config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_config(
+        config,
         torch_dtype=torch.bfloat16,
-        use_cache=False,
     )
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model.config.use_cache = False
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
     
     # Enable gradient checkpointing

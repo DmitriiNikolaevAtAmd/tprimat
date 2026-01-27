@@ -20,6 +20,7 @@ import numpy as np
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    AutoConfig,
     get_cosine_schedule_with_warmup,
 )
 from torch.utils.data import Dataset, DataLoader
@@ -164,13 +165,15 @@ def train_model(model_name, model_short_name):
     )
     
     if rank == 0:
-        print("Loading model...")
+        print("Initializing model (random weights)...")
     
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
+    # Load config and create model with random weights (no pretrained download)
+    config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_config(
+        config,
         torch_dtype=torch.bfloat16,
-        use_cache=False,
     )
+    model.config.use_cache = False
     
     auto_wrap_policy = functools.partial(
         size_based_auto_wrap_policy,
