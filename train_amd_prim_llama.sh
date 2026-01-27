@@ -43,6 +43,27 @@ else
 fi
 
 export RCCL_MSCCL_ENABLE=0
+
+# HuggingFace authentication for gated models (Llama 3.1)
+echo "[*] Checking HuggingFace authentication..."
+if [ -n "$HF_TOKEN" ]; then
+    export HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
+    echo "    HF_TOKEN is set"
+elif [ -n "$HUGGINGFACE_HUB_TOKEN" ]; then
+    export HF_TOKEN="$HUGGINGFACE_HUB_TOKEN"
+    echo "    HUGGINGFACE_HUB_TOKEN is set"
+else
+    echo "    ERROR: HF_TOKEN not set!"
+    echo ""
+    echo "    Llama 3.1 is a gated model. You need to:"
+    echo "    1. Get a token from https://huggingface.co/settings/tokens"
+    echo "    2. Accept the license at https://huggingface.co/meta-llama/Llama-3.1-8B"
+    echo "    3. Set: export HF_TOKEN='hf_xxxxxxxxxxxxx'"
+    echo ""
+    echo "    Or use Qwen instead (no auth needed): ./train_amd_prim_qwen.sh"
+    exit 1
+fi
+
 mkdir -p "$TPRIMAT_PATH/output"
 if [ ! -d "$PRIMUS_PATH" ]; then
     echo "ERROR: Primus directory not found at: $PRIMUS_PATH"

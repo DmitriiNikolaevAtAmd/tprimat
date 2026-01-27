@@ -1,16 +1,34 @@
 #!/bin/bash
+# Run AMD/ROCm training container with fish shell
+set -e
 
-# Load secrets if available
-if [ -f secrets.env ]; then
-    source secrets.env
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE_NAME="${AMD_IMAGE:-tprimat-amd:latest}"
+
+# Load secrets from secrets.env if it exists
+if [ -f "$SCRIPT_DIR/secrets.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/secrets.env"
+    set +a
+fi
+
+# Build image if it doesn't exist
+if ! docker image inspect "$IMAGE_NAME" &>/dev/null; then
+    echo "[*] Building Docker image: $IMAGE_NAME"
+    docker build -f "$SCRIPT_DIR/amd.Dockerfile" -t "$IMAGE_NAME" "$SCRIPT_DIR"
 fi
 
 docker run -it --rm \
-    --device /dev/dri --device /dev/kfd --device /dev/infiniband \
-    --network host --ipc host --group-add video \
-    --cap-add SYS_PTRACE --security-opt seccomp=unconfined --privileged \
-    -v $HOME:$HOME -v .:/workspace/tprimat \
-    -w /workspace/tprimat --shm-size 128G --name primat \
-    -e HF_TOKEN="${HF_TOKEN}" \
-    -e HUGGINGFACE_HUB_TOKEN="${HUGGINGFACE_HUB_TOKEN:-$HF_TOKEN}" \
-    primat:latest "$@"
+    --network=host \
+    --device=/dev/kfd --device=/dev/dri \
+    --group-add video \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --shm-size=64g \
+    -e HF_TOKEN="${HF_TOKEN:-}" \
+    -e HUGGINGFACE_HUB_TOKEN="${HF_TOKEN:-}" \
+    -v "$SCRIPT_DIR:/workspace/tprimat" \
+    -v "${DATA_DIR:-/data}:/data" \
+    -v "${HF_CACHE:-$HOME/.cache/huggingface}:/workspace/cache/huggingface" \
+    "$IMAGE_NAME" \
+    fish
