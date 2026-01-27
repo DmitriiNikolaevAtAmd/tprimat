@@ -162,21 +162,13 @@ def create_comparison_plot(
     has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
     has_amd = any(key.startswith('amd-') for key in benchmarks.keys())
     
-    # Get framework names for each platform
-    nvidia_fw = set(data['framework'] for key, data in benchmarks.items() if key.startswith('nvidia-'))
-    amd_fw = set(data['framework'] for key, data in benchmarks.items() if key.startswith('amd-'))
-    
     # Create dynamic title based on available data
     if has_nvidia and has_amd:
-        nvidia_fw_str = '/'.join(sorted(nvidia_fw)) if nvidia_fw else 'unknown'
-        amd_fw_str = '/'.join(sorted(amd_fw)) if amd_fw else 'unknown'
-        title = f'NVIDIA H100 ({nvidia_fw_str}) vs AMD MI300X ({amd_fw_str})'
+        title = 'NVIDIA H100 vs AMD MI300X'
     elif has_nvidia:
-        nvidia_fw_str = '/'.join(sorted(nvidia_fw)) if nvidia_fw else ''
-        title = f'NVIDIA H100 Benchmark Results ({nvidia_fw_str})'
+        title = 'NVIDIA H100 Benchmark Results'
     elif has_amd:
-        amd_fw_str = '/'.join(sorted(amd_fw)) if amd_fw else ''
-        title = f'AMD MI300X Benchmark Results ({amd_fw_str})'
+        title = 'AMD MI300X Benchmark Results'
     else:
         title = 'GPU Benchmark Results'
     
