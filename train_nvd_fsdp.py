@@ -284,7 +284,10 @@ def train_model(model_name, model_short_name):
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
         if len(step_times) > 10:
-            step_times_no_warmup = step_times[50:]
+            warmup_steps = min(10, len(step_times))
+            step_times_no_warmup = step_times[warmup_steps:]
+            if not step_times_no_warmup:
+                step_times_no_warmup = step_times
             
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
