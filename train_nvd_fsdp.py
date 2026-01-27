@@ -179,12 +179,13 @@ def train_model(model_name, model_short_name):
         shuffle=True,
     ) if world_size > 1 else None
     
+    dataloader_workers = 0 if use_real_data else 2
     dataloader = DataLoader(
         dataset,
         batch_size=micro_batch,
         sampler=sampler,
         shuffle=(sampler is None),
-        num_workers=2,
+        num_workers=dataloader_workers,
         pin_memory=True,
     )
     
