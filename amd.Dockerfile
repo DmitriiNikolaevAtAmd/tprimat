@@ -35,7 +35,5 @@ RUN pip install --no-cache-dir -r amd-requirements.txt
 
 COPY . /workspace/tprimat/
 
-RUN chmod +x /workspace/tprimat/*.sh 2>/dev/null || true
-
 SHELL ["/bin/bash", "-c"]
 CMD ["/bin/bash"]
