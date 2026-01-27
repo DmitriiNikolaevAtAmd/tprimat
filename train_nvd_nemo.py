@@ -26,6 +26,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def load_env_file(env_path: str) -> None:
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r") as env_file:
+        for line in env_file:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+def ensure_hf_token_for_gated_repo(repo_id: str) -> None:
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+    if hf_token:
+        os.environ.setdefault("HF_TOKEN", hf_token)
+        os.environ.setdefault("HUGGINGFACE_HUB_TOKEN", hf_token)
+        return
+    if repo_id.startswith("meta-llama/"):
+        logger.error(
+            "Missing Hugging Face token for gated repo: %s. "
+            "Set HF_TOKEN (or HUGGINGFACE_HUB_TOKEN) in the environment or in secrets.env.",
+            repo_id,
+        )
+        sys.exit(1)
+
+
 def get_model_config(model_name: str):
     configs = {
         "llama": {
@@ -50,6 +80,7 @@ def get_model_config(model_name: str):
 
 
 def train_model(model_name: str):
+    load_env_file("secrets.env")
     os.makedirs("./output", exist_ok=True)
     
     if not torch.cuda.is_available():
@@ -61,6 +92,7 @@ def train_model(model_name: str):
     logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
     
     config = get_model_config(model_name)
+    ensure_hf_token_for_gated_repo(config["tokenizer_path"])
     
     logger.info(f"Setting up {config['display_name']} training...")
     torch.manual_seed(42)
