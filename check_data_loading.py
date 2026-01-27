@@ -7,7 +7,7 @@ from pathlib import Path
 
 def check_data_files():
     """Check if data files exist"""
-    dataset_path = "/data/tprimat/allenai-c4-1m"
+    dataset_path = "/data/tprimat/allenai-c4-500k"
     
     print("=" * 80)
     print("DATA LOADING VERIFICATION")
@@ -56,7 +56,7 @@ def check_data_files():
         print("\n  To use real data:")
         print("    1. Prepare text data")
         print("    2. Use Megatron's preprocess_data.py to create indexed dataset")
-        print("    3. Place files at: /data/allenai-c4-1m.{bin,idx}")
+        print("    3. Place files at: /data/tprimat/allenai-c4-500k.{bin,idx}")
         return False
 
 

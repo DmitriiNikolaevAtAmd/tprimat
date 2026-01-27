@@ -123,7 +123,7 @@ def train_model(model_name, model_short_name):
     loss_values = []
     learning_rates = []
     
-    dataset_path = "/data/tprimat/allenai-c4-1m"
+    dataset_path = "/data/tprimat/allenai-c4-500k"
     use_real_data = os.path.exists(dataset_path + ".idx")
     
     if rank == 0:

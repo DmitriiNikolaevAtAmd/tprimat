@@ -4,7 +4,7 @@ import struct
 import numpy as np
 from pathlib import Path
 
-dataset_path = "/data/tprimat/allenai-c4-1m"
+dataset_path = "/data/tprimat/allenai-c4-500k"
 idx_path = Path(dataset_path + '.idx')
 
 print("Reading index file...")

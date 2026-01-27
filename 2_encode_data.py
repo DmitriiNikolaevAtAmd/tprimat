@@ -144,13 +144,13 @@ def main():
     parser.add_argument(
         "--input",
         type=str,
-        default="/data/tprimat/allenai-c4-1m.jsonl",
+        default="/data/tprimat/allenai-c4-500k.jsonl",
         help="Input clean JSONL file",
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="/data/tprimat/allenai-c4-1m",
+        default="/data/tprimat/allenai-c4-500k",
         help="Output prefix (creates .bin and .idx files)",
     )
     parser.add_argument(
