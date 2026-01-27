@@ -5,10 +5,10 @@ from pathlib import Path
 from datasets import load_dataset
 
 
-def download_c4(num_samples: int, output_file: str, min_length: int = 100):
-    """Download C4 dataset and save as JSONL."""
+def fetch_c4(num_samples: int, output_file: str):
+    """Fetch C4 dataset and save as raw JSONL."""
     
-    print(f"Downloading allenai/c4 (streaming {num_samples:,} samples)...")
+    print(f"Fetching allenai/c4 (streaming {num_samples:,} samples)...")
     
     dataset = load_dataset(
         "allenai/c4",
@@ -22,24 +22,17 @@ def download_c4(num_samples: int, output_file: str, min_length: int = 100):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     saved = 0
-    skipped = 0
     
     print(f"Writing to {output_file}...")
     with open(output_path, "w", encoding="utf-8") as f:
-        for i, example in enumerate(dataset):
+        for example in dataset:
             text = example.get("text", "")
-            
-            # Skip short or empty texts
-            if not text or len(text) < min_length:
-                skipped += 1
-                continue
-            
             json.dump({"text": text}, f, ensure_ascii=False)
             f.write("\n")
             saved += 1
             
             if saved % 100000 == 0:
-                print(f"  {saved:,} / {num_samples:,} samples saved...")
+                print(f"  {saved:,} / {num_samples:,} samples...")
             
             if saved >= num_samples:
                 break
@@ -48,22 +41,18 @@ def download_c4(num_samples: int, output_file: str, min_length: int = 100):
     
     print(f"\nDone!")
     print(f"  Saved: {saved:,} samples")
-    print(f"  Skipped: {skipped:,} (too short)")
     print(f"  File size: {file_size_mb:.1f} MB")
     print(f"  Output: {output_file}")
-    
-    print(f"\nNext step: Tokenize with 1.tokenize_data.py")
+    print(f"\nNext step: python 1_clean_data.py")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Download AllenAI C4 dataset for LLM pretraining"
-    )
+    parser = argparse.ArgumentParser(description="Fetch AllenAI C4 dataset")
     parser.add_argument(
         "--samples",
         type=int,
         default=1_000_000,
-        help="Number of samples to download (default: 1M)",
+        help="Number of samples to fetch (default: 1M)",
     )
     parser.add_argument(
         "--output",
@@ -71,15 +60,9 @@ def main():
         default="/data/allenai-c4-1m-raw.jsonl",
         help="Output JSONL file path",
     )
-    parser.add_argument(
-        "--min-length",
-        type=int,
-        default=100,
-        help="Minimum text length in characters (default: 100)",
-    )
     
     args = parser.parse_args()
-    download_c4(args.samples, args.output, args.min_length)
+    fetch_c4(args.samples, args.output)
 
 
 if __name__ == "__main__":
