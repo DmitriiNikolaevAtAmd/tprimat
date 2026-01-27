@@ -1,8 +1,43 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 from pathlib import Path
 from datasets import load_dataset
+
+
+TOKENIZERS = {
+    "meta-llama/Llama-3.1-8B": "meta-llama--llama-31-8b",
+    "Qwen/Qwen2.5-7B": "qwen--qwen25-7b",
+}
+
+
+def fetch_tokenizers(output_dir: str):
+    """Download and cache tokenizers locally."""
+    from transformers import AutoTokenizer
+    
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    print(f"Fetching tokenizers to {output_path}...")
+    
+    for hf_name, local_name in TOKENIZERS.items():
+        local_path = output_path / local_name
+        
+        if local_path.exists():
+            print(f"  {hf_name}: already cached")
+            continue
+        
+        print(f"  {hf_name}: downloading...")
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(hf_name, trust_remote_code=True)
+            tokenizer.save_pretrained(local_path)
+            print(f"  {hf_name}: saved to {local_path}")
+        except Exception as e:
+            print(f"  {hf_name}: FAILED - {e}")
+    
+    print(f"Tokenizers cached in {output_path}")
+    return output_path
 
 
 def fetch_c4(num_samples: int, output_file: str):
@@ -47,7 +82,7 @@ def fetch_c4(num_samples: int, output_file: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch AllenAI C4 dataset")
+    parser = argparse.ArgumentParser(description="Fetch AllenAI C4 dataset and tokenizers")
     parser.add_argument(
         "--samples",
         type=int,
@@ -57,11 +92,23 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="/data/allenai-c4-1m-raw.jsonl",
+        default="/data/tprimat/allenai-c4-1m-raw.jsonl",
         help="Output JSONL file path",
+    )
+    parser.add_argument(
+        "--skip-tokenizers",
+        action="store_true",
+        help="Skip downloading tokenizers",
     )
     
     args = parser.parse_args()
+    
+    output_dir = str(Path(args.output).parent)
+    
+    if not args.skip_tokenizers:
+        fetch_tokenizers(output_dir)
+        print()
+    
     fetch_c4(args.samples, args.output)
 
 

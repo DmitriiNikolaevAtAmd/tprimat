@@ -188,7 +188,7 @@ def train_model(model_name: str, model_config: dict):
                 find_unused_parameters=False
             )
             logger.info(f"Wrapped model with DDP on device {local_rank}")
-        dataset_path = "/data/llama_dataset_text_document"
+        dataset_path = "/data/tprimat/allenai-c4-1m"
         use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
         
         # Create dataset loader

@@ -124,7 +124,7 @@ def train_llama():
     # Enable gradient checkpointing for memory efficiency
     model.gradient_checkpointing_enable()
     logger.info("Enabled gradient checkpointing")
-    dataset_path = "/data/llama_dataset_text_document"
+    dataset_path = "/data/tprimat/allenai-c4-1m"
     use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if use_real_data:
@@ -244,7 +244,7 @@ def train_qwen():
     logger.info(f"  Per-device batch size: {per_device_batch_size}")
     logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
     logger.info(f"  Global batch size: {global_batch_size}")
-    dataset_path = "/data/llama_dataset_text_document"
+    dataset_path = "/data/tprimat/allenai-c4-1m"
     use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if use_real_data:

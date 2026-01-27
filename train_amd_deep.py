@@ -198,7 +198,7 @@ def train_model(model_name, model_short_name):
     learning_rates = []
     
     # Check if real data is available
-    dataset_path = "/data/llama_dataset_text_document"
+    dataset_path = "/data/tprimat/allenai-c4-1m"
     use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if rank == 0:

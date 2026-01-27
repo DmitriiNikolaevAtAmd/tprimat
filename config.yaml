@@ -32,7 +32,7 @@ models:
     nemo_recipe: "llama31_8b.pretrain_recipe"
     primus_recipe: "llama3.1_8B-BF16-pretrain.yaml"
     # Model-specific data paths (optional, overrides global training.data)
-    dataset_path: "/data/llama_dataset_text_document"
+    dataset_path: "/data/tprimat/allenai-c4-1m"
     tokenizer_path: "meta-llama/Llama-3.1-8B"
     
   qwen:
@@ -46,7 +46,7 @@ models:
     nemo_recipe: "qwen25_7b.pretrain_recipe"
     # Model-specific data paths (optional, overrides global training.data)
     # Using same dataset as Llama for benchmarking (computational workload is what matters)
-    dataset_path: "/data/llama_dataset_text_document"
+    dataset_path: "/data/tprimat/allenai-c4-1m"
     tokenizer_path: "Qwen/Qwen2.5-7B"
 
 training:
