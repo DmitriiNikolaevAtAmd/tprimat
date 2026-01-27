@@ -202,13 +202,14 @@ fi
 export EXP="$PATCHED_CONFIG"
 
 # Run training and capture logs
-echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --weight_decay $WEIGHT_DECAY"
+echo "Running: bash ./examples/run_pretrain.sh --train_iters $TRAIN_ITERS --lr $LEARNING_RATE --min_lr $MIN_LEARNING_RATE --lr_warmup_iters $WARMUP_STEPS --lr_decay_iters $TRAIN_ITERS --weight_decay $WEIGHT_DECAY"
 
 bash ./examples/run_pretrain.sh \
     --train_iters $TRAIN_ITERS \
     --lr $LEARNING_RATE \
     --min_lr $MIN_LEARNING_RATE \
     --lr_warmup_iters $WARMUP_STEPS \
+    --lr_decay_iters $TRAIN_ITERS \
     --weight_decay $WEIGHT_DECAY \
     2>&1 | tee "$LOG_FILE" "$BACKUP_LOG" > /dev/null
 EXIT_CODE=${PIPESTATUS[0]}
