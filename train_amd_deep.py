@@ -23,11 +23,17 @@ class PretrainingDataset(Dataset):
         self.use_real_data = use_real_data
         self.data_path = data_path
         
+        self.indexed_dataset = None
         if self.use_real_data and data_path:
-            print(f"Using real data from {data_path}")
-            # Note: For production with real data, implement indexed dataset loader here
-            # This would load from .bin/.idx files
-            self.real_data_available = True
+            try:
+                from indexed_dataset import IndexedDataset
+                self.indexed_dataset = IndexedDataset(data_path)
+                print(f"✓ Loaded real indexed dataset from {data_path}")
+                print(f"  Dataset contains {len(self.indexed_dataset)} sequences")
+                self.real_data_available = True
+            except Exception as e:
+                print(f"⚠ Could not load real data: {e}")
+                self.real_data_available = False
         else:
             self.real_data_available = False
         
@@ -35,9 +41,33 @@ class PretrainingDataset(Dataset):
         return self.num_samples
     
     def __getitem__(self, idx):
-        # Generate synthetic data for benchmarking
-        # Note: For production with real data, load from indexed dataset
-        input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
+        if self.real_data_available and self.data_path:
+            dataset_idx = idx % len(self.indexed_dataset) if self.indexed_dataset is not None else idx
+            tokens = None
+            last_error = None
+            if self.indexed_dataset is not None:
+                for attempt in range(3):
+                    try:
+                        tokens = self.indexed_dataset[(dataset_idx + attempt) % len(self.indexed_dataset)]
+                        break
+                    except Exception as e:
+                        last_error = e
+                        if not getattr(self, "_read_error_logged", False):
+                            print(f"⚠ Real data read failed: {e}")
+                            print("  Retrying with next sequence")
+                            self._read_error_logged = True
+            if tokens is None:
+                raise IOError(f"Real data read failed after retries: {last_error}")
+            
+            if len(tokens) < self.seq_length:
+                pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+                padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+                input_ids = torch.cat([tokens, padding])
+            else:
+                input_ids = tokens[:self.seq_length]
+        else:
+            # Synthetic data fallback
+            input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
         return {
             'input_ids': input_ids,
             'labels': input_ids.clone(),
@@ -169,7 +199,7 @@ def train_model(model_name, model_short_name):
     
     # Check if real data is available
     dataset_path = "/data/llama_dataset_text_document"
-    use_real_data = os.path.exists(dataset_path + ".idx")
+    use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if rank == 0:
         print(f"Loading model: {model_name}")
@@ -205,12 +235,22 @@ def train_model(model_name, model_short_name):
     
     # Get DeepSpeed config with proper world_size
     ds_config = get_deepspeed_config(world_size)
+    micro_batch = ds_config["train_micro_batch_size_per_gpu"]
     
     # Initialize DeepSpeed
+    dataloader_workers = 0 if use_real_data else 2
+    dataloader = DataLoader(
+        dataset,
+        batch_size=micro_batch,
+        shuffle=True,
+        num_workers=dataloader_workers,
+        pin_memory=True,
+        drop_last=True,
+    )
     model_engine, optimizer, dataloader, lr_scheduler = deepspeed.initialize(
         model=model,
         model_parameters=model.parameters(),
-        training_data=dataset,
+        training_data=dataloader,
         config=ds_config,
     )
     

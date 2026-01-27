@@ -45,7 +45,20 @@ class PretrainingDataset(Dataset):
         if self.real_data_available and self.indexed_dataset is not None:
             # Load real data and pad/truncate to seq_length
             dataset_idx = idx % len(self.indexed_dataset)
-            tokens = self.indexed_dataset[dataset_idx]
+            tokens = None
+            last_error = None
+            for attempt in range(3):
+                try:
+                    tokens = self.indexed_dataset[(dataset_idx + attempt) % len(self.indexed_dataset)]
+                    break
+                except Exception as e:
+                    last_error = e
+                    if not getattr(self, "_read_error_logged", False):
+                        print(f"⚠ Real data read failed: {e}")
+                        print("  Retrying with next sequence")
+                        self._read_error_logged = True
+            if tokens is None:
+                raise IOError(f"Real data read failed after retries: {last_error}")
             
             # Pad or truncate to seq_length
             if len(tokens) < self.seq_length:
@@ -202,10 +215,19 @@ def train_model(model_name, model_short_name):
         data_path=dataset_path
     )
     ds_config = get_deepspeed_config(world_size)
+    dataloader_workers = 0 if use_real_data else 2
+    dataloader = DataLoader(
+        dataset,
+        batch_size=ds_config["train_micro_batch_size_per_gpu"],
+        shuffle=True,
+        num_workers=dataloader_workers,
+        pin_memory=True,
+        drop_last=True,
+    )
     model_engine, optimizer, dataloader, lr_scheduler = deepspeed.initialize(
         model=model,
         model_parameters=model.parameters(),
-        training_data=dataset,
+        training_data=dataloader,
         config=ds_config,
     )
     if rank == 0:
@@ -266,7 +288,10 @@ def train_model(model_name, model_short_name):
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
         if len(step_times) > 10:
-            step_times_no_warmup = step_times[50:]
+            warmup_steps = min(10, len(step_times))
+            step_times_no_warmup = step_times[warmup_steps:]
+            if not step_times_no_warmup:
+                step_times_no_warmup = step_times
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
             micro_batch = 1
