@@ -186,13 +186,13 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
     if has_data:
         ax2.set_xlabel('Step', fontweight='bold', fontsize=11)
         ax2.set_ylabel('Loss', fontweight='bold', fontsize=12)
-        ax2.set_title('Training Loss Convergence', fontweight='bold', fontsize=14, pad=10)
+        ax2.set_title('Training Loss over Time', fontweight='bold', fontsize=14, pad=10)
         ax2.legend(fontsize=9, loc='best', framealpha=0.9)
         ax2.grid(alpha=0.3, linestyle='--', linewidth=0.5)
     else:
         ax2.text(0.5, 0.5, 'Loss data not available', 
                 ha='center', va='center', transform=ax2.transAxes)
-        ax2.set_title('Training Loss Convergence', fontweight='bold', fontsize=14)
+        ax2.set_title('Training Loss over Time', fontweight='bold', fontsize=14)
     
     # 3. Step Duration over Time
     ax3 = axes[2]
@@ -254,7 +254,7 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
     if has_data:
         ax4.set_xlabel('Step', fontweight='bold', fontsize=11)
         ax4.set_ylabel('Learning Rate', fontweight='bold', fontsize=12)
-        ax4.set_title('Learning Rate Schedule', fontweight='bold', fontsize=14, pad=10)
+        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=14, pad=10)
         ax4.legend(fontsize=9, loc='best', framealpha=0.9)
         ax4.grid(alpha=0.3, linestyle='--', linewidth=0.5)
         # Use scientific notation for y-axis if values are small
@@ -262,7 +262,7 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
     else:
         ax4.text(0.5, 0.5, 'Learning rate data not available', 
                 ha='center', va='center', transform=ax4.transAxes)
-        ax4.set_title('Learning Rate Schedule', fontweight='bold', fontsize=14)
+        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=14)
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')

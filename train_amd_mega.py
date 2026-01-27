@@ -80,7 +80,7 @@ def train_model(model_name: str, model_config: dict):
     learning_rates = []
     
     try:
-        from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
+        from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, get_cosine_schedule_with_warmup
         import torch.distributed as dist
         
         logger.info(f"Loading tokenizer: {model_config['hf_model']}")
@@ -149,6 +149,14 @@ def train_model(model_name: str, model_config: dict):
                 eps=1e-8
             )
             logger.warning("bitsandbytes not available, using standard Adam (higher memory)")
+        num_warmup_steps = 10
+        num_training_steps = model_config['num_steps']
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_training_steps
+        )
+        
         logger.info(f"Configuration:")
         logger.info(f"  Sequence length: {seq_length}")
         logger.info(f"  Micro batch size: {batch_size}")
@@ -156,6 +164,7 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"  Gradient accumulation: {model_config['grad_accum_steps']}")
         logger.info(f"  Training steps: {num_steps}")
         logger.info(f"  Learning rate: {model_config['learning_rate']}")
+        logger.info(f"  LR scheduler: Cosine with {num_warmup_steps} warmup steps")
         logger.info(f"  Precision: bfloat16")
         model.train()
         logger.info("Starting training...")
@@ -182,6 +191,7 @@ def train_model(model_name: str, model_config: dict):
                 step_losses.append(loss.item() * model_config['grad_accum_steps'])
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
+            scheduler.step()
             
             step_time = time.time() - step_start
             avg_loss = sum(step_losses) / len(step_losses)
@@ -189,7 +199,8 @@ def train_model(model_name: str, model_config: dict):
             throughput = tokens_per_step / step_time
             step_times.append(step_time)
             loss_values.append(avg_loss)
-            learning_rates.append(model_config['learning_rate'])
+            current_lr = scheduler.get_last_lr()[0]
+            learning_rates.append(current_lr)
             if rank == 0:
                 logger.info(
                     f"Step {step + 1}/{num_steps} | "

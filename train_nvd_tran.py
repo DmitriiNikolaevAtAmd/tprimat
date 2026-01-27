@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 class PretrainingDataset(IterableDataset):
-    def __init__(self, data_path, tokenizer, seq_length=2048, max_steps=500, global_batch_size=64, use_real_data=False):
+    def __init__(self, data_path, tokenizer, seq_length=2048, max_steps=50, global_batch_size=64, use_real_data=False):
         self.data_path = data_path
         self.tokenizer = tokenizer
         self.seq_length = seq_length
@@ -144,9 +144,9 @@ def train_llama():
         data_path=dataset_path,
         tokenizer=tokenizer,
         seq_length=2048,
-        max_steps=500,
+        max_steps=50,
         global_batch_size=64,
-        use_real_data=False  # Disabled: use synthetic for consistent benchmarking
+        use_real_data=use_real_data
     )
     
     # Calculate batch size based on number of GPUs
@@ -167,8 +167,8 @@ def train_llama():
         weight_decay=0.1,
         adam_beta1=0.9,
         adam_beta2=0.95,
-        max_steps=500,
-        warmup_steps=50,
+        max_steps=50,
+        warmup_steps=10,
         lr_scheduler_type="cosine",
         logging_steps=1,
         save_strategy="no",
@@ -264,7 +264,7 @@ def train_qwen():
         data_path=dataset_path,
         tokenizer=tokenizer,
         seq_length=2048,
-        max_steps=500,
+        max_steps=50,
         global_batch_size=global_batch_size,
         use_real_data=use_real_data
     )
@@ -276,8 +276,8 @@ def train_qwen():
         weight_decay=0.1,
         adam_beta1=0.9,
         adam_beta2=0.95,
-        max_steps=500,
-        warmup_steps=50,
+        max_steps=50,
+        warmup_steps=10,
         lr_scheduler_type="cosine",
         logging_steps=1,
         save_strategy="no",

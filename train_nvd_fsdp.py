@@ -142,14 +142,14 @@ def train_model(model_name, model_short_name):
     grad_accum = 8
     global_batch_size = micro_batch * grad_accum * world_size
     seq_length = 2048
-    total_steps = 500
+    total_steps = 50
     
     step_times = []
     loss_values = []
     learning_rates = []
     
     dataset_path = "/data/llama_dataset_text_document"
-    use_real_data = os.path.exists(dataset_path + ".idx")
+    use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if rank == 0:
         print(f"Loading model: {model_name}")
@@ -168,8 +168,8 @@ def train_model(model_name, model_short_name):
         tokenizer=tokenizer,
         seq_length=seq_length,
         num_samples=32000,
-        use_real_data=False,  # Disabled: use synthetic for consistent benchmarking  
-        data_path=None
+        use_real_data=use_real_data,
+        data_path=dataset_path
     )
     
     sampler = torch.utils.data.distributed.DistributedSampler(
@@ -223,7 +223,7 @@ def train_model(model_name, model_short_name):
     
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer,
-        num_warmup_steps=50,
+        num_warmup_steps=10,
         num_training_steps=total_steps,
     )
     
@@ -258,7 +258,8 @@ def train_model(model_name, model_short_name):
         step_time = time.time() - step_start
         step_times.append(step_time)
         loss_values.append(loss.item() * grad_accum)
-        learning_rates.append(optimizer.param_groups[0]['lr'])
+        current_lr = lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else optimizer.param_groups[0]['lr']
+        learning_rates.append(current_lr)
         
         if rank == 0 and (step + 1) % 10 == 0:
             avg_loss = sum(loss_values[-10:]) / min(10, len(loss_values))

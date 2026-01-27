@@ -150,7 +150,7 @@ def train_model(model_name, model_short_name):
     loss_values = []
     learning_rates = []
     dataset_path = "/data/llama_dataset_text_document"
-    use_real_data = os.path.exists(dataset_path + ".idx")
+    use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if rank == 0:
         print(f"Loading model: {model_name}")
@@ -173,8 +173,8 @@ def train_model(model_name, model_short_name):
         tokenizer=tokenizer,
         seq_length=2048,
         num_samples=32000,
-        use_real_data=False,  # Disabled: use synthetic for consistent benchmarking
-        data_path=None
+        use_real_data=use_real_data,
+        data_path=dataset_path
     )
     ds_config = get_deepspeed_config(world_size)
     model_engine, optimizer, dataloader, lr_scheduler = deepspeed.initialize(
@@ -186,7 +186,19 @@ def train_model(model_name, model_short_name):
     if rank == 0:
         print("Starting training...")
     model_engine.train()
-    total_steps = 500
+    total_steps = 50
+    num_warmup_steps = 10
+    use_external_scheduler = False
+    if lr_scheduler is None:
+        lr_scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=total_steps
+        )
+        use_external_scheduler = True
+    
+    if rank == 0:
+        print(f"LR schedule: cosine with {num_warmup_steps} warmup steps")
     step = 0
     start_time = time.time()
     
@@ -202,10 +214,15 @@ def train_model(model_name, model_short_name):
         loss = outputs.loss
         model_engine.backward(loss)
         model_engine.step()
+        if use_external_scheduler and lr_scheduler is not None:
+            lr_scheduler.step()
         step_time = time.time() - step_start
         step_times.append(step_time)
         loss_values.append(loss.item())
-        current_lr = optimizer.param_groups[0]['lr'] if optimizer else 0.0003
+        if lr_scheduler is not None:
+            current_lr = lr_scheduler.get_last_lr()[0]
+        else:
+            current_lr = optimizer.param_groups[0]['lr'] if optimizer else 0.0003
         learning_rates.append(current_lr)
         
         step += 1

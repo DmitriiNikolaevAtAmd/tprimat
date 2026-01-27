@@ -233,7 +233,8 @@ def train_model(model_name, model_short_name):
         step_time = time.time() - step_start
         step_times.append(step_time)
         loss_values.append(loss.item() * grad_accum)
-        learning_rates.append(optimizer.param_groups[0]['lr'])
+        current_lr = lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else optimizer.param_groups[0]['lr']
+        learning_rates.append(current_lr)
         
         if rank == 0 and (step + 1) % 10 == 0:
             avg_loss = sum(loss_values[-10:]) / min(10, len(loss_values))

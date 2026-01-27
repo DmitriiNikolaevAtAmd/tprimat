@@ -195,6 +195,18 @@ def train_model(model_name, model_short_name):
     
     model_engine.train()
     total_steps = 50
+    num_warmup_steps = max(1, int(total_steps * 0.1))
+    use_external_scheduler = False
+    if lr_scheduler is None:
+        lr_scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=total_steps
+        )
+        use_external_scheduler = True
+    
+    if rank == 0:
+        print(f"LR schedule: cosine with {num_warmup_steps} warmup steps")
     step = 0
     start_time = time.time()
     
@@ -216,13 +228,18 @@ def train_model(model_name, model_short_name):
         
         # Optimizer step
         model_engine.step()
+        if use_external_scheduler and lr_scheduler is not None:
+            lr_scheduler.step()
         
         # Track metrics
         step_time = time.time() - step_start
         step_times.append(step_time)
         loss_values.append(loss.item())
         # Get learning rate from optimizer
-        current_lr = optimizer.param_groups[0]['lr'] if optimizer else 0.0003
+        if lr_scheduler is not None:
+            current_lr = lr_scheduler.get_last_lr()[0]
+        else:
+            current_lr = optimizer.param_groups[0]['lr'] if optimizer else 0.0003
         learning_rates.append(current_lr)
         
         step += 1

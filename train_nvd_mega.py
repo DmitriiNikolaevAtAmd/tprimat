@@ -175,14 +175,14 @@ def train_model(model_name: str, model_config: dict):
             )
             logger.info(f"Wrapped model with DDP on device {local_rank}")
         dataset_path = "/data/llama_dataset_text_document"
-        use_real_data = os.path.exists(dataset_path + ".idx")
+        use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
         
         # Create dataset loader
         dataset = PretrainingDataset(
             tokenizer=tokenizer,
             seq_length=model_config['seq_length'],
-            use_real_data=False,  # Disabled: use synthetic for consistent benchmarking
-            data_path=None
+            use_real_data=use_real_data,
+            data_path=dataset_path
         )
         
         seq_length = model_config['seq_length']
@@ -207,7 +207,7 @@ def train_model(model_name: str, model_config: dict):
         
         # Add LR scheduler with warmup and cosine decay
         from transformers import get_cosine_schedule_with_warmup
-        num_warmup_steps = 50
+        num_warmup_steps = 10
         num_training_steps = model_config['num_steps']
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
@@ -255,7 +255,7 @@ def train_model(model_name: str, model_config: dict):
             throughput = tokens_per_step / step_time
             step_times.append(step_time)
             loss_values.append(avg_loss)
-            current_lr = optimizer.param_groups[0]['lr']
+            current_lr = scheduler.get_last_lr()[0] if scheduler is not None else optimizer.param_groups[0]['lr']
             learning_rates.append(current_lr)
             if rank == 0:
                 logger.info(
@@ -358,7 +358,7 @@ def train_llama():
         'seq_length': 2048,
         'micro_batch_size': 1,
         'grad_accum_steps': 8,
-        'num_steps': 500,
+        'num_steps': 50,
         'learning_rate': 3e-4,
         'tensor_parallel': 1,
         'pipeline_parallel': 1,
@@ -372,7 +372,7 @@ def train_qwen():
         'seq_length': 2048,
         'micro_batch_size': 1,
         'grad_accum_steps': 8,
-        'num_steps': 500,
+        'num_steps': 50,
         'learning_rate': 3e-4,
         'tensor_parallel': 1,
         'pipeline_parallel': 1,

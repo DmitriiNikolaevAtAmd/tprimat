@@ -229,7 +229,7 @@ def create_comparison_plot(
                 ha='center', va='center', transform=ax2.transAxes)
         ax2.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
     
-    # 3. Learning Rate Schedule over Time (from logs)
+    # 3. Learning Rate over Time (from logs)
     ax3 = axes[2]
     has_data = False
     
