@@ -1,14 +1,6 @@
 #!/bin/bash
 set -e
-MODEL="llama"
 NUM_GPUS=8
-
-TP=1
-PP=1
-GACC=16
-
-DP=$((NUM_GPUS / (TP * PP)))
-
 OUTPUT_DIR="./output"
 mkdir -p "$OUTPUT_DIR"
 export HF_HOME="./cache"
@@ -18,9 +10,11 @@ export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export NCCL_DEBUG=INFO
 export RCCL_DEBUG=INFO
-export NCCL_TIMEOUT=3600
-export TORCH_DIST_TIMEOUT=3600
-export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
-export PARALLEL="amd_optimized"
-python3 -u 51_train_amd_nemo.py llama
+
+torchrun --nproc_per_node="$NUM_GPUS" \
+         --nnodes=1 \
+         --node_rank=0 \
+         --master_addr=localhost \
+         --master_port=29500 \
+         33_train_amd_fsdp.py llama
 

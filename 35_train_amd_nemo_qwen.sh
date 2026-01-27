@@ -25,5 +25,5 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 
 export PARALLEL="amd_optimized"
 
-python3 -u 51_train_amd_nemo.py qwen
+python3 -u 35_train_amd_nemo.py qwen
 

@@ -15,5 +15,5 @@ deepspeed --num_gpus="$NUM_GPUS" \
           --num_nodes=1 \
           --master_addr=localhost \
           --master_port=29500 \
-          42_train_amd_deep.py qwen
+          32_train_amd_deep.py llama
 
