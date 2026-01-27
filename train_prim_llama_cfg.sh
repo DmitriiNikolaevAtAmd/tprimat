@@ -178,6 +178,10 @@ config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
 
+# Ensure lr_decay_iters >= lr_warmup_iters to avoid assertion error
+config['lr_decay_iters'] = $TRAIN_ITERS
+config['lr_warmup_iters'] = $WARMUP_STEPS
+
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
 "
@@ -187,6 +191,17 @@ else
     sed "s/tensor_model_parallel_size:.*/tensor_model_parallel_size: $TP/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
     sed "s/pipeline_model_parallel_size:.*/pipeline_model_parallel_size: $PP/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
     sed "s/gradient_accumulation_steps:.*/gradient_accumulation_steps: $GACC/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
+    
+    # Add lr scheduler settings
+    sed "s/lr_decay_iters:.*/lr_decay_iters: $TRAIN_ITERS/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
+    sed "s/lr_warmup_iters:.*/lr_warmup_iters: $WARMUP_STEPS/" "$PATCHED_CONFIG" > "$PATCHED_CONFIG.tmp" && mv "$PATCHED_CONFIG.tmp" "$PATCHED_CONFIG"
+    # If keys don't exist, append them
+    if ! grep -q "lr_decay_iters:" "$PATCHED_CONFIG"; then
+        echo "lr_decay_iters: $TRAIN_ITERS" >> "$PATCHED_CONFIG"
+    fi
+    if ! grep -q "lr_warmup_iters:" "$PATCHED_CONFIG"; then
+        echo "lr_warmup_iters: $WARMUP_STEPS" >> "$PATCHED_CONFIG"
+    fi
     
     if [ "$PROF_ENABLED" = "true" ]; then
         echo "profile: true" >> "$PATCHED_CONFIG"
