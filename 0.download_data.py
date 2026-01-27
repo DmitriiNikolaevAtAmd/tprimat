@@ -62,13 +62,13 @@ def main():
     parser.add_argument(
         "--samples",
         type=int,
-        default=4_000_000,
-        help="Number of samples to download (default: 4M)",
+        default=1_000_000,
+        help="Number of samples to download (default: 1M)",
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="/data/c4_4M.jsonl",
+        default="/data/c4_1M.jsonl",
         help="Output JSONL file path",
     )
     parser.add_argument(
