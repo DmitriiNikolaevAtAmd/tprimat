@@ -27,7 +27,7 @@ from utils import (
 )
 
 
-def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, parallel_strategy=None, model_name=None):
+def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, micro_batch_size=1, tensor_parallel_size=1, pipeline_parallel_size=1, parallel_strategy=None, model_name=None):
     """Extract comprehensive metrics from Primus training log."""
     
     print(f"Analyzing log file: {log_file}")
@@ -109,16 +109,33 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
         platform
     )
     
+    # Calculate throughput per GPU core (for cross-platform comparison)
+    throughput_per_gpu_core = 0
+    if gpu_info.get("gpu_cores", 0) > 0:
+        throughput_per_gpu_core = steps_per_second / gpu_info["gpu_cores"]
+    
+    # Calculate data_parallel_size and gradient_accumulation from batch sizes
+    data_parallel_size = num_gpus // (tensor_parallel_size * pipeline_parallel_size)
+    gradient_accumulation_steps = global_batch_size // (micro_batch_size * data_parallel_size)
+    
     results = {
         "platform": platform,
         "gpu_info": gpu_info,
         "timestamp": datetime.now().isoformat(),
-        "parallelism": parallelism_config,
+        "parallelism_config": {
+            "strategy_name": parallel_strategy or parallelism_config.get("strategy", "unknown"),
+            "tensor_model_parallel_size": tensor_parallel_size,
+            "pipeline_model_parallel_size": pipeline_parallel_size,
+            "data_parallel_size": data_parallel_size,
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+        },
         "training_config": {
             "max_steps": len(step_times),
             "global_batch_size": global_batch_size,
+            "micro_batch_size": micro_batch_size,
             "sequence_length": seq_length,
             "num_gpus": num_gpus,
+            "parallel_strategy": parallel_strategy or "unknown",
         },
         "performance_metrics": {
             "total_steps": len(step_times),
@@ -129,11 +146,11 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
             "steps_per_second": steps_per_second,
             "tokens_per_second": tokens_per_second,
             "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
+            "throughput_per_gpu_core": throughput_per_gpu_core,
         },
         "step_times": step_times,
         "loss_values": loss_values if loss_values else [],
         "learning_rates": learning_rates if learning_rates else [],
-        "source_log_file": str(Path(log_file).absolute())
     }
     
     # Add memory metrics if available
@@ -183,6 +200,12 @@ Examples:
                        help='Global batch size (total across all GPUs)')
     parser.add_argument('--sequence-length', type=int, default=2048,
                        help='Sequence length (default: 2048)')
+    parser.add_argument('--micro-batch-size', type=int, default=1,
+                       help='Micro batch size per GPU (default: 1)')
+    parser.add_argument('--tensor-parallel-size', type=int, default=1,
+                       help='Tensor parallel size (default: 1)')
+    parser.add_argument('--pipeline-parallel-size', type=int, default=1,
+                       help='Pipeline parallel size (default: 1)')
     parser.add_argument('--parallel-strategy', 
                        help='Parallelism strategy name (e.g., balanced, minimal_communication)')
     parser.add_argument('--verbose', action='store_true',
@@ -218,6 +241,9 @@ Examples:
         args.num_gpus,
         args.global_batch_size,
         args.sequence_length,
+        args.micro_batch_size,
+        args.tensor_parallel_size,
+        args.pipeline_parallel_size,
         args.parallel_strategy,
         args.model_name
     )

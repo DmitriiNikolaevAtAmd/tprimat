@@ -77,7 +77,29 @@ def load_all_benchmark_results(results_dir: str) -> Dict[str, Dict]:
 
 
 def pick_default_framework(benchmarks: Dict[str, Dict]) -> str | None:
-    """Pick a framework with the best cross-platform coverage."""
+    """Pick a framework with the best cross-platform coverage.
+    
+    Returns None to allow cross-framework comparison (e.g., AMD prim vs NVIDIA nemo).
+    """
+    # Count frameworks per platform
+    nvidia_frameworks = set()
+    amd_frameworks = set()
+    
+    for key, data in benchmarks.items():
+        framework = data.get("framework", "unknown")
+        platform = data.get("platform_key", "unknown")
+        if framework == "unknown" or platform == "unknown":
+            continue
+        if platform == "nvidia":
+            nvidia_frameworks.add(framework)
+        elif platform == "amd":
+            amd_frameworks.add(framework)
+    
+    # If we have different frameworks per platform, return None to allow cross-framework comparison
+    if nvidia_frameworks and amd_frameworks and not nvidia_frameworks.intersection(amd_frameworks):
+        return None  # Allow cross-framework comparison
+    
+    # Otherwise, pick the most common framework
     frameworks = {}
     for key, data in benchmarks.items():
         framework = data.get("framework", "unknown")
@@ -114,31 +136,52 @@ def create_comparison_plot(
     """Create visual comparison of all platform-model combinations."""
     
     def find_key(platform: str, model_name: str) -> str | None:
+        """Find benchmark key for given platform and model, with framework preference."""
         if framework_filter:
             candidate = f"{platform}-{framework_filter}-{model_name}"
             return candidate if candidate in benchmarks else None
+        
+        # Find all matches for this platform-model combination
         matches = [
             key for key in benchmarks.keys()
             if key.startswith(f"{platform}-") and key.endswith(f"-{model_name}")
         ]
-        return sorted(matches)[0] if matches else None
+        
+        if not matches:
+            return None
+        
+        # Prefer platform-native frameworks: prim for AMD, nemo for NVIDIA
+        preferred = {"nvidia": "nemo", "amd": "prim"}
+        for match in matches:
+            if preferred.get(platform, "") in match:
+                return match
+        
+        return sorted(matches)[0]
     
-    # Detect which platforms are available
+    # Detect which platforms and frameworks are available
     has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
     has_amd = any(key.startswith('amd-') for key in benchmarks.keys())
     
+    # Get framework names for each platform
+    nvidia_fw = set(data['framework'] for key, data in benchmarks.items() if key.startswith('nvidia-'))
+    amd_fw = set(data['framework'] for key, data in benchmarks.items() if key.startswith('amd-'))
+    
     # Create dynamic title based on available data
     if has_nvidia and has_amd:
-        title = 'NVIDIA H100 vs AMD Instinct Mi300X'
+        nvidia_fw_str = '/'.join(sorted(nvidia_fw)) if nvidia_fw else 'unknown'
+        amd_fw_str = '/'.join(sorted(amd_fw)) if amd_fw else 'unknown'
+        title = f'NVIDIA H100 ({nvidia_fw_str}) vs AMD MI300X ({amd_fw_str})'
     elif has_nvidia:
-        title = 'NVIDIA H100 Benchmark Results'
+        nvidia_fw_str = '/'.join(sorted(nvidia_fw)) if nvidia_fw else ''
+        title = f'NVIDIA H100 Benchmark Results ({nvidia_fw_str})'
     elif has_amd:
-        title = 'AMD Instinct Mi300X Benchmark Results'
+        amd_fw_str = '/'.join(sorted(amd_fw)) if amd_fw else ''
+        title = f'AMD MI300X Benchmark Results ({amd_fw_str})'
     else:
         title = 'GPU Benchmark Results'
     
-    # Create 2x2 grid for comprehensive comparison with elegant styling
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10), facecolor='white')
+    # Create 2x3 grid for comprehensive comparison with elegant styling
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10), facecolor='white')
     fig.suptitle(title, fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
     
     # Flatten axes for easier indexing
@@ -195,8 +238,53 @@ def create_comparison_plot(
                 ha='center', va='center', transform=ax1.transAxes)
         ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
     
-    # 2. Training Loss over Time
+    # 2. Average Memory Usage (Bar Chart)
     ax2 = axes[1]
+    labels = []
+    values = []
+    colors_list = []
+    
+    for platform in ("nvidia", "amd"):
+        for model_name in ("llama", "qwen"):
+            suffix = f"{platform}-{model_name}"
+            key = find_key(platform, model_name)
+            if key:
+                data = benchmarks[key]
+                # Try memory_metrics first, then gpu_info
+                mem_metrics = data.get('memory_metrics', {})
+                avg_mem = mem_metrics.get('avg_memory_allocated_gb')
+                if avg_mem is None:
+                    avg_mem = mem_metrics.get('peak_memory_allocated_gb')
+                if avg_mem is None:
+                    # Fallback: estimate from GPU info (total memory * ~0.7 utilization)
+                    gpu_mem = data.get('gpu_info', {}).get('total_memory_gb', 0)
+                    if gpu_mem and gpu_mem != 'N/A':
+                        avg_mem = gpu_mem * 0.7  # Estimate
+                
+                if avg_mem and avg_mem != 'N/A':
+                    labels.append(style_map[suffix]['label'])
+                    values.append(float(avg_mem))
+                    colors_list.append(style_map[suffix]['color'])
+    
+    if values:
+        bars = ax2.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
+        ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
+        ax2.set_title('Average Memory Usage', fontweight='bold', fontsize=12)
+        ax2.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
+        
+        # Add value labels on bars
+        for bar, value in zip(bars, values):
+            height = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{value:.1f}',
+                    ha='center', va='bottom', fontweight='bold', fontsize=9)
+    else:
+        ax2.text(0.5, 0.5, 'Memory data not available', 
+                ha='center', va='center', transform=ax2.transAxes)
+        ax2.set_title('Average Memory Usage', fontweight='bold', fontsize=12)
+    
+    # 3. Training Loss over Time
+    ax3 = axes[2]
     has_data = False
     
     for platform in ("nvidia", "amd"):
@@ -208,41 +296,7 @@ def create_comparison_plot(
                 if loss_values:
                     steps = range(len(loss_values))
                     style = style_map[suffix]
-                    ax2.plot(steps, loss_values, 
-                            marker=style['marker'], 
-                            linestyle=style['linestyle'],
-                            color=style['color'], 
-                            label=style['label'], 
-                            linewidth=1.5, 
-                            markersize=2, 
-                            alpha=0.85)
-                    has_data = True
-    
-    if has_data:
-        ax2.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax2.set_ylabel('Loss', fontweight='bold', fontsize=11)
-        ax2.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
-        ax2.legend(fontsize=8, loc='best')
-        ax2.grid(alpha=0.2, linestyle='--', linewidth=0.5)
-    else:
-        ax2.text(0.5, 0.5, 'Loss data not available', 
-                ha='center', va='center', transform=ax2.transAxes)
-        ax2.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
-    
-    # 3. Learning Rate over Time (from logs)
-    ax3 = axes[2]
-    has_data = False
-    
-    for platform in ("nvidia", "amd"):
-        for model_name in ("llama", "qwen"):
-            suffix = f"{platform}-{model_name}"
-            key = find_key(platform, model_name)
-            if key and 'learning_rates' in benchmarks[key]:
-                lr_values = benchmarks[key]['learning_rates']
-                if lr_values:
-                    steps = range(len(lr_values))
-                    style = style_map[suffix]
-                    ax3.plot(steps, lr_values, 
+                    ax3.plot(steps, loss_values, 
                             marker=style['marker'], 
                             linestyle=style['linestyle'],
                             color=style['color'], 
@@ -254,18 +308,52 @@ def create_comparison_plot(
     
     if has_data:
         ax3.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax3.set_ylabel('Learning Rate', fontweight='bold', fontsize=11)
-        ax3.set_title('Learning Rate over Time', fontweight='bold', fontsize=12)
+        ax3.set_ylabel('Loss', fontweight='bold', fontsize=11)
+        ax3.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
         ax3.legend(fontsize=8, loc='best')
         ax3.grid(alpha=0.2, linestyle='--', linewidth=0.5)
-        ax3.ticklabel_format(axis='y', style='scientific', scilimits=(0,0))
     else:
-        ax3.text(0.5, 0.5, 'Learning rate data not available', 
+        ax3.text(0.5, 0.5, 'Loss data not available', 
                 ha='center', va='center', transform=ax3.transAxes)
-        ax3.set_title('Learning Rate over Time', fontweight='bold', fontsize=12)
+        ax3.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
     
-    # 4. Step Duration over Time
+    # 4. Learning Rate over Time
     ax4 = axes[3]
+    has_data = False
+    
+    for platform in ("nvidia", "amd"):
+        for model_name in ("llama", "qwen"):
+            suffix = f"{platform}-{model_name}"
+            key = find_key(platform, model_name)
+            if key and 'learning_rates' in benchmarks[key]:
+                lr_values = benchmarks[key]['learning_rates']
+                if lr_values:
+                    steps = range(len(lr_values))
+                    style = style_map[suffix]
+                    ax4.plot(steps, lr_values, 
+                            marker=style['marker'], 
+                            linestyle=style['linestyle'],
+                            color=style['color'], 
+                            label=style['label'], 
+                            linewidth=1.5, 
+                            markersize=2, 
+                            alpha=0.85)
+                    has_data = True
+    
+    if has_data:
+        ax4.set_xlabel('Step', fontweight='bold', fontsize=10)
+        ax4.set_ylabel('Learning Rate', fontweight='bold', fontsize=11)
+        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=12)
+        ax4.legend(fontsize=8, loc='best')
+        ax4.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+        ax4.ticklabel_format(axis='y', style='scientific', scilimits=(0,0))
+    else:
+        ax4.text(0.5, 0.5, 'Learning rate data not available', 
+                ha='center', va='center', transform=ax4.transAxes)
+        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=12)
+    
+    # 5. Step Duration over Time
+    ax5 = axes[4]
     has_data = False
     
     for platform in ("nvidia", "amd"):
@@ -277,7 +365,7 @@ def create_comparison_plot(
                 if step_times:
                     steps = range(len(step_times))
                     style = style_map[suffix]
-                    ax4.plot(steps, step_times, 
+                    ax5.plot(steps, step_times, 
                             marker=style['marker'], 
                             linestyle=style['linestyle'],
                             color=style['color'], 
@@ -288,19 +376,88 @@ def create_comparison_plot(
                     
                     # Add average line annotation
                     avg_time = sum(step_times) / len(step_times)
-                    ax4.axhline(y=avg_time, color=style['color'], linestyle=':', alpha=0.3, linewidth=0.8)
+                    ax5.axhline(y=avg_time, color=style['color'], linestyle=':', alpha=0.3, linewidth=0.8)
                     has_data = True
     
     if has_data:
-        ax4.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax4.set_ylabel('Time (secs)', fontweight='bold', fontsize=11)
-        ax4.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
-        ax4.legend(fontsize=8, loc='best')
-        ax4.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+        ax5.set_xlabel('Step', fontweight='bold', fontsize=10)
+        ax5.set_ylabel('Time (secs)', fontweight='bold', fontsize=11)
+        ax5.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
+        ax5.legend(fontsize=8, loc='best')
+        ax5.grid(alpha=0.2, linestyle='--', linewidth=0.5)
     else:
-        ax4.text(0.5, 0.5, 'Step time data not available', 
-                ha='center', va='center', transform=ax4.transAxes)
-        ax4.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
+        ax5.text(0.5, 0.5, 'Step time data not available', 
+                ha='center', va='center', transform=ax5.transAxes)
+        ax5.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
+    
+    # 6. Experiment Details Table
+    ax6 = axes[5]
+    ax6.axis('off')
+    ax6.set_title('Experiment Configuration', fontweight='bold', fontsize=12)
+    
+    # Collect experiment details from available benchmarks
+    table_data = []
+    
+    for platform in ("nvidia", "amd"):
+        for model_name in ("llama", "qwen"):
+            key = find_key(platform, model_name)
+            if key:
+                data = benchmarks[key]
+                config = data.get('training_config', {})
+                # Support both old 'parallelism' and new 'parallelism_config' keys
+                parallel = data.get('parallelism_config', data.get('parallelism', {}))
+                gpu_info = data.get('gpu_info', {})
+                
+                # Build row
+                platform_label = "NVIDIA" if platform == "nvidia" else "AMD"
+                model_label = model_name.capitalize()
+                
+                # Handle both old and new field names for parallelism
+                tp = parallel.get('tensor_model_parallel_size', parallel.get('tensor_parallel_size', 1))
+                pp = parallel.get('pipeline_model_parallel_size', parallel.get('pipeline_parallel_size', 1))
+                num_gpus = config.get('num_gpus', gpu_info.get('device_count', 8))
+                dp = parallel.get('data_parallel_size', num_gpus // (tp * pp) if tp and pp else 'N/A')
+                
+                gbs = config.get('global_batch_size', 'N/A')
+                mbs = config.get('micro_batch_size', 1)  # Default to 1 if not specified
+                seq = config.get('sequence_length', 'N/A')
+                gpus = num_gpus
+                
+                table_data.append([
+                    f"{platform_label} {model_label}",
+                    f"TP={tp}, PP={pp}, DP={dp}",
+                    f"{gbs}",
+                    f"{mbs}",
+                    f"{seq}",
+                    f"{gpus}"
+                ])
+    
+    if table_data:
+        col_labels = ['Config', 'Parallelism', 'GBS', 'MBS', 'SeqLen', 'GPUs']
+        
+        table = ax6.table(
+            cellText=table_data,
+            colLabels=col_labels,
+            loc='center',
+            cellLoc='center',
+            colColours=['#E8E8E8'] * len(col_labels),
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1.4, 1.8)
+        
+        # Set column widths
+        col_widths = [0.18, 0.25, 0.12, 0.12, 0.13, 0.10]
+        for i, width in enumerate(col_widths):
+            for row in range(len(table_data) + 1):  # +1 for header
+                table[(row, i)].set_width(width)
+        
+        # Style header row
+        for j in range(len(col_labels)):
+            table[(0, j)].set_text_props(fontweight='bold')
+    else:
+        ax6.text(0.5, 0.5, 'No experiment data available', 
+                ha='center', va='center', transform=ax6.transAxes)
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
@@ -455,19 +612,31 @@ def main():
     print(f"\n{'Configuration':<25} {'Tokens/sec/GPU':>15} {'Avg Step Time':>15} {'Avg Loss':>12}")
     print("-" * 100)
     
-    def find_key(platform: str, model_name: str) -> str | None:
+    def find_key_summary(platform: str, model_name: str) -> str | None:
+        """Find benchmark key for given platform and model."""
         if framework_filter:
             candidate = f"{platform}-{framework_filter}-{model_name}"
             return candidate if candidate in benchmarks else None
+        
         matches = [
             key for key in benchmarks.keys()
             if key.startswith(f"{platform}-") and key.endswith(f"-{model_name}")
         ]
-        return sorted(matches)[0] if matches else None
+        
+        if not matches:
+            return None
+        
+        # Prefer platform-native frameworks
+        preferred = {"nvidia": "nemo", "amd": "prim"}
+        for match in matches:
+            if preferred.get(platform, "") in match:
+                return match
+        
+        return sorted(matches)[0]
     
     for platform in ["nvidia", "amd"]:
         for model_name in ["llama", "qwen"]:
-            key = find_key(platform, model_name)
+            key = find_key_summary(platform, model_name)
             if not key:
                 continue
             data = benchmarks[key]
@@ -478,6 +647,34 @@ def main():
             avg_loss = sum(loss_values) / len(loss_values) if loss_values else 0
             
             print(f"{key:<25} {tps_gpu:>15,.1f} {step_time:>15.2f} {avg_loss:>12.2f}")
+    
+    # Print speedup comparison if both platforms available
+    if has_nvidia and has_amd:
+        print("\n" + "-"*100)
+        print("SPEEDUP COMPARISON (AMD vs NVIDIA)")
+        print("-"*100)
+        
+        for model_name in ["llama", "qwen"]:
+            nvidia_key = find_key_summary("nvidia", model_name)
+            amd_key = find_key_summary("amd", model_name)
+            
+            if nvidia_key and amd_key:
+                nvidia_tps = benchmarks[nvidia_key]['performance_metrics'].get('tokens_per_second_per_gpu', 0)
+                amd_tps = benchmarks[amd_key]['performance_metrics'].get('tokens_per_second_per_gpu', 0)
+                nvidia_step = benchmarks[nvidia_key]['performance_metrics'].get('avg_step_time_seconds', 0)
+                amd_step = benchmarks[amd_key]['performance_metrics'].get('avg_step_time_seconds', 0)
+                
+                if nvidia_tps > 0 and amd_tps > 0:
+                    tps_ratio = amd_tps / nvidia_tps
+                    step_ratio = nvidia_step / amd_step if amd_step > 0 else 0
+                    
+                    winner = "AMD" if tps_ratio > 1 else "NVIDIA"
+                    ratio = tps_ratio if tps_ratio > 1 else 1/tps_ratio
+                    
+                    print(f"\n  {model_name.upper()}:")
+                    print(f"    Throughput: AMD {amd_tps:,.0f} vs NVIDIA {nvidia_tps:,.0f} tokens/s/GPU")
+                    print(f"    Step Time:  AMD {amd_step:.3f}s vs NVIDIA {nvidia_step:.3f}s")
+                    print(f"    -> {winner} is {ratio:.2f}x faster")
     
     print("\n" + "="*100 + "\n")
     

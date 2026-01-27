@@ -70,9 +70,9 @@ config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
 
 # Ensure training parameters
-config['train_iters'] = 50
-config['lr_decay_iters'] = 50
-config['lr_warmup_iters'] = 10
+config['train_iters'] = 500
+config['lr_decay_iters'] = 500
+config['lr_warmup_iters'] = 50
 
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
@@ -101,7 +101,7 @@ filter_noise() {
 }
 
 bash "$TRAIN_SCRIPT" \
-    --train_iters 50 \
+    --train_iters 500 \
     --global_batch_size 64 \
     --micro_batch_size 1 \
     --seq_length 2048 \
@@ -109,9 +109,9 @@ bash "$TRAIN_SCRIPT" \
     --pipeline_model_parallel_size 1 \
     --lr 0.0003 \
     --min_lr 0.0 \
-    --lr_warmup_iters 10 \
+    --lr_warmup_iters 50 \
     --lr_decay_style cosine \
-    --lr_decay_iters 50 \
+    --lr_decay_iters 500 \
     --weight_decay 0.1 \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_qwen_raw.log" | filter_noise | tee "$TPRIMAT_PATH/output/training_main_qwen.log"
 
@@ -123,5 +123,8 @@ python3 extract_metrics.py \
     --output "$TPRIMAT_PATH/output/train_amd_prim_qwen.json" \
     --num-gpus 8 \
     --global-batch-size 64 \
+    --micro-batch-size 1 \
+    --tensor-parallel-size 1 \
+    --pipeline-parallel-size 1 \
     --sequence-length 2048 \
     --parallel-strategy "TP1_SP"

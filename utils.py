@@ -699,6 +699,14 @@ class BenchmarkCallback(Callback):
                 "learning_rates": self.learning_rates if self.learning_rates else [],
             }
             
+            # Add memory metrics if available
+            if self.memory_allocated:
+                results["memory_metrics"] = {
+                    "peak_memory_allocated_gb": max(self.memory_allocated),
+                    "avg_memory_allocated_gb": sum(self.memory_allocated) / len(self.memory_allocated),
+                    "min_memory_allocated_gb": min(self.memory_allocated),
+                }
+            
             # Save results (round all floats to 3 decimal places)
             # Use framework name if provided, otherwise fall back to software stack
             if self.framework and self.model_name:
@@ -929,6 +937,14 @@ class BenchmarkCallbackTran(TrainerCallback):
                 "loss_values": self.loss_values if self.loss_values else [],
                 "learning_rates": self.learning_rates if self.learning_rates else [],
             }
+            
+            # Add memory metrics if available
+            if self.memory_allocated:
+                results["memory_metrics"] = {
+                    "peak_memory_allocated_gb": max(self.memory_allocated),
+                    "avg_memory_allocated_gb": sum(self.memory_allocated) / len(self.memory_allocated),
+                    "min_memory_allocated_gb": min(self.memory_allocated),
+                }
             
             # Save results
             if self.framework and self.model_name:
