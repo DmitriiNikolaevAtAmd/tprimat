@@ -58,7 +58,18 @@ def main():
             methodology = config.get_methodology()
             print(f"export CONFIG_METHODOLOGY='{methodology}'")
         
-        for model in config.get_models_list():
+        # Profiling configuration
+        prof = config.get_profiler_config()
+        print(f"export CONFIG_PROF_ENABLED='{str(prof.get('enabled', False)).lower()}'")
+        if prof.get('enabled'):
+            sched = prof.get('schedule', {})
+            print(f"export CONFIG_PROF_WAIT='{sched.get('wait', 1)}'")
+            print(f"export CONFIG_PROF_WARMUP='{sched.get('warmup', 1)}'")
+            print(f"export CONFIG_PROF_ACTIVE='{sched.get('active', 5)}'")
+            print(f"export CONFIG_PROF_RECORD_SHAPES='{str(prof.get('record_shapes', True)).lower()}'")
+            print(f"export CONFIG_PROF_MEMORY='{str(prof.get('profile_memory', True)).lower()}'")
+        
+        # Parallelism for each model and platform
         for model in config.get_models_list():
             for platform in config.get_platforms_list():
                 try:

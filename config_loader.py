@@ -18,13 +18,13 @@ class Config:
         config = Config()
         
         # Get parallelism settings for current platform and model
-        llama_parallelism = config.get_parallelism("llama", "nvidia")
+        llama_parallelism = config.get_parallelism("llama", "amd")
         
         # Get training parameters
         batch_size = config.training.data.global_batch_size
         
         # Get platform-specific optimizations
-        nvidia_opts = config.get_platform_optimizations("nvidia")
+        amd_opts = config.get_platform_optimizations("amd")
     """
     
     def __init__(self, config_path: Optional[str] = None):
@@ -54,6 +54,8 @@ class Config:
         self.benchmarking = DotDict(self._config.get("benchmarking", {}))
         self.comparison = DotDict(self._config.get("comparison", {}))
         self.paths = DotDict(self._config.get("paths", {}))
+        self.logging_config = DotDict(self._config.get("logging", {}))
+        self.profiling = DotDict(self._config.get("profiling", {}))
         self.validation = DotDict(self._config.get("validation", {}))
     
     def _load_config(self) -> Dict[str, Any]:
@@ -93,12 +95,12 @@ class Config:
         """
         Get parallelism strategy from PARALLEL env var or default.
         
-        Priority: PARALLEL env var > default 'minimal_communication'
+        Priority: PARALLEL env var > default 'truly_identical'
         
         Use --parallel flag in run scripts to set the strategy.
         """
         import os
-        return os.environ.get('PARALLEL', 'minimal_communication')
+        return os.environ.get('PARALLEL', 'truly_identical')
     
     def get_parallelism(
         self,
@@ -111,7 +113,7 @@ class Config:
         
         Args:
             model: Model name (llama, qwen)
-            platform: Platform name (nvidia, amd)
+            platform: Platform name (amd)
             methodology: Override methodology (e.g., truly_identical, maximum_performance)
         
         Returns:
@@ -175,17 +177,14 @@ class Config:
     
     def get_cloud_cost(self, platform: str) -> float:
         """Get cloud cost per hour for platform (8 GPUs)."""
-        cost_key = f"{platform}_{'h100' if platform == 'nvidia' else 'mi300x'}_8gpu_per_hour"
+        cost_key = f"{platform}_mi300x_8gpu_per_hour"
         return self.benchmarking.enhanced_metrics.cloud_costs.get(cost_key, 0.0)
     
     def get_hardware_specs(self, platform: str) -> Dict[str, Any]:
         """Get hardware specifications for MFU calculation."""
-        if platform == "nvidia" or platform == "nvd":
-            return dict(self.benchmarking.enhanced_metrics.hardware_specs.nvidia_h100)
-        elif platform == "amd":
+        if platform == "amd":
             return dict(self.benchmarking.enhanced_metrics.hardware_specs.amd_mi300x)
-        else:
-            raise ValueError(f"Unknown platform: {platform}")
+        raise ValueError(f"Unknown platform: {platform}")
     
     def get_primus_path(self) -> str:
         """Get Primus installation path."""
@@ -247,50 +246,8 @@ class Config:
         return list(self.hardware.platforms.keys())
     
     def get_profiler_config(self) -> Dict[str, Any]:
-        return {}
-        """
-        Get profiler configuration with hardcoded defaults.
-        Only experiment.profiling (bool) is configurable in config.yaml.
-        """
-        enabled = self.experiment.get('profiling', False)
-        
-        # Return profiling config with fixed defaults
-        return {
-            'enabled': enabled,
-            'trace': 'cuda,nvtx,osrt,cudnn,cublas',
-            'cuda_memory_usage': True,
-            'capture_range': 'cudaProfilerApi',
-            'stats': True,
-            'force_overwrite': True,
-            'export_json': True,
-        }
-    
-    def get_logging_config(self) -> Dict[str, Any]:
-        """
-        Get logging configuration with hardcoded defaults.
-        Only experiment.logging (bool) is configurable in config.yaml.
-        """
-        enabled = self.experiment.get('logging', True)
-        
-        # Return logging config with fixed defaults
-        return {
-            'enabled': enabled,
-            'console': {
-                'enabled': enabled,
-                'level': 'INFO',
-                'colored': True,
-            },
-            'file': {
-                'enabled': enabled,
-                'capture_stdout': True,
-                'capture_stderr': True,
-            },
-            'disable': {
-                'tensorboard': True,
-                'wandb': True,
-                'mlflow': True,
-            }
-        }
+        """Get profiler configuration."""
+        return dict(self.profiling)
     
     def print_config_summary(self, model: str, platform: str):
         """Print configuration summary for model and platform."""
@@ -422,9 +379,9 @@ if __name__ == "__main__":
         
         # Example: Get specific configuration
         print("=" * 60)
-        print("Example: Getting LLAMA configuration for NVIDIA")
+        print("Example: Getting LLAMA configuration for AMD")
         print("=" * 60)
-        parallelism = config.get_parallelism("llama", "nvidia")
+        parallelism = config.get_parallelism("llama", "amd")
         print(f"Parallelism config: {parallelism}")
         print()
         
