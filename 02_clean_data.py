@@ -70,7 +70,7 @@ def clean_data(input_file: str, output_file: str, min_chars: int, min_words: int
     print(f"    - Short (<{min_words} words): {skipped_short_words:,}")
     print(f"    - Malformed JSON: {skipped_malformed:,}")
     print(f"  Output file: {output_file}")
-    print(f"\nNext step: python 2_encode_data.py")
+    print(f"\nNext step: python 02_encode_data.py")
 
 
 def main():
