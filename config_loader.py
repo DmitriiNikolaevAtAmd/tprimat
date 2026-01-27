@@ -95,12 +95,12 @@ class Config:
         """
         Get parallelism strategy from PARALLEL env var or default.
         
-        Priority: PARALLEL env var > default 'truly_identical'
+        Priority: PARALLEL env var > default 'minimal_communication'
         
         Use --parallel flag in run scripts to set the strategy.
         """
         import os
-        return os.environ.get('PARALLEL', 'truly_identical')
+        return os.environ.get('PARALLEL', 'minimal_communication')
     
     def get_parallelism(
         self,
