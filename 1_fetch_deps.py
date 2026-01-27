@@ -101,7 +101,7 @@ def fetch_c4(num_samples: int, output_file: str, max_retries: int = 3):
     print(f"  Saved: {saved:,} samples")
     print(f"  File size: {file_size_mb:.1f} MB")
     print(f"  Output: {output_file}")
-    print(f"\nNext step: python 01_clean_data.py")
+    print(f"\nNext step: python 2_clean_data.py")
 
 
 def main():
