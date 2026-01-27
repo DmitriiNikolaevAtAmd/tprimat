@@ -57,6 +57,27 @@ class IndexedDataset:
                 dtype=np.int32
             )
         
+        # Track binary file size for sanity checks
+        self.bin_size = self.bin_path.stat().st_size
+        
+        # Detect pointer/length units to match dataset format
+        dtype_size = np.dtype(self.dtype).itemsize
+        max_ptr = int(self.seq_pointers.max()) if len(self.seq_pointers) else 0
+        max_len = int(self.seq_lengths.max()) if len(self.seq_lengths) else 0
+        
+        candidates = []
+        for ptr_scale in (1, dtype_size):
+            for len_scale in (1, dtype_size):
+                max_end = max_ptr * ptr_scale + max_len * len_scale
+                if max_end <= self.bin_size:
+                    candidates.append((max_end, ptr_scale, len_scale))
+        
+        if candidates:
+            _, self._ptr_scale, self._len_scale = max(candidates, key=lambda x: x[0])
+        else:
+            # Fallback to default Megatron-style (ptr in bytes, len in elements)
+            self._ptr_scale, self._len_scale = 1, dtype_size
+        
         # Don't open binary file here - will open lazily per process
         self._bin_file = None
         
@@ -103,16 +124,18 @@ class IndexedDataset:
         if pointer < 0:
             raise ValueError(f"Invalid pointer {pointer} at index {idx}")
         
-        bytes_to_read = length * np.dtype(self.dtype).itemsize
+        dtype_size = np.dtype(self.dtype).itemsize
+        pointer_bytes = pointer * self._ptr_scale
+        bytes_to_read = length * self._len_scale
         
         # Read data using pread to avoid seek issues in multi-threaded/multi-process context
         import os
         try:
             fd = self.bin_file.fileno()
-            data = os.pread(fd, bytes_to_read, pointer)
+            data = os.pread(fd, bytes_to_read, pointer_bytes)
         except (AttributeError, OSError):
             # Fallback to seek if pread not available or fails
-            self.bin_file.seek(pointer, os.SEEK_SET)
+            self.bin_file.seek(pointer_bytes, os.SEEK_SET)
             data = self.bin_file.read(bytes_to_read)
         
         # Verify we read the expected amount
@@ -120,6 +143,9 @@ class IndexedDataset:
             raise IOError(f"Expected to read {bytes_to_read} bytes but got {len(data)}")
         
         # Convert to numpy array
+        if bytes_to_read % dtype_size != 0:
+            raise IOError(f"Sequence byte size {bytes_to_read} not aligned to dtype {dtype_size}")
+        
         tokens = np.frombuffer(data, dtype=self.dtype)
         return torch.from_numpy(tokens.astype(np.int64))
     
