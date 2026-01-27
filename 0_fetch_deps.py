@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 from pathlib import Path
 from datasets import load_dataset
+
+# Increase HuggingFace timeout (default is 10s)
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "120")
 
 
 MODELS = {
@@ -40,18 +44,37 @@ def fetch_tokenizers(output_dir: str):
     return output_path
 
 
-def fetch_c4(num_samples: int, output_file: str):
+def fetch_c4(num_samples: int, output_file: str, max_retries: int = 3):
     """Fetch C4 dataset and save as raw JSONL."""
+    from datasets import DownloadConfig
+    import time
     
     print(f"Fetching allenai/c4 (streaming {num_samples:,} samples)...")
     
-    dataset = load_dataset(
-        "allenai/c4",
-        "en",
-        split="train",
-        streaming=True,
-        trust_remote_code=True,
+    download_config = DownloadConfig(
+        num_proc=1,
+        max_retries=5,
     )
+    
+    for attempt in range(max_retries):
+        try:
+            dataset = load_dataset(
+                "allenai/c4",
+                "en",
+                split="train",
+                streaming=True,
+                trust_remote_code=True,
+                download_config=download_config,
+            )
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = 10 * (attempt + 1)
+                print(f"  Attempt {attempt + 1} failed: {e}")
+                print(f"  Retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
     
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
