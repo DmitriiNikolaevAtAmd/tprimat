@@ -10,6 +10,9 @@ export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export NCCL_DEBUG=INFO
 export RCCL_DEBUG=INFO
+export USE_TF=NO
+export USE_APEX=NO
+export TRANSFORMERS_NO_APEX=1
 
 if [ "$NUM_GPUS" -gt 1 ]; then
     torchrun --nproc_per_node="$NUM_GPUS" \
@@ -17,8 +20,8 @@ if [ "$NUM_GPUS" -gt 1 ]; then
              --node_rank=0 \
              --master_addr=localhost \
              --master_port=29500 \
-             44_train_amd_mega.py qwen
+             56_train_amd_tran.py llama
 else
-    python3 -u 44_train_amd_mega.py qwen
+    python3 -u 56_train_amd_tran.py llama
 fi
 
