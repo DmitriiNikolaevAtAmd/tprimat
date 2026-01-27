@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 from pathlib import Path
 from datasets import load_dataset
 
 
-TOKENIZERS = {
+MODELS = {
     "meta-llama/Llama-3.1-8B": "meta-llama--llama-31-8b",
     "Qwen/Qwen2.5-7B": "qwen--qwen25-7b",
 }
@@ -21,14 +20,15 @@ def fetch_tokenizers(output_dir: str):
     
     print(f"Fetching tokenizers to {output_path}...")
     
-    for hf_name, local_name in TOKENIZERS.items():
+    for hf_name, local_name in MODELS.items():
         local_path = output_path / local_name
+        tokenizer_marker = local_path / "tokenizer_config.json"
         
-        if local_path.exists():
-            print(f"  {hf_name}: already cached")
+        if tokenizer_marker.exists():
+            print(f"  {hf_name}: tokenizer already cached")
             continue
         
-        print(f"  {hf_name}: downloading...")
+        print(f"  {hf_name}: downloading tokenizer...")
         try:
             tokenizer = AutoTokenizer.from_pretrained(hf_name, trust_remote_code=True)
             tokenizer.save_pretrained(local_path)
