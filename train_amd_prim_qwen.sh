@@ -39,8 +39,8 @@ fi
 
 cd "$PRIMUS_PATH"
 
-# Patch config with minimal_communication strategy (identical to NVIDIA)
-# TP=1, PP=1, DP=4, GradAccum=32 - eliminates model parallelism overhead
+# Patch config to match nvd_nemo settings (TP=1 variant)
+# TP=1, PP=1, DP=8, micro_batch=1, global_batch=64, seq_len=2048
 PATCHED_CONFIG="$TPRIMAT_PATH/output/qwen2.5_7B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
@@ -50,10 +50,18 @@ import yaml
 with open('$PATCHED_CONFIG', 'r') as f:
     config = yaml.safe_load(f)
 
-# Minimal communication strategy: same as NVIDIA baseline
+# Parallelism settings (TP=1 means pure data parallel)
 config['tensor_model_parallel_size'] = 1
 config['pipeline_model_parallel_size'] = 1
-config['gradient_accumulation_steps'] = 32
+config['sequence_parallel'] = False  # sequence_parallel requires TP > 1
+
+# Batch settings (matching nvd_nemo exactly)
+config['global_batch_size'] = 64
+config['micro_batch_size'] = 1
+config['seq_length'] = 2048
+config['encoder_seq_length'] = 2048
+# gradient_accumulation = global_batch / (DP * micro_batch) = 64 / (8 * 1) = 8
+config['gradient_accumulation_steps'] = 8
 
 # Enable performance optimizations
 config['use_distributed_optimizer'] = True
@@ -62,32 +70,48 @@ config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
 
 # Ensure training parameters
-config['train_iters'] = 10
-config['lr_decay_iters'] = 10
-config['lr_warmup_iters'] = 2
+config['train_iters'] = 50
+config['lr_decay_iters'] = 50
+config['lr_warmup_iters'] = 10
 
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
 "
-    echo "Config patched with minimal_communication: TP=1, DP=4, GradAccum=32 (matches NVIDIA)"
+    echo "Config patched: TP=1, PP=1, DP=8, micro_batch=1, global_batch=64, seq_len=2048 (matches nvd_nemo)"
 else
     echo "WARNING: pyyaml not available, using unpatched config"
 fi
 
 export EXP="$PATCHED_CONFIG"
 
+# Note: examples/train.sh may not exist; use run_pretrain.sh instead
+TRAIN_SCRIPT="./examples/run_pretrain.sh"
+if [ ! -f "$TRAIN_SCRIPT" ]; then
+    TRAIN_SCRIPT="./examples/train.sh"
+fi
+
+if [ ! -f "$TRAIN_SCRIPT" ]; then
+    echo "ERROR: Neither run_pretrain.sh nor train.sh found in examples/"
+    exit 1
+fi
+
 # Filter noisy library messages that can't be suppressed via env vars
 filter_noise() {
     grep -v -E "(^\[Primus CLI\]|^\[Primus\] sys\.path|^Supported flash-attn versions|^\[aiter\]|^fused_indices_to_multihot|^\[PrimusPatch\]|^\[Gloo\] Rank|waiting for baton release)"
 }
 
-bash ./examples/train.sh \
-    --train_iters 10 \
+bash "$TRAIN_SCRIPT" \
+    --train_iters 50 \
+    --global_batch_size 64 \
+    --micro_batch_size 1 \
+    --seq_length 2048 \
+    --tensor_model_parallel_size 1 \
+    --pipeline_model_parallel_size 1 \
     --lr 0.0003 \
     --min_lr 0.0 \
-    --lr_warmup_iters 2 \
+    --lr_warmup_iters 10 \
     --lr_decay_style cosine \
-    --lr_decay_iters 10 \
+    --lr_decay_iters 50 \
     --weight_decay 0.1 \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_qwen_raw.log" | filter_noise | tee "$TPRIMAT_PATH/output/training_main_qwen.log"
 
@@ -98,6 +122,6 @@ python3 extract_metrics.py \
     --model-name "qwen" \
     --output "$TPRIMAT_PATH/output/train_amd_prim_qwen.json" \
     --num-gpus 8 \
-    --global-batch-size 128 \
+    --global-batch-size 64 \
     --sequence-length 2048 \
-    --parallel-strategy "minimal_communication"
+    --parallel-strategy "TP1_SP"
