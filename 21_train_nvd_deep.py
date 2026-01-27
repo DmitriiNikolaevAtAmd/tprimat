@@ -188,7 +188,7 @@ def train_model(model_name, model_short_name):
     step_times = []
     loss_values = []
     learning_rates = []
-    dataset_path = f"/data/tprimat/allenai-c4-100k-{model_short_name}"
+    dataset_path = f"/data/tprimat/allenai-c4-100k-{model_short_name}-mega"
     use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if rank == 0:

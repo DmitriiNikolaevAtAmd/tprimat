@@ -86,7 +86,7 @@ def train_model(model_name: str):
         sequence_parallel=True,
     )
     
-    dataset_path = f"/data/tprimat/allenai-c4-100k-{model_name}"
+    dataset_path = f"/data/tprimat/allenai-c4-100k-{model_name}-nemo"
     
     if os.path.exists(dataset_path + ".idx"):
         logger.info(f"Using real data: {dataset_path}")

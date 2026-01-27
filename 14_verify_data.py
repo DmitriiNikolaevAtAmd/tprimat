@@ -16,11 +16,13 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     
     bin_path = Path(f"{input_prefix}.bin")
     idx_path = Path(f"{input_prefix}.idx")
+    is_nemo_format = "-nemo" in input_prefix
     
     errors = []
     warnings = []
     
     print(f"Verifying {input_prefix}...")
+    print(f"  Format: {'NeMo' if is_nemo_format else 'Standard'}")
     
     # Check files exist
     if not bin_path.exists():
@@ -46,17 +48,31 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
             if dtype_code != DTYPE_CODE:
                 warnings.append(f"Unexpected dtype code: {dtype_code} (expected {DTYPE_CODE})")
             
-            num_docs = struct.unpack('<Q', f.read(8))[0]
             num_seqs = struct.unpack('<Q', f.read(8))[0]
+            num_docs = struct.unpack('<Q', f.read(8))[0]
             
             if num_docs != num_seqs:
                 warnings.append(f"num_docs ({num_docs}) != num_seqs ({num_seqs})")
             
-            # Skip doc_idx
-            f.seek(9 + 8 + 1 + 8 + 8 + num_docs * 8)
-            
-            pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
-            lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
+            if is_nemo_format:
+                # NeMo order: lengths → doc_indices (N+1) → pointers (N+1)
+                lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
+                doc_indices = np.frombuffer(f.read((num_docs + 1) * 8), dtype=np.int64)
+                pointers = np.frombuffer(f.read((num_seqs + 1) * 8), dtype=np.int64)
+                
+                # NeMo critical assertion
+                if len(lengths) != doc_indices[-1]:
+                    errors.append(f"NeMo check: len(lengths)={len(lengths)} != doc_indices[-1]={doc_indices[-1]}")
+                else:
+                    print(f"  NeMo assertion OK: lengths={len(lengths)}, doc_indices[-1]={doc_indices[-1]}")
+                
+                # Remove extra pointer element for standard checks
+                pointers = pointers[:-1]
+            else:
+                # Standard order: doc_idx → pointers → lengths
+                f.seek(9 + 8 + 1 + 8 + 8 + num_docs * 8)  # Skip doc_idx
+                pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
+                lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
         
         print(f"  Sequences: {num_seqs:,}")
         print(f"  Seq length: {lengths[0] if len(lengths) > 0 else 'N/A'}")
@@ -172,8 +188,10 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
 
 
 DATASETS = {
-    "llama": ("allenai-c4-100k-llama", "meta-llama/Llama-3.1-8B"),
-    "qwen": ("allenai-c4-100k-qwen", "Qwen/Qwen2.5-7B"),
+    "llama-mega": ("allenai-c4-100k-llama-mega", "meta-llama/Llama-3.1-8B"),
+    "qwen-mega": ("allenai-c4-100k-qwen-mega", "Qwen/Qwen2.5-7B"),
+    "llama-nemo": ("allenai-c4-100k-llama-nemo", "meta-llama/Llama-3.1-8B"),
+    "qwen-nemo": ("allenai-c4-100k-qwen-nemo", "Qwen/Qwen2.5-7B"),
 }
 
 
