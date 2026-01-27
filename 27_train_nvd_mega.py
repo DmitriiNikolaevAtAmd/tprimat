@@ -157,22 +157,18 @@ def train_model(model_name: str, model_config: dict):
         )
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        logger.info(f"Loading model: {model_config['hf_model']}")
+        logger.info(f"Initializing model: {model_config['hf_model']} (random weights)")
+        # Load config and create model with random weights (no pretrained download)
+        config = AutoConfig.from_pretrained(model_config['hf_model'], trust_remote_code=True)
+        model = AutoModelForCausalLM.from_config(
+            config,
+            torch_dtype=torch.bfloat16,
+        )
+        model.config.use_cache = False
         if world_size == 1:
-            logger.info("Single GPU detected - using memory optimization")
-            model = AutoModelForCausalLM.from_pretrained(
-                model_config['hf_model'],
-                torch_dtype=torch.bfloat16,
-                trust_remote_code=True,
-                low_cpu_mem_usage=True,
-                device_map="auto"
-            )
+            logger.info("Single GPU detected - using device_map auto")
+            model = model.to('cuda')
         else:
-            model = AutoModelForCausalLM.from_pretrained(
-                model_config['hf_model'],
-                torch_dtype=torch.bfloat16,
-                trust_remote_code=True
-            )
             device = torch.device(f'cuda:{local_rank}')
             model = model.to(device)
         if hasattr(model, 'gradient_checkpointing_enable'):
