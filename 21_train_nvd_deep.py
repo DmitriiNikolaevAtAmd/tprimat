@@ -9,6 +9,7 @@ import deepspeed
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    AutoConfig,
 )
 from torch.utils.data import Dataset, DataLoader
 import json
@@ -191,7 +192,7 @@ def train_model(model_name, model_short_name):
     use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if rank == 0:
-        print(f"Loading model: {model_name}")
+        print(f"Initializing model: {model_name} (random weights)")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
         print(f"Batch config: micro_batch=1, grad_accum=8, train_batch={1*8*world_size}")
         print(f"Using ZeRO Stage 3 with CPU offloading for memory efficiency")
@@ -199,11 +200,13 @@ def train_model(model_name, model_short_name):
             print(f"Real data found at {dataset_path}")
         else:
             print("Real data not found, using synthetic data for benchmarking")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
+    # Load config and create model with random weights (no pretrained download)
+    config = AutoConfig.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_config(
+        config,
         torch_dtype=torch.bfloat16,
-        use_cache=False,
     )
+    model.config.use_cache = False
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
     model.gradient_checkpointing_enable()
