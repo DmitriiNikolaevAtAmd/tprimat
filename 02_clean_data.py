@@ -78,13 +78,13 @@ def main():
     parser.add_argument(
         "--input",
         type=str,
-        default="/data/tprimat/allenai-c4-500k-raw.jsonl",
+        default="/data/tprimat/allenai-c4-100k-raw.jsonl",
         help="Input raw JSONL file",
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="/data/tprimat/allenai-c4-500k.jsonl",
+        default="/data/tprimat/allenai-c4-100k.jsonl",
         help="Output clean JSONL file",
     )
     parser.add_argument(

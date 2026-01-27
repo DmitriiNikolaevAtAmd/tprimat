@@ -7,7 +7,7 @@ from pathlib import Path
 from transformers import AutoTokenizer
 
 
-DTYPE = np.int32
+DTYPE = np.dtype(np.int32)
 DTYPE_CODE = 4  # int32 in Megatron's dtype map
 
 
@@ -144,13 +144,13 @@ def main():
     parser.add_argument(
         "--input",
         type=str,
-        default="/data/tprimat/allenai-c4-500k.jsonl",
+        default="/data/tprimat/allenai-c4-100k.jsonl",
         help="Input clean JSONL file",
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="/data/tprimat/allenai-c4-500k",
+        default="/data/tprimat/allenai-c4-100k",
         help="Output prefix (creates .bin and .idx files)",
     )
     parser.add_argument(

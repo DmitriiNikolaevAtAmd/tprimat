@@ -193,7 +193,7 @@ def main():
     parser.add_argument(
         "--input",
         type=str,
-        default="/data/tprimat/allenai-c4-500k",
+        default="/data/tprimat/allenai-c4-100k",
         help="Input prefix (.bin and .idx files)",
     )
     parser.add_argument(

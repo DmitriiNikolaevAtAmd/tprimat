@@ -109,13 +109,13 @@ def main():
     parser.add_argument(
         "--samples",
         type=int,
-        default=500_000,
-        help="Number of samples to fetch (default: 500K)",
+        default=100_000,
+        help="Number of samples to fetch (default: 100K)",
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="/data/tprimat/allenai-c4-500k-raw.jsonl",
+        default="/data/tprimat/allenai-c4-100k-raw.jsonl",
         help="Output JSONL file path",
     )
     parser.add_argument(
