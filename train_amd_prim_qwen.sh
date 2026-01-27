@@ -62,9 +62,9 @@ config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
 
 # Ensure training parameters
-config['train_iters'] = 50
-config['lr_decay_iters'] = 50
-config['lr_warmup_iters'] = 10
+config['train_iters'] = 10
+config['lr_decay_iters'] = 10
+config['lr_warmup_iters'] = 2
 
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
@@ -82,12 +82,12 @@ filter_noise() {
 }
 
 bash ./examples/train.sh \
-    --train_iters 50 \
+    --train_iters 10 \
     --lr 0.0003 \
-    --min_lr 0.00003 \
-    --lr_warmup_iters 10 \
+    --min_lr 0.0 \
+    --lr_warmup_iters 2 \
     --lr_decay_style cosine \
-    --lr_decay_iters 50 \
+    --lr_decay_iters 10 \
     --weight_decay 0.1 \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_qwen_raw.log" | filter_noise | tee "$TPRIMAT_PATH/output/training_main_qwen.log"
 
