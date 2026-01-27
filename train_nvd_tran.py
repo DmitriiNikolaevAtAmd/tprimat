@@ -60,10 +60,7 @@ class PretrainingDataset(IterableDataset):
                 logger.info(f"  Dataset contains {len(self.indexed_dataset)} sequences")
                 self.real_data_available = True
             except Exception as e:
-                logger.warning(f"⚠ Could not load real data: {e}")
-                logger.warning(f"  Falling back to synthetic data")
-                self.use_real_data = False
-                self.real_data_available = False
+                raise RuntimeError(f"Real data required but could not be loaded: {e}") from e
         else:
             self.real_data_available = False
         
@@ -74,31 +71,29 @@ class PretrainingDataset(IterableDataset):
                 # Load real data and pad/truncate to seq_length
                 dataset_idx = i % len(self.indexed_dataset)
                 tokens = None
-                try:
-                    tokens = self.indexed_dataset[dataset_idx]
-                except Exception as e:
-                    if not self._real_data_failed:
-                        logger.warning(f"⚠ Real data read failed: {e}")
-                        logger.warning("  Switching to synthetic data for remaining samples")
-                        self._real_data_failed = True
-                    self.real_data_available = False
+                last_error = None
+                for attempt in range(3):
+                    try:
+                        tokens = self.indexed_dataset[(dataset_idx + attempt) % len(self.indexed_dataset)]
+                        break
+                    except Exception as e:
+                        last_error = e
+                        if not self._real_data_failed:
+                            logger.warning(f"⚠ Real data read failed: {e}")
+                            logger.warning("  Retrying with next sequence")
+                            self._real_data_failed = True
+                if tokens is None:
+                    raise IOError(f"Real data read failed after retries: {last_error}")
                 
                 # Pad or truncate to seq_length
-                if tokens is not None:
-                    if len(tokens) < self.seq_length:
-                        pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
-                        padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
-                        input_ids = torch.cat([tokens, padding])
-                    else:
-                        input_ids = tokens[:self.seq_length]
+                if len(tokens) < self.seq_length:
+                    pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+                    padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+                    input_ids = torch.cat([tokens, padding])
                 else:
-                    input_ids = None
+                    input_ids = tokens[:self.seq_length]
             else:
-                # Synthetic data fallback
-                input_ids = None
-
-            if input_ids is None:
-                input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
+                raise RuntimeError("Real data required for Transformers training")
             
             yield {
                 'input_ids': input_ids,
@@ -137,7 +132,7 @@ def train_llama():
     if use_real_data:
         logger.info(f"Real data found at {dataset_path}")
     else:
-        logger.info("Real data not found, using synthetic data for benchmarking")
+        raise RuntimeError(f"Real data required but not found at {dataset_path}.idx/.bin")
     
     # Create dataset
     dataset = PretrainingDataset(
@@ -174,7 +169,7 @@ def train_llama():
         save_strategy="no",
         bf16=True,  # Use bfloat16 for training
         bf16_full_eval=False,
-        dataloader_num_workers=2,
+        dataloader_num_workers=0 if use_real_data else 2,
         ddp_find_unused_parameters=False,
         gradient_checkpointing=True,
         optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",  # Use 8-bit optimizer to save memory
@@ -257,7 +252,7 @@ def train_qwen():
     if use_real_data:
         logger.info(f"Real data found at {dataset_path}")
     else:
-        logger.info("Real data not found, using synthetic data for benchmarking")
+        raise RuntimeError(f"Real data required but not found at {dataset_path}.idx/.bin")
     
     # Create dataset
     dataset = PretrainingDataset(
@@ -283,7 +278,7 @@ def train_qwen():
         save_strategy="no",
         bf16=True,  # Use bfloat16 for training
         bf16_full_eval=False,
-        dataloader_num_workers=2,
+        dataloader_num_workers=0 if use_real_data else 2,
         ddp_find_unused_parameters=False,
         gradient_checkpointing=True,
         optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",  # Use 8-bit optimizer to save memory
