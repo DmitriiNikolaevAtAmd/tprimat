@@ -4,7 +4,6 @@ cd "$(dirname "$0")"
 
 ./prepare/fetch_deps.py
 ./prepare/clean_data.py
-# Use mega format for the indexed dataset
 ./prepare/encode_data.py --mega
 ./prepare/verify_data.py --mega
 ./train/amd_prim_llama.sh
