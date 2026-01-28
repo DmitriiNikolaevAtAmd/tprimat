@@ -66,9 +66,25 @@ overrides["lr_warmup_iters"] = warmup_steps
 # Use local data instead of mock data
 # Note: Primus/Megatron requires the correct indexed dataset format (mega format)
 overrides["mock_data"] = False
-overrides["train_data_path"] = f"{data_dir}/allenai-c4-llama-mega"
-overrides["valid_data_path"] = f"{data_dir}/allenai-c4-llama-mega"
-overrides["test_data_path"] = f"{data_dir}/allenai-c4-llama-mega"
+data_prefix = f"{data_dir}/allenai-c4-llama-mega"
+overrides["train_data_path"] = data_prefix
+overrides["valid_data_path"] = data_prefix
+overrides["test_data_path"] = data_prefix
+# Fallback keys used in some Megatron configs
+overrides["data_path"] = data_prefix
+overrides["data_prefix"] = data_prefix
+
+print("[config-check] data overrides:", {
+    k: overrides.get(k)
+    for k in (
+        "train_data_path",
+        "valid_data_path",
+        "test_data_path",
+        "data_path",
+        "data_prefix",
+    )
+    if k in overrides
+})
 
 with open(path, "w") as f:
     yaml.dump(config, f, default_flow_style=False)
