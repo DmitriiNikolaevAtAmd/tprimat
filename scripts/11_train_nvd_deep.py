@@ -16,66 +16,40 @@ from torch.utils.data import Dataset, DataLoader
 import json
 import time
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = Path("/data/tprimat")
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
 
 class PretrainingDataset(Dataset):
-    def __init__(self, tokenizer, seq_length=2048, num_samples=640, use_real_data=False, data_path=None):
+    def __init__(self, tokenizer, seq_length=2048, num_samples=640, data_path=None):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         self.num_samples = num_samples
-        self.use_real_data = use_real_data
         self.data_path = data_path
-        self.indexed_dataset = None
         
-        if self.use_real_data and data_path:
-            try:
-                from indexed_dataset import IndexedDataset
-                self.indexed_dataset = IndexedDataset(data_path)
-                print(f"✓ Loaded real indexed dataset from {data_path}")
-                print(f"  Dataset contains {len(self.indexed_dataset)} sequences")
-                self.real_data_available = True
-            except Exception as e:
-                print(f"⚠ Could not load real data: {e}")
-                print(f"  Falling back to synthetic data")
-                self.real_data_available = False
-        else:
-            self.real_data_available = False
+        if not data_path:
+            raise ValueError("data_path is required - synthetic data is not allowed")
+        
+        from indexed_dataset import IndexedDataset
+        self.indexed_dataset = IndexedDataset(data_path)
+        print(f"✓ Loaded indexed dataset from {data_path}")
+        print(f"  Dataset contains {len(self.indexed_dataset)} sequences")
         
     def __len__(self):
         return self.num_samples
     
     def __getitem__(self, idx):
-        if self.real_data_available and self.indexed_dataset is not None:
-            # Load real data and pad/truncate to seq_length
-            dataset_idx = idx % len(self.indexed_dataset)
-            tokens = None
-            last_error = None
-            for attempt in range(3):
-                try:
-                    tokens = self.indexed_dataset[(dataset_idx + attempt) % len(self.indexed_dataset)]
-                    break
-                except Exception as e:
-                    last_error = e
-                    if not getattr(self, "_read_error_logged", False):
-                        print(f"⚠ Real data read failed: {e}")
-                        print("  Retrying with next sequence")
-                        self._read_error_logged = True
-            if tokens is None:
-                raise IOError(f"Real data read failed after retries: {last_error}")
-            
-            # Pad or truncate to seq_length
-            if len(tokens) < self.seq_length:
-                # Pad with tokenizer pad token
-                pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
-                padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
-                input_ids = torch.cat([tokens, padding])
-            else:
-                input_ids = tokens[:self.seq_length]
+        # Load real data and pad/truncate to seq_length
+        dataset_idx = idx % len(self.indexed_dataset)
+        tokens = self.indexed_dataset[dataset_idx]
+        
+        # Pad or truncate to seq_length
+        if len(tokens) < self.seq_length:
+            pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+            padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+            input_ids = torch.cat([tokens, padding])
         else:
-            # Synthetic data fallback
-            input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
+            input_ids = tokens[:self.seq_length]
         
         return {
             'input_ids': input_ids,
@@ -193,17 +167,25 @@ def train_model(model_name, model_short_name):
     loss_values = []
     learning_rates = []
     dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_short_name}-mega")
-    use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
+    
+    # Verify real data exists - synthetic data is not allowed
+    idx_file = dataset_path + ".idx"
+    bin_file = dataset_path + ".bin"
+    if not os.path.exists(idx_file) or not os.path.exists(bin_file):
+        raise FileNotFoundError(
+            f"Real data not found at {dataset_path}\n"
+            f"  Missing: {idx_file if not os.path.exists(idx_file) else ''} "
+            f"{bin_file if not os.path.exists(bin_file) else ''}\n"
+            f"  Run data preparation first: python scripts/01_fetch_deps.py && "
+            f"python scripts/02_clean_data.py && python scripts/03_encode_data.py"
+        )
     
     if rank == 0:
         print(f"Initializing model: {model_name} (random weights)")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
         print(f"Batch config: micro_batch=1, grad_accum=8, train_batch={1*8*world_size}")
         print(f"Using ZeRO Stage 3 with CPU offloading for memory efficiency")
-        if use_real_data:
-            print(f"Real data found at {dataset_path}")
-        else:
-            print("Real data not found, using synthetic data for benchmarking")
+        print(f"Dataset: {dataset_path}")
     # Load config and create model with random weights (no pretrained download)
     config = AutoConfig.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_config(
@@ -218,11 +200,10 @@ def train_model(model_name, model_short_name):
         tokenizer=tokenizer,
         seq_length=2048,
         num_samples=32000,
-        use_real_data=use_real_data,
         data_path=dataset_path
     )
     ds_config = get_deepspeed_config(world_size)
-    dataloader_workers = 0 if use_real_data else 2
+    dataloader_workers = 0
     sampler = torch.utils.data.distributed.DistributedSampler(
         dataset,
         num_replicas=world_size,

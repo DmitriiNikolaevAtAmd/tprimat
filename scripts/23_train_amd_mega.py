@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = Path("/data/tprimat")
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
 try:
@@ -33,6 +33,42 @@ logging.basicConfig(
     force=True
 )
 logger = logging.getLogger(__name__)
+
+
+class PretrainingDataset:
+    """Simple dataset class for Megatron training"""
+    def __init__(self, tokenizer, seq_length=2048, data_path=None):
+        self.tokenizer = tokenizer
+        self.seq_length = seq_length
+        
+        if not data_path:
+            raise ValueError("data_path is required - synthetic data is not allowed")
+        
+        from indexed_dataset import IndexedDataset
+        self.indexed_dataset = IndexedDataset(data_path)
+        logger.info(f"✓ Loaded indexed dataset from {data_path}")
+        logger.info(f"  Dataset contains {len(self.indexed_dataset)} sequences")
+        self.iteration = 0
+    
+    def get_batch(self, batch_size, device):
+        """Get a batch of real data"""
+        batch_tokens = []
+        for _ in range(batch_size):
+            dataset_idx = self.iteration % len(self.indexed_dataset)
+            tokens = self.indexed_dataset[dataset_idx]
+            self.iteration += 1
+            
+            # Pad or truncate to seq_length
+            if len(tokens) < self.seq_length:
+                pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+                padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+                input_ids = torch.cat([tokens, padding])
+            else:
+                input_ids = tokens[:self.seq_length]
+            
+            batch_tokens.append(input_ids)
+        
+        return torch.stack(batch_tokens).to(device)
 
 
 def set_seed(seed=42):
@@ -121,14 +157,25 @@ def train_model(model_name: str, model_config: dict):
             )
             logger.info(f"Wrapped model with DDP on device {local_rank}")
         dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_name}-mega")
-        use_real_data = os.path.exists(dataset_path + ".idx")
         
-        if use_real_data:
-            logger.info(f"Real data found at {dataset_path}")
-            logger.info("Note: Currently using synthetic data for consistent benchmarking")
-            logger.info("      To use real data, implement indexed dataset loader")
-        else:
-            logger.info("Real data not found, using synthetic data for benchmarking")
+        # Verify real data exists - synthetic data is not allowed
+        idx_file = dataset_path + ".idx"
+        bin_file = dataset_path + ".bin"
+        if not os.path.exists(idx_file) or not os.path.exists(bin_file):
+            raise FileNotFoundError(
+                f"Real data not found at {dataset_path}\n"
+                f"  Missing: {idx_file if not os.path.exists(idx_file) else ''} "
+                f"{bin_file if not os.path.exists(bin_file) else ''}\n"
+                f"  Run data preparation first: python scripts/01_fetch_deps.py && "
+                f"python scripts/02_clean_data.py && python scripts/03_encode_data.py"
+            )
+        
+        # Create dataset loader
+        dataset = PretrainingDataset(
+            tokenizer=tokenizer,
+            seq_length=model_config['seq_length'],
+            data_path=dataset_path
+        )
         seq_length = model_config['seq_length']
         batch_size = model_config['micro_batch_size']
         num_steps = model_config['num_steps']
@@ -177,11 +224,7 @@ def train_model(model_name: str, model_config: dict):
             for micro_step in range(model_config['grad_accum_steps']):
                 if world_size == 1:
                     device = next(model.parameters()).device
-                input_ids = torch.randint(
-                    0, tokenizer.vocab_size,
-                    (batch_size, seq_length),
-                    device=device
-                )
+                input_ids = dataset.get_batch(batch_size, device)
                 labels = input_ids.clone()
                 with torch.amp.autocast('cuda', dtype=torch.bfloat16):
                     outputs = model(input_ids=input_ids, labels=labels)

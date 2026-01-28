@@ -29,7 +29,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = Path("/data/tprimat")
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
 os.environ['PYTHONUNBUFFERED'] = '1'
@@ -38,24 +38,34 @@ sys.stderr.reconfigure(line_buffering=True)
 
 
 class PretrainingDataset(Dataset):
-    def __init__(self, tokenizer, seq_length=2048, num_samples=32000, use_real_data=False, data_path=None):
+    def __init__(self, tokenizer, seq_length=2048, num_samples=32000, data_path=None):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         self.num_samples = num_samples
-        self.use_real_data = use_real_data
-        self.data_path = data_path
         
-        if self.use_real_data and data_path:
-            print(f"Using real data from {data_path}")
-            self.real_data_available = True
-        else:
-            self.real_data_available = False
+        if not data_path:
+            raise ValueError("data_path is required - synthetic data is not allowed")
+        
+        from indexed_dataset import IndexedDataset
+        self.indexed_dataset = IndexedDataset(data_path)
+        print(f"✓ Loaded indexed dataset from {data_path}")
+        print(f"  Dataset contains {len(self.indexed_dataset)} sequences")
         
     def __len__(self):
         return self.num_samples
     
     def __getitem__(self, idx):
-        input_ids = torch.randint(0, self.tokenizer.vocab_size, (self.seq_length,))
+        dataset_idx = idx % len(self.indexed_dataset)
+        tokens = self.indexed_dataset[dataset_idx]
+        
+        # Pad or truncate to seq_length
+        if len(tokens) < self.seq_length:
+            pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+            padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+            input_ids = torch.cat([tokens, padding])
+        else:
+            input_ids = tokens[:self.seq_length]
+        
         return {
             'input_ids': input_ids,
             'labels': input_ids.clone(),
@@ -128,17 +138,25 @@ def train_model(model_name, model_short_name):
     learning_rates = []
     
     dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_short_name}-mega")
-    use_real_data = os.path.exists(dataset_path + ".idx")
+    
+    # Verify real data exists - synthetic data is not allowed
+    idx_file = dataset_path + ".idx"
+    bin_file = dataset_path + ".bin"
+    if not os.path.exists(idx_file) or not os.path.exists(bin_file):
+        raise FileNotFoundError(
+            f"Real data not found at {dataset_path}\n"
+            f"  Missing: {idx_file if not os.path.exists(idx_file) else ''} "
+            f"{bin_file if not os.path.exists(bin_file) else ''}\n"
+            f"  Run data preparation first: python scripts/01_fetch_deps.py && "
+            f"python scripts/02_clean_data.py && python scripts/03_encode_data.py"
+        )
     
     if rank == 0:
         print(f"Loading model: {model_name}")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
         print(f"Batch config: micro_batch={micro_batch}, grad_accum={grad_accum}, global_batch={global_batch_size}")
         print(f"Using FSDP with FULL_SHARD strategy")
-        if use_real_data:
-            print(f"Real data found at {dataset_path}")
-        else:
-            print("Real data not found, using synthetic data for benchmarking")
+        print(f"Dataset: {dataset_path}")
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
@@ -147,7 +165,6 @@ def train_model(model_name, model_short_name):
         tokenizer=tokenizer,
         seq_length=seq_length,
         num_samples=32000,
-        use_real_data=use_real_data,
         data_path=dataset_path
     )
     

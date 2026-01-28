@@ -16,7 +16,7 @@ import nemo_run as run
 from nemo.lightning import MegatronStrategy
 from utils import BenchmarkCallback
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = Path("/data/tprimat")
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
 logging.basicConfig(
@@ -124,24 +124,30 @@ def train_model(model_name: str):
     
     dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_name}-nemo")
     
-    if os.path.exists(dataset_path + ".idx"):
-        logger.info(f"Using real data: {dataset_path}")
-        from nemo.collections.common.tokenizers.huggingface.auto_tokenizer import AutoTokenizer as NeMoAutoTokenizer
-        tokenizer = NeMoAutoTokenizer(config['tokenizer_path'])
-        from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
-        recipe.data = PreTrainingDataModule(
-            paths=[dataset_path],
-            seq_length=2048,
-            micro_batch_size=1,
-            global_batch_size=64,
-            tokenizer=tokenizer,
-            num_workers=2,
+    # Verify real data exists - synthetic data is not allowed
+    idx_file = dataset_path + ".idx"
+    bin_file = dataset_path + ".bin"
+    if not os.path.exists(idx_file) or not os.path.exists(bin_file):
+        raise FileNotFoundError(
+            f"Real data not found at {dataset_path}\n"
+            f"  Missing: {idx_file if not os.path.exists(idx_file) else ''} "
+            f"{bin_file if not os.path.exists(bin_file) else ''}\n"
+            f"  Run data preparation first: python scripts/01_fetch_deps.py && "
+            f"python scripts/02_clean_data.py && python scripts/03_encode_data.py"
         )
-    else:
-        logger.info("Using synthetic data for benchmarking")
-        recipe.data.micro_batch_size = 1
-        recipe.data.global_batch_size = 64
-        recipe.data.seq_length = 2048
+    
+    logger.info(f"Dataset: {dataset_path}")
+    from nemo.collections.common.tokenizers.huggingface.auto_tokenizer import AutoTokenizer as NeMoAutoTokenizer
+    tokenizer = NeMoAutoTokenizer(config['tokenizer_path'])
+    from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
+    recipe.data = PreTrainingDataModule(
+        paths=[dataset_path],
+        seq_length=2048,
+        micro_batch_size=1,
+        global_batch_size=64,
+        tokenizer=tokenizer,
+        num_workers=2,
+    )
     
     recipe.trainer.max_steps = 50
     recipe.optim.config.lr = 0.0003

@@ -23,7 +23,7 @@ from torch.utils.data import Dataset, IterableDataset
 import json
 from utils import BenchmarkCallbackTran
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = Path("/data/tprimat")
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
 try:
@@ -44,61 +44,36 @@ logger = logging.getLogger(__name__)
 
 
 class PretrainingDataset(IterableDataset):
-    def __init__(self, data_path, tokenizer, seq_length=2048, max_steps=50, global_batch_size=64, use_real_data=False):
-        self.data_path = data_path
+    def __init__(self, data_path, tokenizer, seq_length=2048, max_steps=50, global_batch_size=64):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         self.max_steps = max_steps
         self.global_batch_size = global_batch_size
-        self.use_real_data = use_real_data
-        self.indexed_dataset = None
-        self._real_data_failed = False
         
-        if self.use_real_data:
-            try:
-                from indexed_dataset import IndexedDataset
-                self.indexed_dataset = IndexedDataset(data_path)
-                bin_size = self.indexed_dataset.bin_path.stat().st_size
-                if bin_size == 0:
-                    raise ValueError(f"Binary dataset file is empty: {self.indexed_dataset.bin_path}")
-                logger.info(f"✓ Loaded real indexed dataset from {data_path}")
-                logger.info(f"  Dataset contains {len(self.indexed_dataset)} sequences")
-                self.real_data_available = True
-            except Exception as e:
-                raise RuntimeError(f"Real data required but could not be loaded: {e}") from e
-        else:
-            self.real_data_available = False
+        if not data_path:
+            raise ValueError("data_path is required - synthetic data is not allowed")
+        
+        from indexed_dataset import IndexedDataset
+        self.indexed_dataset = IndexedDataset(data_path)
+        bin_size = self.indexed_dataset.bin_path.stat().st_size
+        if bin_size == 0:
+            raise ValueError(f"Binary dataset file is empty: {self.indexed_dataset.bin_path}")
+        logger.info(f"✓ Loaded indexed dataset from {data_path}")
+        logger.info(f"  Dataset contains {len(self.indexed_dataset)} sequences")
         
     def __iter__(self):
         total_samples = self.max_steps * self.global_batch_size
         for i in range(total_samples):
-            if self.real_data_available and self.indexed_dataset is not None:
-                # Load real data and pad/truncate to seq_length
-                dataset_idx = i % len(self.indexed_dataset)
-                tokens = None
-                last_error = None
-                for attempt in range(3):
-                    try:
-                        tokens = self.indexed_dataset[(dataset_idx + attempt) % len(self.indexed_dataset)]
-                        break
-                    except Exception as e:
-                        last_error = e
-                        if not self._real_data_failed:
-                            logger.warning(f"⚠ Real data read failed: {e}")
-                            logger.warning("  Retrying with next sequence")
-                            self._real_data_failed = True
-                if tokens is None:
-                    raise IOError(f"Real data read failed after retries: {last_error}")
-                
-                # Pad or truncate to seq_length
-                if len(tokens) < self.seq_length:
-                    pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
-                    padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
-                    input_ids = torch.cat([tokens, padding])
-                else:
-                    input_ids = tokens[:self.seq_length]
+            dataset_idx = i % len(self.indexed_dataset)
+            tokens = self.indexed_dataset[dataset_idx]
+            
+            # Pad or truncate to seq_length
+            if len(tokens) < self.seq_length:
+                pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+                padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
+                input_ids = torch.cat([tokens, padding])
             else:
-                raise RuntimeError("Real data required for Transformers training")
+                input_ids = tokens[:self.seq_length]
             
             yield {
                 'input_ids': input_ids,
@@ -133,12 +108,20 @@ def train_llama():
     model.gradient_checkpointing_enable()
     logger.info("Enabled gradient checkpointing")
     dataset_path = str(DATA_DIR / "allenai-c4-100k-llama-mega")
-    use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
-    if use_real_data:
-        logger.info(f"Real data found at {dataset_path}")
-    else:
-        raise RuntimeError(f"Real data required but not found at {dataset_path}.idx/.bin")
+    # Verify real data exists - synthetic data is not allowed
+    idx_file = dataset_path + ".idx"
+    bin_file = dataset_path + ".bin"
+    if not os.path.exists(idx_file) or not os.path.exists(bin_file):
+        raise FileNotFoundError(
+            f"Real data not found at {dataset_path}\n"
+            f"  Missing: {idx_file if not os.path.exists(idx_file) else ''} "
+            f"{bin_file if not os.path.exists(bin_file) else ''}\n"
+            f"  Run data preparation first: python scripts/01_fetch_deps.py && "
+            f"python scripts/02_clean_data.py && python scripts/03_encode_data.py"
+        )
+    
+    logger.info(f"Dataset: {dataset_path}")
     
     # Create dataset
     dataset = PretrainingDataset(
@@ -146,8 +129,7 @@ def train_llama():
         tokenizer=tokenizer,
         seq_length=2048,
         max_steps=50,
-        global_batch_size=64,
-        use_real_data=use_real_data
+        global_batch_size=64
     )
     
     # Calculate batch size based on number of GPUs
@@ -175,7 +157,7 @@ def train_llama():
         save_strategy="no",
         bf16=True,  # Use bfloat16 for training
         bf16_full_eval=False,
-        dataloader_num_workers=0 if use_real_data else 2,
+        dataloader_num_workers=0,
         ddp_find_unused_parameters=False,
         gradient_checkpointing=True,
         optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",  # Use 8-bit optimizer to save memory
@@ -254,12 +236,20 @@ def train_qwen():
     logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
     logger.info(f"  Global batch size: {global_batch_size}")
     dataset_path = str(DATA_DIR / "allenai-c4-100k-qwen-mega")
-    use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
-    if use_real_data:
-        logger.info(f"Real data found at {dataset_path}")
-    else:
-        raise RuntimeError(f"Real data required but not found at {dataset_path}.idx/.bin")
+    # Verify real data exists - synthetic data is not allowed
+    idx_file = dataset_path + ".idx"
+    bin_file = dataset_path + ".bin"
+    if not os.path.exists(idx_file) or not os.path.exists(bin_file):
+        raise FileNotFoundError(
+            f"Real data not found at {dataset_path}\n"
+            f"  Missing: {idx_file if not os.path.exists(idx_file) else ''} "
+            f"{bin_file if not os.path.exists(bin_file) else ''}\n"
+            f"  Run data preparation first: python scripts/01_fetch_deps.py && "
+            f"python scripts/02_clean_data.py && python scripts/03_encode_data.py"
+        )
+    
+    logger.info(f"Dataset: {dataset_path}")
     
     # Create dataset
     dataset = PretrainingDataset(
@@ -267,8 +257,7 @@ def train_qwen():
         tokenizer=tokenizer,
         seq_length=2048,
         max_steps=50,
-        global_batch_size=global_batch_size,
-        use_real_data=use_real_data
+        global_batch_size=global_batch_size
     )
     training_args = TrainingArguments(
         output_dir=str(OUTPUT_DIR / "qwen_tran"),
@@ -285,7 +274,7 @@ def train_qwen():
         save_strategy="no",
         bf16=True,  # Use bfloat16 for training
         bf16_full_eval=False,
-        dataloader_num_workers=0 if use_real_data else 2,
+        dataloader_num_workers=0,
         ddp_find_unused_parameters=False,
         gradient_checkpointing=True,
         optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",  # Use 8-bit optimizer to save memory
