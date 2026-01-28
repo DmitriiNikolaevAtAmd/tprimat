@@ -41,14 +41,17 @@ import yaml
 path = os.environ["PATCHED_CONFIG"]
 data_dir = os.environ.get("DATA_DIR", "/data")
 config = yaml.safe_load(open(path))
-config["tensor_model_parallel_size"] = int(os.environ["TP"])
-config["pipeline_model_parallel_size"] = int(os.environ["PP"])
-config["sequence_parallel"] = False
-config["global_batch_size"] = int(os.environ["GBS"])
-config["micro_batch_size"] = int(os.environ["MBS"])
-config["seq_length"] = int(os.environ["SEQ_LEN"])
-config["encoder_seq_length"] = int(os.environ["SEQ_LEN"])
-config["gradient_accumulation_steps"] = int(os.environ["GRAD_ACCUM"])
+
+# Get the overrides section
+overrides = config.get("modules", {}).get("pre_trainer", {}).get("overrides", {})
+
+overrides["tensor_model_parallel_size"] = int(os.environ["TP"])
+overrides["pipeline_model_parallel_size"] = int(os.environ["PP"])
+overrides["global_batch_size"] = int(os.environ["GBS"])
+overrides["micro_batch_size"] = int(os.environ["MBS"])
+overrides["seq_length"] = int(os.environ["SEQ_LEN"])
+overrides["max_position_embeddings"] = int(os.environ["SEQ_LEN"])
+
 train_iters = int(os.environ["TRAIN_ITERS"])
 warmup_steps = int(os.environ["WARMUP_STEPS"])
 
@@ -56,15 +59,16 @@ warmup_steps = int(os.environ["WARMUP_STEPS"])
 if warmup_steps >= train_iters:
     warmup_steps = train_iters // 2
 
-config["train_iters"] = train_iters
-config["lr_decay_iters"] = train_iters
-config["lr_warmup_iters"] = warmup_steps
+overrides["train_iters"] = train_iters
+overrides["lr_decay_iters"] = train_iters
+overrides["lr_warmup_iters"] = warmup_steps
 
-# Set data path to the Megatron-format dataset
-config["data_path"] = f"{data_dir}/allenai-c4-llama-mega"
+# Use local data instead of mock data
+overrides["mock_data"] = False
+overrides["train_data_path"] = f"{data_dir}/allenai-c4-llama-mega"
 
 with open(path, "w") as f:
-    yaml.dump(config, f)
+    yaml.dump(config, f, default_flow_style=False)
 PY
 fi
 
