@@ -46,9 +46,16 @@ config["micro_batch_size"] = int(os.environ["MBS"])
 config["seq_length"] = int(os.environ["SEQ_LEN"])
 config["encoder_seq_length"] = int(os.environ["SEQ_LEN"])
 config["gradient_accumulation_steps"] = int(os.environ["GRAD_ACCUM"])
-config["train_iters"] = int(os.environ["TRAIN_ITERS"])
-config["lr_decay_iters"] = int(os.environ["TRAIN_ITERS"])
-config["lr_warmup_iters"] = int(os.environ["WARMUP_STEPS"])
+train_iters = int(os.environ["TRAIN_ITERS"])
+warmup_steps = int(os.environ["WARMUP_STEPS"])
+
+# Megatron requires warmup_steps < lr_decay_steps
+if warmup_steps >= train_iters:
+    warmup_steps = train_iters // 2
+
+config["train_iters"] = train_iters
+config["lr_decay_iters"] = train_iters
+config["lr_warmup_iters"] = warmup_steps
 with open(path, "w") as f:
     yaml.dump(config, f)
 PY
