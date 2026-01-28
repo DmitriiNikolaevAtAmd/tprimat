@@ -52,6 +52,7 @@ def fetch_c4(num_samples: int, output_file: str, max_retries: int = 3):
                 streaming=True,
                 trust_remote_code=True,
                 download_config=download_config,
+                data_files=["en/c4-train.00000-of-01024.json.gz", "en/c4-train.00001-of-01024.json.gz"],
             )
             break
         except Exception as e:
