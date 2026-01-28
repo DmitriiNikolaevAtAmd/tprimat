@@ -8,4 +8,4 @@ mkdir -p "$HF_HOME"
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 
-deepspeed --num_gpus="$NUM_GPUS" 21_train_nvd_deep.py llama
+deepspeed --num_gpus="$NUM_GPUS" 11_train_nvd_deep.py llama

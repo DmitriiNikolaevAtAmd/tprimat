@@ -17,7 +17,7 @@ if [ "$NUM_GPUS" -gt 1 ]; then
              --node_rank=0 \
              --master_addr=localhost \
              --master_port=29500 \
-             25_train_nvd_tran.py qwen
+             15_train_nvd_tran.py qwen
 else
-    python3 -u 25_train_nvd_tran.py qwen
+    python3 -u 15_train_nvd_tran.py qwen
 fi

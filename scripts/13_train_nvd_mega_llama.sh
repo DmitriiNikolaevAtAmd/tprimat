@@ -23,7 +23,7 @@ PY
              --node_rank=0 \
              --master_addr=localhost \
              --master_port="$MASTER_PORT" \
-             23_train_nvd_mega.py llama
+             13_train_nvd_mega.py llama
 else
-    python3 -u 23_train_nvd_mega.py llama
+    python3 -u 13_train_nvd_mega.py llama
 fi

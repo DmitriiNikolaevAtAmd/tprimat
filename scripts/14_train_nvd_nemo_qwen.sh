@@ -7,4 +7,4 @@ mkdir -p "$HF_HOME"
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 
-python3 -u 24_train_nvd_nemo.py qwen
+python3 -u 14_train_nvd_nemo.py qwen
