@@ -4,8 +4,8 @@ cd "$(dirname "$0")"
 
 ./prepare/fetch_deps.py
 ./prepare/clean_data.py
-./prepare/encode_data.py --mega-only
-./prepare/verify_data.py
+./prepare/encode_data.py --mega
+./prepare/verify_data.py --mega
 ./train/amd_prim_llama.sh
 ./train/amd_prim_qwen.sh
 # ./train/amd_deep_llama.sh

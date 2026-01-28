@@ -4,8 +4,8 @@ cd "$(dirname "$0")"
 
 ./prepare/fetch_deps.py
 ./prepare/clean_data.py
-./prepare/encode_data.py
-./prepare/verify_data.py
+./prepare/encode_data.py --mega --nemo
+./prepare/verify_data.py --mega --nemo
 ./train/nvd_nemo_llama.sh
 ./train/nvd_nemo_qwen.sh
 ./train/nvd_prim_llama.sh

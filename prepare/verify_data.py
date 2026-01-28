@@ -204,11 +204,34 @@ def main():
         default=100,
         help="Number of random sequences to validate (default: 100)",
     )
+    parser.add_argument(
+        "--mega",
+        action="store_true",
+        help="Verify Mega format datasets",
+    )
+    parser.add_argument(
+        "--nemo",
+        action="store_true",
+        help="Verify NeMo format datasets",
+    )
     
     args = parser.parse_args()
     
+    if not args.mega and not args.nemo:
+        # Default to both if none specified
+        args.mega = True
+        args.nemo = True
+    
     all_success = True
     for model_name, (dataset_name, tokenizer_name) in DATASETS.items():
+        is_nemo = "-nemo" in dataset_name
+        is_mega = "-mega" in dataset_name
+        
+        if is_mega and not args.mega:
+            continue
+        if is_nemo and not args.nemo:
+            continue
+            
         input_prefix = f"{args.input_dir}/{dataset_name}"
         print(f"\n{'='*60}")
         print(f"Verifying {model_name.upper()} dataset: {input_prefix}")
