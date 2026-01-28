@@ -1,5 +1,5 @@
 #!/bin/bash
 set -e
-./scripts/00_prepare_data.sh
-./scripts/20_train_amd.sh
-./scripts/29_compare_amd.sh
+./prepare/prepare_data.sh
+./train/train_amd.sh
+./evaluate/compare_amd.sh
