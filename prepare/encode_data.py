@@ -80,8 +80,8 @@ def write_nemo_index(output_prefix: str, tokens_array: np.ndarray, seq_length: i
     
     num_documents = num_sequences
     sequence_lengths = np.full(num_sequences, seq_length, dtype=np.int32)
-    document_indices = np.arange(num_documents + 1, dtype=np.int64)
     sequence_pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
+    document_indices = np.arange(num_documents + 1, dtype=np.int64)
     
     assert sequence_lengths.shape[0] == document_indices[-1]
     
@@ -91,10 +91,10 @@ def write_nemo_index(output_prefix: str, tokens_array: np.ndarray, seq_length: i
         f.write(struct.pack('<B', DTYPE_CODE))
         f.write(struct.pack('<Q', num_sequences))
         f.write(struct.pack('<Q', num_documents))
-        # NeMo/Megatron expects lengths, doc indices, then pointers.
+        # Megatron core expects lengths, pointers, then doc indices.
         f.write(sequence_lengths.tobytes())
-        f.write(document_indices.tobytes())
         f.write(sequence_pointers.tobytes())
+        f.write(document_indices.tobytes())
 
 
 TOKENIZERS = {
