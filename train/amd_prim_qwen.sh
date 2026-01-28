@@ -63,9 +63,8 @@ data_prefix = f"{data_dir}/allenai-c4-qwen-mega"
 overrides["train_data_path"] = data_prefix
 overrides["valid_data_path"] = data_prefix
 overrides["test_data_path"] = data_prefix
-# Fallback keys used in some Megatron configs
+# Fallback key used in some Megatron configs
 overrides["data_path"] = data_prefix
-overrides["data_prefix"] = data_prefix
 
 print("[config-check] data overrides:", {
     k: overrides.get(k)
@@ -74,7 +73,6 @@ print("[config-check] data overrides:", {
         "valid_data_path",
         "test_data_path",
         "data_path",
-        "data_prefix",
     )
     if k in overrides
 })
