@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+from pathlib import Path
 
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
@@ -14,6 +15,9 @@ from nemo.collections import llm
 import nemo_run as run
 from nemo.lightning import MegatronStrategy
 from utils import BenchmarkCallback
+
+DATA_DIR = Path(__file__).parent.parent / "data"
+OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,7 +85,7 @@ def get_model_config(model_name: str):
 
 def train_model(model_name: str):
     load_env_file("secrets.env")
-    os.makedirs("./output", exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     if not torch.cuda.is_available():
         logger.error("CUDA is not available!")
@@ -118,7 +122,7 @@ def train_model(model_name: str):
         sequence_parallel=True,
     )
     
-    dataset_path = f"/data/tprimat/allenai-c4-100k-{model_name}-nemo"
+    dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_name}-nemo")
     
     if os.path.exists(dataset_path + ".idx"):
         logger.info(f"Using real data: {dataset_path}")
@@ -162,7 +166,7 @@ def train_model(model_name: str):
     recipe.trainer.check_val_every_n_epoch = None
     
     benchmark_callback = BenchmarkCallback(
-        output_dir="./output",
+        output_dir=str(OUTPUT_DIR),
         platform="nvd",
         model_name=model_name,
         parallel_strategy="minimal_communication",

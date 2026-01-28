@@ -29,6 +29,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+DATA_DIR = Path(__file__).parent.parent / "data"
+OUTPUT_DIR = Path(__file__).parent.parent / "output"
+
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -162,7 +165,7 @@ def train_model(model_name, model_short_name):
     loss_values = []
     learning_rates = []
     
-    dataset_path = f"/data/tprimat/allenai-c4-100k-{model_short_name}-mega"
+    dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_short_name}-mega")
     use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if rank == 0:
@@ -334,9 +337,8 @@ def train_model(model_name, model_short_name):
             print(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
             print(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
             
-            output_dir = Path("output")
-            output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"train_{platform}_fsdp_{model_short_name}.json"
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            output_file = OUTPUT_DIR / f"train_{platform}_fsdp_{model_short_name}.json"
             
             results_rounded = round_floats(results, precision=5)
             
@@ -356,7 +358,7 @@ def train_qwen():
 
 
 def main():
-    os.makedirs("./output", exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     if not torch.cuda.is_available():
         print("CUDA is not available!")

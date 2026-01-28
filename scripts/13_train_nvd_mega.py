@@ -15,6 +15,9 @@ import time
 from pathlib import Path
 from datetime import datetime
 
+DATA_DIR = Path(__file__).parent.parent / "data"
+OUTPUT_DIR = Path(__file__).parent.parent / "output"
+
 try:
     import bitsandbytes as bnb
     HAS_BITSANDBYTES = True
@@ -184,7 +187,7 @@ def train_model(model_name: str, model_config: dict):
                 find_unused_parameters=False
             )
             logger.info(f"Wrapped model with DDP on device {local_rank}")
-        dataset_path = f"/data/tprimat/allenai-c4-100k-{model_name}-mega"
+        dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_name}-mega")
         use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
         
         # Create dataset loader
@@ -327,9 +330,8 @@ def train_model(model_name: str, model_config: dict):
             logger.info(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
             logger.info(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
             logger.info(f"=" * 80)
-            output_dir = Path("output")
-            output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"train_{platform}_mega_{model_name}.json"
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            output_file = OUTPUT_DIR / f"train_{platform}_mega_{model_name}.json"
             from utils import round_floats
             results_rounded = round_floats(results, precision=5)
             
@@ -353,9 +355,8 @@ def train_model(model_name: str, model_config: dict):
                     "loss_values": loss_values,
                 },
             }
-            output_dir = Path("output")
-            output_dir.mkdir(exist_ok=True)
-            output_file = output_dir / f"train_nvd_mega_{model_name}.json"
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            output_file = OUTPUT_DIR / f"train_nvd_mega_{model_name}.json"
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2)
         raise
@@ -401,11 +402,10 @@ def main():
     os.environ['HSA_FORCE_FINE_GRAIN_PCIE'] = '1'
     os.environ['RCCL_DEBUG'] = 'INFO'
     os.environ['NCCL_DEBUG'] = 'INFO'
-    output_dir = Path(__file__).parent / "output"
-    output_dir.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     logger.info("Environment configured for GPU training")
-    logger.info(f"Output directory: {output_dir}")
+    logger.info(f"Output directory: {OUTPUT_DIR}")
     
     if len(sys.argv) < 2:
         logger.info("No model specified, training all models")

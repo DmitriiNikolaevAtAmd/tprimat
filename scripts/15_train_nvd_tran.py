@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+from pathlib import Path
 
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
@@ -21,6 +22,9 @@ from transformers import (
 from torch.utils.data import Dataset, IterableDataset
 import json
 from utils import BenchmarkCallbackTran
+
+DATA_DIR = Path(__file__).parent.parent / "data"
+OUTPUT_DIR = Path(__file__).parent.parent / "output"
 
 try:
     import bitsandbytes as bnb
@@ -128,7 +132,7 @@ def train_llama():
     # Enable gradient checkpointing for memory efficiency
     model.gradient_checkpointing_enable()
     logger.info("Enabled gradient checkpointing")
-    dataset_path = "/data/tprimat/allenai-c4-100k-llama-mega"
+    dataset_path = str(DATA_DIR / "allenai-c4-100k-llama-mega")
     use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if use_real_data:
@@ -157,7 +161,7 @@ def train_llama():
     logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
     logger.info(f"  Global batch size: {global_batch_size}")
     training_args = TrainingArguments(
-        output_dir="./output/llama_tran",
+        output_dir=str(OUTPUT_DIR / "llama_tran"),
         per_device_train_batch_size=per_device_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=0.0003,
@@ -198,7 +202,7 @@ def train_llama():
     # Add benchmark callback if available
     try:
         benchmark_callback = BenchmarkCallbackTran(
-            output_dir="./output",
+            output_dir=str(OUTPUT_DIR),
             platform="nvd",
             model_name="llama",
             parallel_strategy="ddp",
@@ -249,7 +253,7 @@ def train_qwen():
     logger.info(f"  Per-device batch size: {per_device_batch_size}")
     logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
     logger.info(f"  Global batch size: {global_batch_size}")
-    dataset_path = "/data/tprimat/allenai-c4-100k-qwen-mega"
+    dataset_path = str(DATA_DIR / "allenai-c4-100k-qwen-mega")
     use_real_data = os.path.exists(dataset_path + ".idx") and os.path.exists(dataset_path + ".bin")
     
     if use_real_data:
@@ -267,7 +271,7 @@ def train_qwen():
         use_real_data=use_real_data
     )
     training_args = TrainingArguments(
-        output_dir="./output/qwen_tran",
+        output_dir=str(OUTPUT_DIR / "qwen_tran"),
         per_device_train_batch_size=per_device_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=0.0003,
@@ -308,7 +312,7 @@ def train_qwen():
     # Add benchmark callback if available
     try:
         benchmark_callback = BenchmarkCallbackTran(
-            output_dir="./output",
+            output_dir=str(OUTPUT_DIR),
             platform="nvd",
             model_name="qwen",
             parallel_strategy="ddp",
@@ -325,7 +329,7 @@ def train_qwen():
 
 
 def main():
-    os.makedirs("./output", exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     if not torch.cuda.is_available():
         logger.error("CUDA is not available!")
