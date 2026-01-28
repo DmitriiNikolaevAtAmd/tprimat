@@ -18,7 +18,8 @@ from pathlib import Path
 from datetime import datetime
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
-OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(Path(__file__).parent.parent / "output")))
+WORKSPACE_ROOT = Path(__file__).parent.parent
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(WORKSPACE_ROOT / "output")))
 
 SEED = int(os.environ.get("SEED", 42))
 MBS = int(os.environ.get("MBS", 1))
