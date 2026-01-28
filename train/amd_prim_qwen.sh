@@ -57,9 +57,11 @@ overrides["lr_decay_iters"] = train_iters
 overrides["lr_warmup_iters"] = warmup_steps
 
 # Use local data instead of mock data
-# Note: Primus/Megatron requires the correct indexed dataset format (nemo format)
+# Note: Primus/Megatron requires the correct indexed dataset format (mega format)
 overrides["mock_data"] = False
-overrides["train_data_path"] = f"{data_dir}/allenai-c4-qwen-nemo"
+overrides["train_data_path"] = f"{data_dir}/allenai-c4-qwen-mega"
+overrides["valid_data_path"] = f"{data_dir}/allenai-c4-qwen-mega"
+overrides["test_data_path"] = f"{data_dir}/allenai-c4-qwen-mega"
 
 with open(path, "w") as f:
     yaml.dump(config, f, default_flow_style=False)
@@ -67,6 +69,38 @@ PY
 fi
 
 export EXP="$PATCHED_CONFIG"
+
+DATASET_PREFIX="${DATA_DIR}/allenai-c4-qwen-mega"
+python3 - <<'PY'
+import os
+import struct
+from pathlib import Path
+
+prefix = os.environ["DATASET_PREFIX"]
+idx_path = Path(f"{prefix}.idx")
+if not idx_path.exists():
+    raise SystemExit(f"ERROR: Missing dataset index: {idx_path}")
+
+with open(idx_path, "rb") as f:
+    magic = f.read(9)
+    if magic != b"MMIDIDX\x00\x00":
+        raise SystemExit(f"ERROR: Bad idx magic: {magic}")
+    _version = struct.unpack("<Q", f.read(8))[0]
+    _dtype = struct.unpack("<B", f.read(1))[0]
+    num_seqs = struct.unpack("<Q", f.read(8))[0]
+    num_docs = struct.unpack("<Q", f.read(8))[0]
+    doc_indices = f.read(num_docs * 8)
+    f.read(num_seqs * 8)          # pointers
+    f.read(num_seqs * 4)          # lengths
+    last_doc = struct.unpack("<Q", doc_indices[-8:])[0] if doc_indices else 0
+
+print(f"[data-check] {prefix}: num_seqs={num_seqs}, num_docs={num_docs}, doc_indices[-1]={last_doc}")
+if last_doc != max(0, num_docs - 1):
+    raise SystemExit(
+        "ERROR: Mega idx mismatch: document_indices[-1] "
+        f"({last_doc}) != num_docs-1 ({max(0, num_docs - 1)}). Re-encode Mega data."
+    )
+PY
 
 TRAIN_SCRIPT="./examples/run_pretrain.sh"
 if [ ! -f "$TRAIN_SCRIPT" ]; then
