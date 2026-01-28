@@ -106,45 +106,81 @@ def encode_dataset(
 
 
 def write_nemo_index(output_prefix: str, tokens_array: np.ndarray, seq_length: int, num_sequences: int):
-    """Write NeMo/Megatron format dataset (lengths → pointers → doc_indices)."""
+    """Write NeMo/Megatron-Core format dataset.
+    
+    Megatron-Core IndexedDataset index format (from megatron/core/datasets/indexed_dataset.py):
+    - Header: magic (9 bytes) + version (8) + dtype (1) + num_sequences (8) + num_documents (8)
+    - Data: sequence_lengths (N x int32) + sequence_pointers (N x int64) + document_indices ((D+1) x int64)
+    
+    Critical assertion in _IndexReader: sequence_lengths.shape[0] == document_indices[-1]
+    This means: len(sequence_lengths) must equal the last value of document_indices.
+    """
     
     bin_path = Path(f"{output_prefix}.bin")
     idx_path = Path(f"{output_prefix}.idx")
     bytes_per_seq = seq_length * DTYPE.itemsize
     
-    print(f"\nWriting NeMo format: {output_prefix}")
+    print(f"\nWriting NeMo/Megatron-Core format: {output_prefix}")
     
-    # Binary file (same data)
+    # Binary file (same token data)
     print(f"  Writing {bin_path}...")
     with open(bin_path, "wb") as f:
         tokens_array.tofile(f)
     
-    # Index file with NeMo/Megatron order: lengths → pointers → doc_indices
-    # Based on Megatron _IndexReader which reads in this exact order
-    print(f"  Writing {idx_path}...")
-    with open(idx_path, "wb") as f:
-        f.write(b'MMIDIDX\x00\x00')
-        f.write(struct.pack('<Q', 1))
-        f.write(struct.pack('<B', DTYPE_CODE))
-        f.write(struct.pack('<Q', num_sequences))  # num_sequences
-        f.write(struct.pack('<Q', num_sequences))  # num_documents
-        
-        # 1. Sequence lengths (N elements, int32)
-        lengths = np.full(num_sequences, seq_length, dtype=np.int32)
-        f.write(lengths.tobytes())
-        
-        # 2. Sequence pointers (N elements, int64)
-        pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
-        f.write(pointers.tobytes())
-        
-        # 3. Document indices (N+1 elements, int64)
-        # Critical: doc_indices[-1] must equal num_sequences for NeMo assertion
-        doc_indices = np.arange(num_sequences + 1, dtype=np.int64)
-        f.write(doc_indices.tobytes())
+    # Each sequence = 1 document in this simple case
+    num_documents = num_sequences
     
+    # Prepare arrays
+    # 1. Sequence lengths: all same length
+    sequence_lengths = np.full(num_sequences, seq_length, dtype=np.int32)
+    
+    # 2. Sequence pointers: byte offsets in binary file
+    sequence_pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
+    
+    # 3. Document indices: maps document -> sequence range
+    # For N documents with 1 sequence each: [0, 1, 2, ..., N]
+    # document_indices[i] = first sequence of document i
+    # document_indices[-1] = total number of sequences (CRITICAL for assertion)
+    document_indices = np.arange(num_documents + 1, dtype=np.int64)
+    
+    # Verify the critical assertion before writing
+    assert sequence_lengths.shape[0] == document_indices[-1], \
+        f"Pre-write assertion failed: {sequence_lengths.shape[0]} != {document_indices[-1]}"
+    
+    print(f"  Writing {idx_path}...")
+    print(f"    num_sequences={num_sequences}, num_documents={num_documents}")
+    print(f"    sequence_lengths: {sequence_lengths.shape}, dtype={sequence_lengths.dtype}")
+    print(f"    sequence_pointers: {sequence_pointers.shape}, dtype={sequence_pointers.dtype}")
+    print(f"    document_indices: {document_indices.shape}, dtype={document_indices.dtype}")
+    print(f"    Assertion check: len(lengths)={len(sequence_lengths)} == doc_indices[-1]={document_indices[-1]}")
+    
+    with open(idx_path, "wb") as f:
+        # Header
+        f.write(b'MMIDIDX\x00\x00')                    # 9 bytes: magic
+        f.write(struct.pack('<Q', 1))                  # 8 bytes: version
+        f.write(struct.pack('<B', DTYPE_CODE))         # 1 byte: dtype code
+        f.write(struct.pack('<Q', num_sequences))      # 8 bytes: number of sequences
+        f.write(struct.pack('<Q', num_documents))      # 8 bytes: number of documents
+        
+        # Data arrays (order is critical!)
+        f.write(sequence_lengths.tobytes())            # N x int32
+        f.write(sequence_pointers.tobytes())           # N x int64
+        f.write(document_indices.tobytes())            # (D+1) x int64
+    
+    # Verify file sizes
     bin_size = bin_path.stat().st_size
     idx_size = idx_path.stat().st_size
-    print(f"  Done: {bin_size / 1024 / 1024:.1f} MB bin, {idx_size / 1024:.1f} KB idx")
+    
+    expected_idx_size = 9 + 8 + 1 + 8 + 8 + (num_sequences * 4) + (num_sequences * 8) + ((num_documents + 1) * 8)
+    expected_bin_size = num_sequences * bytes_per_seq
+    
+    print(f"  Binary: {bin_size:,} bytes (expected {expected_bin_size:,})")
+    print(f"  Index: {idx_size:,} bytes (expected {expected_idx_size:,})")
+    
+    if bin_size != expected_bin_size:
+        print(f"  WARNING: Binary size mismatch!")
+    if idx_size != expected_idx_size:
+        print(f"  WARNING: Index size mismatch!")
 
 
 TOKENIZERS = {
