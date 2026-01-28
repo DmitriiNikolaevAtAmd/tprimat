@@ -63,7 +63,7 @@ class PretrainingDataset(IterableDataset):
         if not data_path:
             raise ValueError("data_path is required - synthetic data is not allowed")
         
-        from indexed_dataset import IndexedDataset
+        from mega_dataset import IndexedDataset
         self.indexed_dataset = IndexedDataset(data_path)
         bin_size = self.indexed_dataset.bin_path.stat().st_size
         if bin_size == 0:

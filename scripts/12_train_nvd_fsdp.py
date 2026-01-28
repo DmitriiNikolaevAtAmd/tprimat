@@ -55,7 +55,7 @@ class PretrainingDataset(Dataset):
         if not data_path:
             raise ValueError("data_path is required - synthetic data is not allowed")
         
-        from indexed_dataset import IndexedDataset
+        from mega_dataset import IndexedDataset
         self.indexed_dataset = IndexedDataset(data_path)
         print(f"✓ Loaded indexed dataset from {data_path}")
         print(f"  Dataset contains {len(self.indexed_dataset)} sequences")

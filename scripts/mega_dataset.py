@@ -166,7 +166,7 @@ class IndexedDataset:
         # File will be opened lazily in the new process
 
 
-def check_indexed_dataset_exists(path):
+def check_mega_dataset_exists(path):
     """Check if indexed dataset files exist"""
     bin_path = Path(str(path) + '.bin')
     idx_path = Path(str(path) + '.idx')

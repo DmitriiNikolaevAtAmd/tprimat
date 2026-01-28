@@ -120,7 +120,7 @@ bash "$TRAIN_SCRIPT" \
 
 cd "$TPRIMAT_PATH"
 
-python3 scripts/extract_metrics.py \
+python3 scripts/25_extract_prim_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_llama.log" \
     --model-name "llama" \
     --output "$TPRIMAT_PATH/output/train_amd_prim_llama.json" \
