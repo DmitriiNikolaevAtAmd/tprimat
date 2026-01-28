@@ -15,40 +15,27 @@ MODELS = {
 
 
 def fetch_tokenizers(output_dir: str):
-    """Download and cache tokenizers locally."""
     from transformers import AutoTokenizer
     
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
-    print(f"Fetching tokenizers to {output_path}...")
     
     for hf_name, local_name in MODELS.items():
         local_path = output_path / local_name
         tokenizer_marker = local_path / "tokenizer_config.json"
         
         if tokenizer_marker.exists():
-            print(f"  {hf_name}: tokenizer already cached")
             continue
         
-        print(f"  {hf_name}: downloading tokenizer...")
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(hf_name, trust_remote_code=True)
-            tokenizer.save_pretrained(local_path)
-            print(f"  {hf_name}: saved to {local_path}")
-        except Exception as e:
-            print(f"  {hf_name}: FAILED - {e}")
+        tokenizer = AutoTokenizer.from_pretrained(hf_name, trust_remote_code=True)
+        tokenizer.save_pretrained(local_path)
     
-    print(f"Tokenizers cached in {output_path}")
     return output_path
 
 
 def fetch_c4(num_samples: int, output_file: str, max_retries: int = 3):
-    """Fetch C4 dataset and save as raw JSONL."""
     from datasets import DownloadConfig
     import time
-    
-    print(f"Fetching allenai/c4 (streaming {num_samples:,} samples)...")
     
     download_config = DownloadConfig(
         num_proc=1,
@@ -69,8 +56,6 @@ def fetch_c4(num_samples: int, output_file: str, max_retries: int = 3):
         except Exception as e:
             if attempt < max_retries - 1:
                 wait = 10 * (attempt + 1)
-                print(f"  Attempt {attempt + 1} failed: {e}")
-                print(f"  Retrying in {wait}s...")
                 time.sleep(wait)
             else:
                 raise
@@ -80,7 +65,6 @@ def fetch_c4(num_samples: int, output_file: str, max_retries: int = 3):
     
     saved = 0
     
-    print(f"Writing to {output_file}...")
     with open(output_path, "w", encoding="utf-8") as f:
         for example in dataset:
             text = example.get("text", "")
@@ -88,19 +72,8 @@ def fetch_c4(num_samples: int, output_file: str, max_retries: int = 3):
             f.write("\n")
             saved += 1
             
-            if saved % 100000 == 0:
-                print(f"  {saved:,} / {num_samples:,} samples...")
-            
             if saved >= num_samples:
                 break
-    
-    file_size_mb = output_path.stat().st_size / (1024 * 1024)
-    
-    print(f"\nDone!")
-    print(f"  Saved: {saved:,} samples")
-    print(f"  File size: {file_size_mb:.1f} MB")
-    print(f"  Output: {output_file}")
-    print(f"\nNext step: python 02_clean_data.py")
 
 
 def main():
@@ -129,7 +102,6 @@ def main():
     
     if not args.skip_tokenizers:
         fetch_tokenizers(output_dir)
-        print()
     
     fetch_c4(args.samples, args.output)
 
