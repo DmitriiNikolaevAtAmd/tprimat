@@ -1,5 +1,5 @@
 #!/bin/bash
-docker run --gpus all -it --rm \
+docker run -it --rm \
     --name primat \
     --network=host \
     --device=/dev/kfd --device=/dev/dri \
