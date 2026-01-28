@@ -88,6 +88,11 @@ fi
 
 export EXP="$PATCHED_CONFIG"
 
+# Avoid Primus prepare downloads; use local dataset roots.
+export DATA_PATH="${DATA_DIR}"
+export TOKENIZER_DATA_PATH="${DATA_DIR}/tokenizers"
+export SKIP_PREPARE=1
+
 DATASET_PREFIX="${DATA_DIR}/allenai-c4-llama-mega"
 export DATASET_PREFIX
 python3 - <<'PY'
