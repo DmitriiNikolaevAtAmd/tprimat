@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 cd "$(dirname "$0")"
-TPRIMAT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TPRIMAT_PATH="$(cd .. && pwd)"
 source "$TPRIMAT_PATH/config.env"
 
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"

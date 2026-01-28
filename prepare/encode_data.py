@@ -122,16 +122,45 @@ def main():
         default=2048,
         help="Sequence length (default: 2048)",
     )
+    parser.add_argument(
+        "--nemo-only",
+        action="store_true",
+        help="Only generate NeMo format",
+    )
+    parser.add_argument(
+        "--mega-only",
+        action="store_true",
+        help="Only generate Mega format",
+    )
     
     args = parser.parse_args()
     
     for model_name, tokenizer_name in TOKENIZERS.items():
         output_prefix = f"{args.output_dir}/allenai-c4-{model_name}-mega"
+        
+        # Always need the tokens_array
         tokens_array, num_sequences = encode_dataset(
             args.input, output_prefix, tokenizer_name, args.seq_length
         )
-        nemo_prefix = f"{args.output_dir}/allenai-c4-{model_name}-nemo"
-        write_nemo_index(nemo_prefix, tokens_array, args.seq_length, num_sequences)
+        
+        # If nemo-only, we delete the mega .idx file after generation
+        if args.nemo_only:
+            mega_idx = Path(f"{output_prefix}.idx")
+            if mega_idx.exists():
+                mega_idx.unlink()
+        
+        # If not mega-only, generate nemo format
+        if not args.mega_only:
+            nemo_prefix = f"{args.output_dir}/allenai-c4-{model_name}-nemo"
+            write_nemo_index(nemo_prefix, tokens_array, args.seq_length, num_sequences)
+            
+            # If nemo-only, we can share the .bin file to save space
+            if args.nemo_only:
+                # Move the .bin to the nemo prefix and symlink or just use it
+                # For simplicity, we just keep both for now unless space is critical
+                pass
+
+        # If mega-only, we don't need to do anything else as encode_dataset already created it
 
 
 if __name__ == "__main__":
