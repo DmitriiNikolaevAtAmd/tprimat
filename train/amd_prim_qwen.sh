@@ -85,6 +85,8 @@ export EXP="$PATCHED_CONFIG"
 export DATA_PATH="${DATA_DIR}"
 export TOKENIZER_DATA_PATH="${DATA_DIR}/tokenizers"
 export SKIP_PREPARE=1
+export HF_DATASETS_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
 
 DATASET_PREFIX="${DATA_DIR}/allenai-c4-qwen-mega"
 export DATASET_PREFIX
@@ -124,6 +126,7 @@ TRAIN_SCRIPT="./examples/train.sh"
 if [ ! -f "$TRAIN_SCRIPT" ]; then
     TRAIN_SCRIPT="./examples/run_pretrain.sh"
 fi
+echo "[launcher] Using training script: $TRAIN_SCRIPT"
 if [ ! -f "$TRAIN_SCRIPT" ]; then
     echo "ERROR: No training script found in examples/"
     exit 1
