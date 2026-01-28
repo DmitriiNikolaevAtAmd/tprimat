@@ -72,16 +72,12 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
                     errors.append(f"NeMo doc_indices malformed: expected [0..{num_docs}], got [{doc_indices[0]}..{doc_indices[-1]}]")
             else:
                 print(f"  Mega format detected:")
-                doc_idx = np.frombuffer(f.read((num_docs + 1) * 8), dtype=np.int64)
+                doc_idx = np.frombuffer(f.read(num_docs * 8), dtype=np.int64)
                 pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
                 lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
-                print(f"    - doc_idx array: {len(doc_idx)} elements (N+1)")
+                print(f"    - doc_idx array: {len(doc_idx)} elements")
                 print(f"    - pointers array: {len(pointers)} elements")
                 print(f"    - lengths array: {len(lengths)} elements")
-                if len(doc_idx) > 0 and doc_idx[-1] != num_seqs:
-                    errors.append(
-                        f"Mega doc_idx malformed: doc_idx[-1]={doc_idx[-1]} != num_seqs={num_seqs}"
-                    )
         
         print(f"  Sequences: {num_seqs:,}")
         print(f"  Seq length: {lengths[0] if len(lengths) > 0 else 'N/A'}")
@@ -208,34 +204,11 @@ def main():
         default=100,
         help="Number of random sequences to validate (default: 100)",
     )
-    parser.add_argument(
-        "--mega",
-        action="store_true",
-        help="Verify Mega format datasets",
-    )
-    parser.add_argument(
-        "--nemo",
-        action="store_true",
-        help="Verify NeMo format datasets",
-    )
     
     args = parser.parse_args()
     
-    if not args.mega and not args.nemo:
-        # Default to both if none specified
-        args.mega = True
-        args.nemo = True
-    
     all_success = True
     for model_name, (dataset_name, tokenizer_name) in DATASETS.items():
-        is_nemo = "-nemo" in dataset_name
-        is_mega = "-mega" in dataset_name
-        
-        if is_mega and not args.mega:
-            continue
-        if is_nemo and not args.nemo:
-            continue
-            
         input_prefix = f"{args.input_dir}/{dataset_name}"
         print(f"\n{'='*60}")
         print(f"Verifying {model_name.upper()} dataset: {input_prefix}")

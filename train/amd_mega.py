@@ -110,6 +110,8 @@ def train_model(model_name: str, model_config: dict):
         logger.info("Running in single-GPU mode")
     
     set_seed(SEED)
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    
     grad_accum = model_config['grad_accum_steps']
     global_batch_size = MBS * grad_accum * world_size
     
@@ -366,6 +368,7 @@ def train_qwen():
 
 
 def main():
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['HSA_NO_SCRATCH_RECLAIM'] = '1'
     os.environ['HSA_ENABLE_SDMA'] = '1'

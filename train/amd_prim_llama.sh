@@ -1,79 +1,133 @@
 #!/bin/bash
 set -e
 cd "$(dirname "$0")"
-TPRIMAT_PATH="$(cd .. && pwd)"
-set -a
-source "$TPRIMAT_PATH/config.env"
-set +a
-
+TPRIMAT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
-OUTPUT_DIR="${OUTPUT_DIR:-$TPRIMAT_PATH/output}"
-mkdir -p "$OUTPUT_DIR"
 
-export HF_TOKEN="${HF_TOKEN:-$HUGGINGFACE_HUB_TOKEN}"
-: "${HF_TOKEN:?ERROR: HF_TOKEN is required for Llama 3.1}"
+export PYTORCH_ALLOC_CONF='expandable_segments:True'
+export PYTHONHASHSEED="42"
+export HSA_NO_SCRATCH_RECLAIM=1
+export HSA_ENABLE_SDMA=1
+export HSA_FORCE_FINE_GRAIN_PCIE=1
+export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
+export TOKENIZERS_PARALLELISM=false
+export TRANSFORMERS_VERBOSITY=error
+export HF_HUB_DISABLE_PROGRESS_BARS=1
+export RCCL_DEBUG=WARN
+export NCCL_DEBUG=WARN
+export GLOO_LOG_LEVEL=WARN
+export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-ens51np0}"
+export RCCL_MSCCL_ENABLE=0
 
+echo "[*] Checking HuggingFace authentication..."
+if [ -n "$HF_TOKEN" ]; then
+    export HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
+    echo "    HF_TOKEN is set"
+elif [ -n "$HUGGINGFACE_HUB_TOKEN" ]; then
+    export HF_TOKEN="$HUGGINGFACE_HUB_TOKEN"
+    echo "    HUGGINGFACE_HUB_TOKEN is set"
+else
+    echo "    ERROR: HF_TOKEN not set!"
+    echo ""
+    echo "    Llama 3.1 is a gated model. You need to:"
+    echo "    1. Get a token from https://huggingface.co/settings/tokens"
+    echo "    2. Accept the license at https://huggingface.co/meta-llama/Llama-3.1-8B"
+    echo "    3. Set: export HF_TOKEN='hf_xxxxxxxxxxxxx'"
+    echo ""
+    echo "    Or use Qwen instead (no auth needed): ./train_amd_prim_qwen.sh"
+    exit 1
+fi
+
+mkdir -p "$TPRIMAT_PATH/output"
+if [ ! -d "$PRIMUS_PATH" ]; then
+    echo "ERROR: Primus directory not found at: $PRIMUS_PATH"
+    echo "Please set PRIMUS_PATH environment variable or ensure /workspace/Primus exists"
+    exit 1
+fi
 CONFIG_FILE="examples/megatron/configs/MI300X/llama3.1_8B-BF16-pretrain.yaml"
+if [ ! -f "$PRIMUS_PATH/$CONFIG_FILE" ]; then
+    echo "ERROR: Config file not found at: $PRIMUS_PATH/$CONFIG_FILE"
+    echo "Available configs:"
+    ls -1 "$PRIMUS_PATH/examples/megatron/configs/MI300X/" 2>/dev/null | grep -i llama || echo "  (none found)"
+    exit 1
+fi
+
 cd "$PRIMUS_PATH"
 
-PATCHED_CONFIG="$OUTPUT_DIR/llama3.1_8B-BF16-pretrain.yaml"
-cp "$CONFIG_FILE" "$PATCHED_CONFIG"
-export PATCHED_CONFIG
+PATCHED_CONFIG="$TPRIMAT_PATH/output/llama3.1_8B-BF16-pretrain.yaml"
+cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-python3 - <<'PY'
-import os, yaml
+if python3 -c "import yaml" 2>/dev/null; then
+    python3 -c "
+import yaml
+with open('$PATCHED_CONFIG', 'r') as f:
+    config = yaml.safe_load(f)
 
-config = yaml.safe_load(open(os.environ["PATCHED_CONFIG"]))
-overrides = config.setdefault("modules", {}).setdefault("pre_trainer", {}).setdefault("overrides", {})
+config['tensor_model_parallel_size'] = 1
+config['pipeline_model_parallel_size'] = 1
+config['sequence_parallel'] = False
+config['global_batch_size'] = 64
+config['micro_batch_size'] = 1
+config['seq_length'] = 2048
+config['encoder_seq_length'] = 2048
+config['gradient_accumulation_steps'] = 8
+config['use_distributed_optimizer'] = True
+config['use_flash_attn'] = True
+config['use_fused_rmsnorm'] = True
+config['fp32_residual_connection'] = False
+config['train_iters'] = 500
+config['lr_decay_iters'] = 500
+config['lr_warmup_iters'] = 50
 
-env = os.environ
-overrides.update({
-    "tensor_model_parallel_size": int(env["TP"]),
-    "pipeline_model_parallel_size": int(env["PP"]),
-    "global_batch_size": int(env["GBS"]),
-    "micro_batch_size": int(env["MBS"]),
-    "seq_length": int(env["SEQ_LEN"]),
-    "max_position_embeddings": int(env["SEQ_LEN"]),
-    "train_iters": int(env["TRAIN_ITERS"]),
-    "lr_decay_iters": int(env["LR_DECAY_STEPS"]),
-    "lr_warmup_iters": min(int(env["WARMUP_STEPS"]), int(env["TRAIN_ITERS"]) // 2),
-    "mock_data": True
-})
-
-yaml.dump(config, open(os.environ["PATCHED_CONFIG"], "w"), default_flow_style=False)
-PY
+with open('$PATCHED_CONFIG', 'w') as f:
+    yaml.dump(config, f)
+"
+    echo "Config patched: TP=1, PP=1, DP=8, micro_batch=1, global_batch=64, seq_len=2048 (matches nvd_nemo)"
+else
+    echo "WARNING: pyyaml not available, using unpatched config"
+fi
 
 export EXP="$PATCHED_CONFIG"
-export SKIP_PREPARE=1
 
-TRAIN_SCRIPT="./examples/train.sh"
-[ -f "$TRAIN_SCRIPT" ] || TRAIN_SCRIPT="./examples/run_pretrain.sh"
+TRAIN_SCRIPT="./examples/run_pretrain.sh"
+if [ ! -f "$TRAIN_SCRIPT" ]; then
+    TRAIN_SCRIPT="./examples/train.sh"
+fi
 
-LOG_FILE="$OUTPUT_DIR/training_main_llama.log"
+if [ ! -f "$TRAIN_SCRIPT" ]; then
+    echo "ERROR: Neither run_pretrain.sh nor train.sh found in examples/"
+    exit 1
+fi
+
+filter_noise() {
+    grep -v -E "(^\[Primus CLI\]|^\[Primus\] sys\.path|^Supported flash-attn versions|^\[aiter\]|^fused_indices_to_multihot|^\[PrimusPatch\]|^\[Gloo\] Rank|waiting for baton release)"
+}
+
 bash "$TRAIN_SCRIPT" \
-    --train_iters "$TRAIN_ITERS" \
-    --global_batch_size "$GBS" \
-    --micro_batch_size "$MBS" \
-    --seq_length "$SEQ_LEN" \
-    --tensor_model_parallel_size "$TP" \
-    --pipeline_model_parallel_size "$PP" \
-    --lr "$LR" \
+    --train_iters 500 \
+    --global_batch_size 64 \
+    --micro_batch_size 1 \
+    --seq_length 2048 \
+    --tensor_model_parallel_size 1 \
+    --pipeline_model_parallel_size 1 \
+    --lr 0.0003 \
     --min_lr 0.0 \
-    --lr_warmup_iters "$WARMUP_STEPS" \
+    --lr_warmup_iters 50 \
     --lr_decay_style cosine \
-    --lr_decay_iters "$LR_DECAY_STEPS" \
-    --weight_decay "$WEIGHT_DECAY" \
-    2>&1 | tee "$LOG_FILE"
+    --lr_decay_iters 500 \
+    --weight_decay 0.1 \
+    2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama_raw.log" | filter_noise | tee "$TPRIMAT_PATH/output/training_main_llama.log"
 
 cd "$TPRIMAT_PATH"
+
 python3 evaluate/extract_prim_metrics.py \
-    --log-file "$LOG_FILE" \
+    --log-file "$TPRIMAT_PATH/output/training_main_llama.log" \
     --model-name "llama" \
-    --output "$OUTPUT_DIR/train_amd_prim_llama.json" \
-    --num-gpus $((TP * PP * DP)) \
-    --global-batch-size "$GBS" \
-    --micro-batch-size "$MBS" \
-    --tensor-parallel-size "$TP" \
-    --pipeline-parallel-size "$PP" \
-    --sequence-length "$SEQ_LEN" \
-    --parallel-strategy "TP${TP}_SP"
+    --output "$TPRIMAT_PATH/output/train_amd_prim_llama.json" \
+    --num-gpus 8 \
+    --global-batch-size 64 \
+    --micro-batch-size 1 \
+    --tensor-parallel-size 1 \
+    --pipeline-parallel-size 1 \
+    --sequence-length 2048 \
+    --parallel-strategy "TP1_SP"

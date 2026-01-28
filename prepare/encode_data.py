@@ -58,8 +58,7 @@ def encode_dataset(input_file: str, output_prefix: str, tokenizer_name: str, seq
         f.write(struct.pack('<Q', num_sequences))
         f.write(struct.pack('<Q', num_sequences))
         
-        # Megatron expects document indices with a terminal entry.
-        doc_idx = np.arange(num_sequences + 1, dtype=np.int64)
+        doc_idx = np.arange(num_sequences, dtype=np.int64)
         f.write(doc_idx.tobytes())
         
         pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
@@ -92,7 +91,6 @@ def write_nemo_index(output_prefix: str, tokens_array: np.ndarray, seq_length: i
         f.write(struct.pack('<B', DTYPE_CODE))
         f.write(struct.pack('<Q', num_sequences))
         f.write(struct.pack('<Q', num_documents))
-        # Megatron core expects lengths, pointers, then doc indices.
         f.write(sequence_lengths.tobytes())
         f.write(sequence_pointers.tobytes())
         f.write(document_indices.tobytes())
@@ -124,42 +122,16 @@ def main():
         default=2048,
         help="Sequence length (default: 2048)",
     )
-    parser.add_argument(
-        "--nemo",
-        action="store_true",
-        help="Generate NeMo format",
-    )
-    parser.add_argument(
-        "--mega",
-        action="store_true",
-        help="Generate Mega format",
-    )
     
     args = parser.parse_args()
     
-    if not args.nemo and not args.mega:
-        # Default to both if none specified
-        args.nemo = True
-        args.mega = True
-    
     for model_name, tokenizer_name in TOKENIZERS.items():
         output_prefix = f"{args.output_dir}/allenai-c4-{model_name}-mega"
-        
-        # Always need the tokens_array
         tokens_array, num_sequences = encode_dataset(
             args.input, output_prefix, tokenizer_name, args.seq_length
         )
-        
-        # If not mega, we delete the mega .idx file after generation
-        if not args.mega:
-            mega_idx = Path(f"{output_prefix}.idx")
-            if mega_idx.exists():
-                mega_idx.unlink()
-        
-        # If nemo, generate nemo format
-        if args.nemo:
-            nemo_prefix = f"{args.output_dir}/allenai-c4-{model_name}-nemo"
-            write_nemo_index(nemo_prefix, tokens_array, args.seq_length, num_sequences)
+        nemo_prefix = f"{args.output_dir}/allenai-c4-{model_name}-nemo"
+        write_nemo_index(nemo_prefix, tokens_array, args.seq_length, num_sequences)
 
 
 if __name__ == "__main__":

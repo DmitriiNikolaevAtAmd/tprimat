@@ -98,6 +98,8 @@ def train_model(model_name, model_short_name):
     np.random.seed(SEED)
     random.seed(SEED)
     os.environ['PYTHONHASHSEED'] = str(SEED)
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    
     platform_prefix = "amd"
     num_gpus = torch.cuda.device_count()
     

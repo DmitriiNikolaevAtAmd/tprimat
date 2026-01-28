@@ -1,16 +1,33 @@
+# NVIDIA Container Requirements
+# PyTorch with CUDA support (installed from base image)
+
+# Core training frameworks
 transformers>=4.36.0
 accelerate>=0.30.0
 datasets>=2.14.0
+
+# NVIDIA-specific frameworks
 deepspeed>=0.12.0
 nemo-toolkit[all]>=1.20.0
+
+# Megatron-LM (install from source or specify git)
+# megatron-lm @ git+https://github.com/NVIDIA/Megatron-LM.git
+
+# Memory optimization
 bitsandbytes>=0.41.0
+
+# Performance
 flash-attn>=2.0.0
 ninja
-packaging<26.0
+packaging<26.0  # Pin for compatibility with mlflow, pyvers
+
+# Utilities
 scipy
 sentencepiece
 protobuf
 pydantic
-cryptography>=43.0.0,<46
+cryptography>=43.0.0,<46  # Pin for mlflow compatibility
+
+# Monitoring
 tensorboard
 wandb

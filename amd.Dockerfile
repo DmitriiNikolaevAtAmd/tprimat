@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y \
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONHASHSEED=42
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 ENV HSA_NO_SCRATCH_RECLAIM=1
 ENV HSA_ENABLE_SDMA=1
 ENV HSA_FORCE_FINE_GRAIN_PCIE=1
@@ -33,5 +35,5 @@ RUN pip install --no-cache-dir -r amd-requirements.txt
 
 COPY . /workspace/tprimat/
 
-SHELL ["/usr/bin/fish", "-c"]
-CMD ["/usr/bin/fish"]
+SHELL ["/bin/bash", "-c"]
+CMD ["/bin/bash"]

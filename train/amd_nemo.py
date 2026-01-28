@@ -92,6 +92,8 @@ def train_model(model_name: str):
     np.random.seed(SEED)
     random.seed(SEED)
     os.environ['PYTHONHASHSEED'] = str(SEED)
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    
     logger.info(f"Creating {config['display_name']} training recipe...")
     recipe = config['recipe_fn'](
         name=config['recipe_name'],
