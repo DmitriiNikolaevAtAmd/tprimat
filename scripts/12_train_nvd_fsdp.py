@@ -9,11 +9,7 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import (
     BackwardPrefetch,
     ShardingStrategy,
 )
-from torch.distributed.fsdp.wrap import (
-    size_based_auto_wrap_policy,
-    enable_wrap,
-    wrap,
-)
+from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy
 import functools
 import random
 import numpy as np
@@ -29,16 +25,29 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-DATA_DIR = Path("/data/tprimat")
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(Path(__file__).parent.parent / "output")))
 
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
+SEED = int(os.environ.get("SEED", 42))
+MBS = int(os.environ.get("MBS", 1))
+GBS = int(os.environ.get("GBS", 128))
+SEQ_LEN = int(os.environ.get("SEQ_LEN", 2048))
+LR = float(os.environ.get("LR", 3e-4))
+WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.1))
+BETA1 = float(os.environ.get("BETA1", 0.9))
+BETA2 = float(os.environ.get("BETA2", 0.95))
+PRECISION = os.environ.get("PRECISION", "bf16")
+WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
+GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
+
 
 class PretrainingDataset(Dataset):
-    def __init__(self, tokenizer, seq_length=2048, num_samples=32000, data_path=None):
+    def __init__(self, tokenizer, seq_length, num_samples, data_path):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         self.num_samples = num_samples
@@ -58,7 +67,6 @@ class PretrainingDataset(Dataset):
         dataset_idx = idx % len(self.indexed_dataset)
         tokens = self.indexed_dataset[dataset_idx]
         
-        # Pad or truncate to seq_length
         if len(tokens) < self.seq_length:
             pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
             padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
@@ -97,22 +105,24 @@ def cleanup_distributed():
 
 
 def train_model(model_name, model_short_name):
-    torch.manual_seed(42)
-    torch.cuda.manual_seed_all(42)
-    np.random.seed(42)
-    random.seed(42)
-    os.environ['PYTHONHASHSEED'] = '42'
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
+    os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
     rank, world_size, local_rank = setup_distributed()
+    
+    grad_accum = GRAD_ACCUM // world_size if world_size > 1 else GRAD_ACCUM
+    global_batch_size = MBS * grad_accum * world_size
     
     if torch.cuda.is_available():
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
         platform = "nvd"
-        software_stack = "cuda"
+        software_stack = "fsdp"
         software_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
-        
         gpu_cores = 16896 if "h100" in device_name.lower() else 6912
         gpu_info = {
             "device_count": world_size,
@@ -127,19 +137,12 @@ def train_model(model_name, model_short_name):
         platform = "cpu"
         gpu_info = {}
     
-    micro_batch = 1
-    grad_accum = 8
-    global_batch_size = micro_batch * grad_accum * world_size
-    seq_length = 2048
-    total_steps = int(os.environ.get("TRAIN_ITERS", 500))
-    
     step_times = []
     loss_values = []
     learning_rates = []
     
     dataset_path = str(DATA_DIR / f"allenai-c4-{model_short_name}-mega")
     
-    # Verify real data exists - synthetic data is not allowed
     idx_file = dataset_path + ".idx"
     bin_file = dataset_path + ".bin"
     if not os.path.exists(idx_file) or not os.path.exists(bin_file):
@@ -154,7 +157,7 @@ def train_model(model_name, model_short_name):
     if rank == 0:
         print(f"Loading model: {model_name}")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
-        print(f"Batch config: micro_batch={micro_batch}, grad_accum={grad_accum}, global_batch={global_batch_size}")
+        print(f"Batch config: mbs={MBS}, grad_accum={grad_accum}, gbs={global_batch_size}")
         print(f"Using FSDP with FULL_SHARD strategy")
         print(f"Dataset: {dataset_path}")
     
@@ -163,43 +166,33 @@ def train_model(model_name, model_short_name):
     
     dataset = PretrainingDataset(
         tokenizer=tokenizer,
-        seq_length=seq_length,
-        num_samples=32000,
+        seq_length=SEQ_LEN,
+        num_samples=TRAIN_ITERS * global_batch_size,
         data_path=dataset_path
     )
     
     sampler = torch.utils.data.distributed.DistributedSampler(
-        dataset,
-        num_replicas=world_size,
-        rank=rank,
-        shuffle=True,
+        dataset, num_replicas=world_size, rank=rank, shuffle=True,
     ) if world_size > 1 else None
     
-    dataloader_workers = 0
     dataloader = DataLoader(
         dataset,
-        batch_size=micro_batch,
+        batch_size=MBS,
         sampler=sampler,
         shuffle=(sampler is None),
-        num_workers=dataloader_workers,
+        num_workers=0,
         pin_memory=True,
     )
     
     if rank == 0:
         print("Initializing model (random weights)...")
     
-    # Load config and create model with random weights (no pretrained download)
+    torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
     config = AutoConfig.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_config(
-        config,
-        torch_dtype=torch.bfloat16,
-    )
+    model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
     model.config.use_cache = False
     
-    auto_wrap_policy = functools.partial(
-        size_based_auto_wrap_policy,
-        min_num_params=100_000_000,
-    )
+    auto_wrap_policy = functools.partial(size_based_auto_wrap_policy, min_num_params=100_000_000)
     
     model = FSDP(
         model,
@@ -214,17 +207,16 @@ def train_model(model_name, model_short_name):
     
     optimizer = torch.optim.AdamW(
         model.parameters(),
-        lr=0.0003,
-        betas=(0.9, 0.95),
+        lr=LR,
+        betas=(BETA1, BETA2),
         eps=1e-8,
-        weight_decay=0.1,
+        weight_decay=WEIGHT_DECAY,
     )
     
-    num_warmup_steps = int(os.environ.get("WARMUP_STEPS", 50))
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer,
-        num_warmup_steps=num_warmup_steps,
-        num_training_steps=total_steps,
+        num_warmup_steps=WARMUP_STEPS,
+        num_training_steps=TRAIN_ITERS,
     )
     
     if rank == 0:
@@ -235,7 +227,7 @@ def train_model(model_name, model_short_name):
     start_time = time.time()
     data_iter = iter(dataloader)
     
-    for step in range(total_steps):
+    for step in range(TRAIN_ITERS):
         step_start = time.time()
         optimizer.zero_grad()
         
@@ -264,21 +256,21 @@ def train_model(model_name, model_short_name):
         if rank == 0 and (step + 1) % 10 == 0:
             avg_loss = sum(loss_values[-10:]) / min(10, len(loss_values))
             elapsed = time.time() - start_time
-            print(f"Step {step+1}/{total_steps}, Loss: {avg_loss:.4f}, Step Time: {step_time:.3f}s, LR: {learning_rates[-1]:.6f}")
+            print(f"Step {step+1}/{TRAIN_ITERS}, Loss: {avg_loss:.4f}, Step Time: {step_time:.3f}s, LR: {learning_rates[-1]:.6f}")
     
     if rank == 0:
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
+        
         if len(step_times) > 10:
-            warmup_steps = min(10, len(step_times))
-            step_times_no_warmup = step_times[warmup_steps:]
+            warmup_skip = min(10, len(step_times))
+            step_times_no_warmup = step_times[warmup_skip:]
             if not step_times_no_warmup:
                 step_times_no_warmup = step_times
             
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
-            
-            tokens_per_step = global_batch_size * seq_length
+            tokens_per_step = global_batch_size * SEQ_LEN
             tokens_per_second = tokens_per_step / avg_step_time
             tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
             
@@ -289,10 +281,10 @@ def train_model(model_name, model_short_name):
                 "gpu_info": gpu_info,
                 "timestamp": datetime.now().isoformat(),
                 "training_config": {
-                    "max_steps": total_steps,
+                    "max_steps": TRAIN_ITERS,
                     "global_batch_size": global_batch_size,
-                    "micro_batch_size": micro_batch,
-                    "sequence_length": seq_length,
+                    "micro_batch_size": MBS,
+                    "sequence_length": SEQ_LEN,
                     "num_gpus": world_size,
                     "parallel_strategy": "fsdp",
                     "gradient_accumulation_steps": grad_accum,
@@ -319,13 +311,13 @@ def train_model(model_name, model_short_name):
             
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             output_file = OUTPUT_DIR / f"train_{platform}_fsdp_{model_short_name}.json"
-            
             results_rounded = round_floats(results, precision=5)
             
             with open(output_file, 'w') as f:
                 json.dump(results_rounded, f, indent=2)
             
             print(f"Results saved to {output_file}")
+    
     cleanup_distributed()
 
 

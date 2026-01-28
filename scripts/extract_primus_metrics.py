@@ -17,12 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-try:
-    from config_loader import load_config
-    CONFIG_LOADER_AVAILABLE = True
-except ImportError:
-    CONFIG_LOADER_AVAILABLE = False
-    print("[!] config_loader not available - parallelism details will be limited")
+CONFIG_LOADER_AVAILABLE = False
 
 try:
     import torch
@@ -247,7 +242,7 @@ def extract_memory_from_log(log_file):
 
 def get_parallelism_config(strategy: str, model: str, platform: str) -> Dict[str, Any]:
     """
-    Get parallelism configuration from config.yaml.
+    Get parallelism configuration from environment variables.
     
     Args:
         strategy: Parallelism strategy name
@@ -255,26 +250,16 @@ def get_parallelism_config(strategy: str, model: str, platform: str) -> Dict[str
         platform: Platform (amd)
         
     Returns:
-        Dictionary with parallelism parameters or minimal info if unavailable
+        Dictionary with parallelism parameters from environment
     """
-    if not CONFIG_LOADER_AVAILABLE or not strategy or strategy == "unknown":
-        return {"strategy": strategy or "unknown"}
-    
-    try:
-        config = load_config()
-        # Get parallelism config for this strategy/model/platform
-        params = config.get_parallelism(model, "amd", methodology=strategy)
-        
-        return {
-            "strategy": strategy,
-            "tensor_parallel_size": params.get("tensor_model_parallel_size", 1),
-            "pipeline_parallel_size": params.get("pipeline_model_parallel_size", 1),
-            "data_parallel_size": params.get("data_parallel_size", 1),
-            "gradient_accumulation_steps": params.get("gradient_accumulation_steps", 1),
-        }
-    except Exception as e:
-        print(f"[!] Could not load parallelism config: {e}")
-        return {"strategy": strategy or "unknown"}
+    import os
+    return {
+        "strategy": strategy or "unknown",
+        "tensor_parallel_size": int(os.environ.get("TP", 1)),
+        "pipeline_parallel_size": int(os.environ.get("PP", 1)),
+        "data_parallel_size": int(os.environ.get("DP", 4)),
+        "gradient_accumulation_steps": int(os.environ.get("GRAD_ACCUM", 32)),
+    }
 
 
 def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, parallel_strategy=None, model_name=None):
@@ -341,16 +326,13 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     
     steps_per_second = 1.0 / avg_step_time
     
-    # Get parallelism configuration from config.yaml
     import os
-    # Priority: explicit argument > environment variable
     if not parallel_strategy:
         parallel_strategy = os.environ.get('PARALLEL', None)
     
-    # Load full parallelism config from config.yaml
     parallelism_config = get_parallelism_config(
         parallel_strategy or "unknown",
-        model_name or "llama",  # Default to llama if not specified
+        model_name or "llama",
         platform
     )
     

@@ -16,12 +16,25 @@ from torch.utils.data import Dataset, DataLoader
 import json
 import time
 
-DATA_DIR = Path("/data/tprimat")
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(Path(__file__).parent.parent / "output")))
+
+SEED = int(os.environ.get("SEED", 42))
+MBS = int(os.environ.get("MBS", 1))
+GBS = int(os.environ.get("GBS", 128))
+SEQ_LEN = int(os.environ.get("SEQ_LEN", 2048))
+LR = float(os.environ.get("LR", 3e-4))
+WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.1))
+BETA1 = float(os.environ.get("BETA1", 0.9))
+BETA2 = float(os.environ.get("BETA2", 0.95))
+PRECISION = os.environ.get("PRECISION", "bf16")
+WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
+GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
 
 
 class PretrainingDataset(Dataset):
-    def __init__(self, tokenizer, seq_length=2048, num_samples=640, data_path=None):
+    def __init__(self, tokenizer, seq_length, num_samples, data_path):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         self.num_samples = num_samples
@@ -54,31 +67,26 @@ class PretrainingDataset(Dataset):
         }
 
 
-def get_deepspeed_config(world_size=1):
-    micro_batch = 1
-    grad_accum = 8
-    train_batch = micro_batch * grad_accum * world_size
+def get_deepspeed_config(world_size):
+    grad_accum = GRAD_ACCUM // world_size if world_size > 1 else GRAD_ACCUM
+    train_batch = MBS * grad_accum * world_size
+    
+    use_bf16 = PRECISION == "bf16"
+    use_fp16 = PRECISION == "fp16"
     
     return {
-        "train_batch_size": train_batch,  # Auto-calculated
-        "train_micro_batch_size_per_gpu": micro_batch,
+        "train_batch_size": train_batch,
+        "train_micro_batch_size_per_gpu": MBS,
         "gradient_accumulation_steps": grad_accum,
         "steps_per_print": 1,
         "gradient_clipping": 1.0,
         "prescale_gradients": False,
-        "bf16": {
-            "enabled": True
-        },
+        "bf16": {"enabled": use_bf16},
+        "fp16": {"enabled": use_fp16},
         "zero_optimization": {
-            "stage": 3,  # ZeRO stage 3: full model sharding (more memory efficient)
-            "offload_optimizer": {
-                "device": "cpu",  # Offload optimizer to CPU to save GPU memory
-                "pin_memory": True
-            },
-            "offload_param": {
-                "device": "cpu",  # Offload parameters to CPU when not needed
-                "pin_memory": True
-            },
+            "stage": 3,
+            "offload_optimizer": {"device": "cpu", "pin_memory": True},
+            "offload_param": {"device": "cpu", "pin_memory": True},
             "overlap_comm": True,
             "contiguous_gradients": True,
             "sub_group_size": 1e9,
@@ -92,10 +100,10 @@ def get_deepspeed_config(world_size=1):
         "optimizer": {
             "type": "AdamW",
             "params": {
-                "lr": 0.0003,
-                "betas": [0.9, 0.95],
+                "lr": LR,
+                "betas": [BETA1, BETA2],
                 "eps": 1e-8,
-                "weight_decay": 0.1
+                "weight_decay": WEIGHT_DECAY
             }
         },
         "wall_clock_breakdown": False,
@@ -129,35 +137,34 @@ class SimpleCosineScheduler:
 
 
 def train_model(model_name, model_short_name):
-    torch.manual_seed(42)
-    torch.cuda.manual_seed_all(42)
-    np.random.seed(42)
-    random.seed(42)
-    os.environ['PYTHONHASHSEED'] = '42'
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
+    os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-    
-    # Initialize DeepSpeed distributed backend
     deepspeed.init_distributed()
     
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     rank = int(os.environ.get('RANK', 0))
     world_size = int(os.environ.get('WORLD_SIZE', 1))
     
-    # Detect platform and get GPU info
+    grad_accum = GRAD_ACCUM // world_size if world_size > 1 else GRAD_ACCUM
+    global_batch_size = MBS * grad_accum * world_size
+    
     if torch.cuda.is_available():
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
         platform = "amd"
-        software_stack = "deep"
+        software_stack = "deepspeed"
         software_version = torch.version.hip if hasattr(torch.version, 'hip') else "unknown"
         
-        # Approximate GPU cores based on device
         if "mi300" in device_name.lower():
-            gpu_cores = 14592  # MI300X
+            gpu_cores = 14592
         elif "h100" in device_name.lower():
             gpu_cores = 16896
         else:
-            gpu_cores = 6912  # Default estimate
+            gpu_cores = 6912
         
         gpu_info = {
             "device_count": world_size,
@@ -172,14 +179,11 @@ def train_model(model_name, model_short_name):
         platform = "cpu"
         gpu_info = {}
     
-    # Track metrics
     step_times = []
     loss_values = []
     learning_rates = []
-    
     dataset_path = str(DATA_DIR / f"allenai-c4-{model_short_name}-mega")
     
-    # Verify real data exists - synthetic data is not allowed
     idx_file = dataset_path + ".idx"
     bin_file = dataset_path + ".bin"
     if not os.path.exists(idx_file) or not os.path.exists(bin_file):
@@ -192,114 +196,90 @@ def train_model(model_name, model_short_name):
         )
     
     if rank == 0:
-        print(f"Loading model: {model_name}")
-        print(f"Platform: {platform} ({'ROCm' if platform == 'amd' else 'CUDA'})")
+        print(f"Initializing model: {model_name} (random weights)")
+        print(f"Platform: {platform} (ROCm)")
         print(f"World size: {world_size}, Rank: {rank}, Local rank: {local_rank}")
-        print(f"Batch config: micro_batch=1, grad_accum=8, train_batch={1*8*world_size}")
+        print(f"Batch config: mbs={MBS}, grad_accum={grad_accum}, gbs={global_batch_size}")
         print(f"Using ZeRO Stage 3 with CPU offloading for memory efficiency")
         print(f"Dataset: {dataset_path}")
     
-    # Load config and create model with random weights (no pretrained download)
+    torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
     config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_config(
-        config,
-        torch_dtype=torch.bfloat16,
-    )
+    model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
     model.config.use_cache = False
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
-    
-    # Enable gradient checkpointing
     model.gradient_checkpointing_enable()
     
-    # Create dataset and dataloader
     dataset = PretrainingDataset(
         tokenizer=tokenizer,
-        seq_length=2048,
-        num_samples=32000,
+        seq_length=SEQ_LEN,
+        num_samples=TRAIN_ITERS * global_batch_size,
         data_path=dataset_path
     )
     
-    # Get DeepSpeed config with proper world_size
     ds_config = get_deepspeed_config(world_size)
-    micro_batch = ds_config["train_micro_batch_size_per_gpu"]
     
-    # Initialize DeepSpeed
-    dataloader_workers = 0
     sampler = torch.utils.data.distributed.DistributedSampler(
-        dataset,
-        num_replicas=world_size,
-        rank=rank,
-        shuffle=True,
+        dataset, num_replicas=world_size, rank=rank, shuffle=True,
     ) if world_size > 1 else None
+    
     dataloader = DataLoader(
         dataset,
-        batch_size=micro_batch,
+        batch_size=ds_config["train_micro_batch_size_per_gpu"],
         sampler=sampler,
         shuffle=(sampler is None),
-        num_workers=dataloader_workers,
+        num_workers=0,
         pin_memory=True,
         drop_last=True,
     )
+    
     model_engine, optimizer, _, lr_scheduler = deepspeed.initialize(
         model=model,
         model_parameters=model.parameters(),
         config=ds_config,
     )
     
-    # Training loop
     if rank == 0:
         print("Starting training...")
     
     model_engine.train()
-    total_steps = 50
-    num_warmup_steps = max(1, int(total_steps * 0.1))
     use_external_scheduler = False
     if lr_scheduler is None:
-        base_lr = optimizer.param_groups[0]['lr'] if optimizer and optimizer.param_groups else 0.0003
-        lr_scheduler = SimpleCosineScheduler(
-            optimizer,
-            base_lr=base_lr,
-            warmup_steps=num_warmup_steps,
-            total_steps=total_steps
-        )
+        base_lr = optimizer.param_groups[0]['lr'] if optimizer and optimizer.param_groups else LR
+        lr_scheduler = SimpleCosineScheduler(optimizer, base_lr=base_lr, warmup_steps=WARMUP_STEPS, total_steps=TRAIN_ITERS)
         use_external_scheduler = True
     
     if rank == 0:
-        print(f"LR schedule: cosine with {num_warmup_steps} warmup steps")
+        print(f"LR schedule: cosine with {WARMUP_STEPS} warmup steps")
+    
     step = 0
     start_time = time.time()
     
     for batch_idx, batch in enumerate(dataloader):
-        if step >= total_steps:
+        if step >= TRAIN_ITERS:
             break
         
         step_start = time.time()
         
         input_ids = batch['input_ids'].to(model_engine.device)
         labels = batch['labels'].to(model_engine.device)
-        
-        # Forward pass
         outputs = model_engine(input_ids=input_ids, labels=labels)
         loss = outputs.loss
-        
-        # Backward pass
         model_engine.backward(loss)
-        
-        # Optimizer step
         model_engine.step()
+        
         if use_external_scheduler and lr_scheduler is not None:
             lr_scheduler.step()
         
-        # Track metrics
         step_time = time.time() - step_start
         step_times.append(step_time)
         loss_values.append(loss.item())
-        # Get learning rate from optimizer
+        
         if lr_scheduler is not None:
             current_lr = lr_scheduler.get_last_lr()[0]
         else:
-            current_lr = optimizer.param_groups[0]['lr'] if optimizer else 0.0003
+            current_lr = optimizer.param_groups[0]['lr'] if optimizer else LR
         learning_rates.append(current_lr)
         
         step += 1
@@ -307,33 +287,28 @@ def train_model(model_name, model_short_name):
         if rank == 0 and step % 10 == 0:
             avg_loss = sum(loss_values) / len(loss_values)
             elapsed = time.time() - start_time
-            print(f"Step {step}/{total_steps}, Loss: {avg_loss:.4f}, Step Time: {step_time:.3f}s, Elapsed: {elapsed:.2f}s")
+            print(f"Step {step}/{TRAIN_ITERS}, Loss: {avg_loss:.4f}, Step Time: {step_time:.3f}s, Elapsed: {elapsed:.2f}s")
         
-        if step >= total_steps:
+        if step >= TRAIN_ITERS:
             break
     
     if rank == 0:
         total_time = time.time() - start_time
         print(f"Training completed! Total time: {total_time:.2f}s")
+        
         if len(step_times) > 10:
-            step_times_no_warmup = step_times[10:]
+            warmup_skip = min(10, len(step_times))
+            step_times_no_warmup = step_times[warmup_skip:]
+            if not step_times_no_warmup:
+                step_times_no_warmup = step_times
             
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
-            
-            # Calculate token-based throughput
-            micro_batch = 1
-            grad_accum = 8
-            global_batch_size = micro_batch * grad_accum * world_size
-            seq_length = 2048
-            tokens_per_step = global_batch_size * seq_length
+            tokens_per_step = global_batch_size * SEQ_LEN
             tokens_per_second = tokens_per_step / avg_step_time
             tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
             
-            # Build unified results structure
             from datetime import datetime
-            import json
-            from pathlib import Path
             from utils import round_floats
             
             results = {
@@ -341,10 +316,10 @@ def train_model(model_name, model_short_name):
                 "gpu_info": gpu_info,
                 "timestamp": datetime.now().isoformat(),
                 "training_config": {
-                    "max_steps": total_steps,
+                    "max_steps": TRAIN_ITERS,
                     "global_batch_size": global_batch_size,
-                    "micro_batch_size": micro_batch,
-                    "sequence_length": seq_length,
+                    "micro_batch_size": MBS,
+                    "sequence_length": SEQ_LEN,
                     "num_gpus": world_size,
                     "parallel_strategy": "zero3",
                     "gradient_accumulation_steps": grad_accum,
@@ -369,11 +344,8 @@ def train_model(model_name, model_short_name):
             print(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
             print(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
             
-            # Save results
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             output_file = OUTPUT_DIR / f"train_amd_deep_{model_short_name}.json"
-            
-            # Round all floats to 5 decimal places
             results_rounded = round_floats(results, precision=5)
             
             with open(output_file, 'w') as f:
@@ -397,7 +369,6 @@ def main():
         print("CUDA/ROCm is not available!")
         sys.exit(1)
     
-    # Filter out DeepSpeed arguments (--local_rank, etc.)
     model_args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
     
     if len(model_args) > 0:
@@ -410,11 +381,6 @@ def main():
             print(f"Unknown model: {model}")
             sys.exit(1)
     else:
-        import subprocess
-        import time
-        
-        # Note: For DeepSpeed, you need to use deepspeed launcher:
-        # deepspeed --num_gpus=8 train_amd_deep.py llama
         print("ERROR: Please specify a model: llama or qwen")
         print("Usage: deepspeed --num_gpus=8 train_amd_deep.py [llama|qwen]")
         sys.exit(1)

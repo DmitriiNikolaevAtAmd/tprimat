@@ -15,8 +15,24 @@ import time
 from pathlib import Path
 from datetime import datetime
 
-DATA_DIR = Path("/data/tprimat")
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(Path(__file__).parent.parent / "output")))
+
+SEED = int(os.environ.get("SEED", 42))
+MBS = int(os.environ.get("MBS", 1))
+GBS = int(os.environ.get("GBS", 128))
+SEQ_LEN = int(os.environ.get("SEQ_LEN", 2048))
+LR = float(os.environ.get("LR", 3e-4))
+WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.1))
+BETA1 = float(os.environ.get("BETA1", 0.9))
+BETA2 = float(os.environ.get("BETA2", 0.95))
+PRECISION = os.environ.get("PRECISION", "bf16")
+WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
+GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
+TP = int(os.environ.get("TP", 1))
+PP = int(os.environ.get("PP", 1))
+DP = int(os.environ.get("DP", 4))
 
 try:
     import bitsandbytes as bnb
@@ -27,17 +43,14 @@ except (ImportError, RuntimeError):
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],
     force=True
 )
 logger = logging.getLogger(__name__)
 
 
 class PretrainingDataset:
-    """Simple dataset class for Megatron training"""
-    def __init__(self, tokenizer, seq_length=2048, data_path=None):
+    def __init__(self, tokenizer, seq_length, data_path):
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         
@@ -51,14 +64,12 @@ class PretrainingDataset:
         self.iteration = 0
     
     def get_batch(self, batch_size, device):
-        """Get a batch of real data"""
         batch_tokens = []
         for _ in range(batch_size):
             dataset_idx = self.iteration % len(self.indexed_dataset)
             tokens = self.indexed_dataset[dataset_idx]
             self.iteration += 1
             
-            # Pad or truncate to seq_length
             if len(tokens) < self.seq_length:
                 pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
                 padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
@@ -71,7 +82,7 @@ class PretrainingDataset:
         return torch.stack(batch_tokens).to(device)
 
 
-def set_seed(seed=42):
+def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
@@ -83,6 +94,7 @@ def train_model(model_name: str, model_config: dict):
     logger.info(f"=" * 80)
     logger.info(f"Starting Mega-LM training for {model_name}")
     logger.info(f"=" * 80)
+    
     rank = int(os.environ.get('RANK', 0))
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     world_size = int(os.environ.get('WORLD_SIZE', 1))
@@ -93,13 +105,18 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"Initialized distributed training: rank={rank}, world_size={world_size}")
     else:
         logger.info("Running in single-GPU mode")
-    set_seed(42)
+    
+    set_seed(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    
+    grad_accum = model_config['grad_accum_steps']
+    global_batch_size = MBS * grad_accum * world_size
+    
     if torch.cuda.is_available():
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
         platform = "nvd"
-        software_stack = "nemo"
+        software_stack = "megatron"
         software_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
         gpu_cores = 16896 if "h100" in device_name.lower() else 6912
         gpu_info = {
@@ -114,51 +131,44 @@ def train_model(model_name: str, model_config: dict):
     else:
         platform = "cpu"
         gpu_info = {}
+    
     step_times = []
     loss_values = []
     learning_rates = []
     
     try:
         from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
-        import torch.distributed as dist
         
         logger.info(f"Loading tokenizer: {model_config['hf_model']}")
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_config['hf_model'],
-            trust_remote_code=True
-        )
+        tokenizer = AutoTokenizer.from_pretrained(model_config['hf_model'], trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
+        
         logger.info(f"Initializing model: {model_config['hf_model']} (random weights)")
-        # Load config and create model with random weights (no pretrained download)
+        torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
         config = AutoConfig.from_pretrained(model_config['hf_model'], trust_remote_code=True)
-        model = AutoModelForCausalLM.from_config(
-            config,
-            torch_dtype=torch.bfloat16,
-        )
+        model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
         model.config.use_cache = False
+        
         if world_size == 1:
             logger.info("Single GPU detected - using device_map auto")
             model = model.to('cuda')
         else:
             device = torch.device(f'cuda:{local_rank}')
             model = model.to(device)
+        
         if hasattr(model, 'gradient_checkpointing_enable'):
             model.gradient_checkpointing_enable()
             logger.info("Enabled gradient checkpointing")
+        
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
             device = torch.device(f'cuda:{local_rank}')
-            model = DDP(
-                model,
-                device_ids=[local_rank],
-                output_device=local_rank,
-                find_unused_parameters=False
-            )
+            model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
             logger.info(f"Wrapped model with DDP on device {local_rank}")
+        
         dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
         
-        # Verify real data exists - synthetic data is not allowed
         idx_file = dataset_path + ".idx"
         bin_file = dataset_path + ".bin"
         if not os.path.exists(idx_file) or not os.path.exists(bin_file):
@@ -172,52 +182,31 @@ def train_model(model_name: str, model_config: dict):
         
         logger.info(f"Dataset: {dataset_path}")
         
-        # Create dataset loader
-        dataset = PretrainingDataset(
-            tokenizer=tokenizer,
-            seq_length=model_config['seq_length'],
-            data_path=dataset_path
-        )
+        dataset = PretrainingDataset(tokenizer=tokenizer, seq_length=SEQ_LEN, data_path=dataset_path)
         
-        seq_length = model_config['seq_length']
-        batch_size = model_config['micro_batch_size']
-        num_steps = model_config['num_steps']
+        batch_size = MBS
+        num_steps = TRAIN_ITERS
+        
         if HAS_BITSANDBYTES:
-            optimizer = bnb.optim.Adam8bit(
-                model.parameters(),
-                lr=model_config['learning_rate'],
-                betas=(0.9, 0.95),
-                eps=1e-8
-            )
+            optimizer = bnb.optim.Adam8bit(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8)
             logger.info("Using 8-bit Adam optimizer (saves ~75% optimizer memory)")
         else:
-            optimizer = torch.optim.Adam(
-                model.parameters(),
-                lr=model_config['learning_rate'],
-                betas=(0.9, 0.95),
-                eps=1e-8
-            )
+            optimizer = torch.optim.Adam(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8)
             logger.warning("bitsandbytes not available, using standard Adam (higher memory)")
         
-        # Add LR scheduler with warmup and cosine decay
         from transformers import get_cosine_schedule_with_warmup
-        num_warmup_steps = int(os.environ.get("WARMUP_STEPS", 50))
-        num_training_steps = model_config['num_steps']
-        scheduler = get_cosine_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=num_warmup_steps,
-            num_training_steps=num_training_steps
-        )
+        scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=num_steps)
         
         logger.info(f"Configuration:")
-        logger.info(f"  Sequence length: {seq_length}")
+        logger.info(f"  Sequence length: {SEQ_LEN}")
         logger.info(f"  Micro batch size: {batch_size}")
-        logger.info(f"  Global batch size: {batch_size * world_size * model_config['grad_accum_steps']}")
-        logger.info(f"  Gradient accumulation: {model_config['grad_accum_steps']}")
+        logger.info(f"  Global batch size: {global_batch_size}")
+        logger.info(f"  Gradient accumulation: {grad_accum}")
         logger.info(f"  Training steps: {num_steps}")
-        logger.info(f"  Learning rate: {model_config['learning_rate']}")
-        logger.info(f"  LR scheduler: Cosine with {num_warmup_steps} warmup steps")
-        logger.info(f"  Precision: bfloat16")
+        logger.info(f"  Learning rate: {LR}")
+        logger.info(f"  LR scheduler: Cosine with {WARMUP_STEPS} warmup steps")
+        logger.info(f"  Precision: {PRECISION}")
+        
         model.train()
         logger.info("Starting training...")
         training_start = time.time()
@@ -227,54 +216,57 @@ def train_model(model_name: str, model_config: dict):
             optimizer.zero_grad()
             
             step_losses = []
-            for micro_step in range(model_config['grad_accum_steps']):
+            for micro_step in range(grad_accum):
                 if world_size == 1:
                     device = next(model.parameters()).device
                 
-                # Get batch from dataset
                 input_ids = dataset.get_batch(batch_size, device)
                 labels = input_ids.clone()
-                with torch.amp.autocast('cuda', dtype=torch.bfloat16):
+                
+                with torch.amp.autocast('cuda', dtype=torch_dtype):
                     outputs = model(input_ids=input_ids, labels=labels)
-                    loss = outputs.loss / model_config['grad_accum_steps']
+                    loss = outputs.loss / grad_accum
+                
                 loss.backward()
-                step_losses.append(loss.item() * model_config['grad_accum_steps'])
+                step_losses.append(loss.item() * grad_accum)
+            
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
             
             step_time = time.time() - step_start
             avg_loss = sum(step_losses) / len(step_losses)
-            tokens_per_step = batch_size * seq_length * model_config['grad_accum_steps'] * world_size
+            tokens_per_step = batch_size * SEQ_LEN * grad_accum * world_size
             throughput = tokens_per_step / step_time
+            
             step_times.append(step_time)
             loss_values.append(avg_loss)
             current_lr = scheduler.get_last_lr()[0] if scheduler is not None else optimizer.param_groups[0]['lr']
             learning_rates.append(current_lr)
+            
             if rank == 0:
-                logger.info(
-                    f"Step {step + 1}/{num_steps} | "
-                    f"Loss: {avg_loss:.4f} | "
-                    f"Time: {step_time:.3f}s | "
-                    f"Throughput: {throughput:.0f} tokens/s"
-                )
+                logger.info(f"Step {step + 1}/{num_steps} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
+            
             if rank == 0 and (step + 1) % 5 == 0:
                 if torch.cuda.is_available():
                     allocated = torch.cuda.memory_allocated(device) / 1e9
                     reserved = torch.cuda.memory_reserved(device) / 1e9
                     logger.info(f"GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
+        
         training_time = time.time() - training_start
+        
         if rank == 0 and len(step_times) > 10:
-            warmup_steps = min(10, len(step_times))
-            step_times_no_warmup = step_times[warmup_steps:]
+            warmup_skip = min(10, len(step_times))
+            step_times_no_warmup = step_times[warmup_skip:]
             if not step_times_no_warmup:
                 step_times_no_warmup = step_times
+            
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
-            global_batch_size = batch_size * world_size * model_config['grad_accum_steps']
-            tokens_per_step = global_batch_size * seq_length
+            tokens_per_step = global_batch_size * SEQ_LEN
             tokens_per_second = tokens_per_step / avg_step_time
             tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
+            
             results = {
                 "platform": platform,
                 "gpu_info": gpu_info,
@@ -283,10 +275,10 @@ def train_model(model_name: str, model_config: dict):
                     "max_steps": num_steps,
                     "global_batch_size": global_batch_size,
                     "micro_batch_size": batch_size,
-                    "sequence_length": seq_length,
+                    "sequence_length": SEQ_LEN,
                     "num_gpus": world_size,
                     "parallel_strategy": "ddp",
-                    "gradient_accumulation_steps": model_config['grad_accum_steps'],
+                    "gradient_accumulation_steps": grad_accum,
                 },
                 "performance_metrics": {
                     "total_steps": len(step_times),
@@ -311,6 +303,7 @@ def train_model(model_name: str, model_config: dict):
             logger.info(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
             logger.info(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
             logger.info(f"=" * 80)
+            
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             output_file = OUTPUT_DIR / f"train_{platform}_mega_{model_name}.json"
             from utils import round_floats
@@ -324,7 +317,6 @@ def train_model(model_name: str, model_config: dict):
     except Exception as e:
         logger.error(f"Training failed: {e}", exc_info=True)
         if rank == 0 and len(step_times) > 0:
-            # Save partial results on error
             results = {
                 "platform": platform,
                 "gpu_info": gpu_info,
@@ -350,13 +342,9 @@ def train_model(model_name: str, model_config: dict):
 def train_llama():
     config = {
         'hf_model': 'meta-llama/Llama-3.1-8B',
-        'seq_length': 2048,
-        'micro_batch_size': 1,
-        'grad_accum_steps': 8,
-        'num_steps': int(os.environ.get("TRAIN_ITERS", 500)),
-        'learning_rate': 3e-4,
-        'tensor_parallel': 1,
-        'pipeline_parallel': 1,
+        'grad_accum_steps': GRAD_ACCUM,
+        'tensor_parallel': TP,
+        'pipeline_parallel': PP,
     }
     train_model('llama', config)
 
@@ -364,20 +352,16 @@ def train_llama():
 def train_qwen():
     config = {
         'hf_model': 'Qwen/Qwen2.5-7B',
-        'seq_length': 2048,
-        'micro_batch_size': 1,
-        'grad_accum_steps': 8,
-        'num_steps': int(os.environ.get("TRAIN_ITERS", 500)),
-        'learning_rate': 3e-4,
-        'tensor_parallel': 1,
-        'pipeline_parallel': 1,
+        'grad_accum_steps': GRAD_ACCUM,
+        'tensor_parallel': TP,
+        'pipeline_parallel': PP,
     }
     train_model('qwen', config)
 
 
 def main():
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-    os.environ['PYTHONHASHSEED'] = '42'
+    os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['HSA_NO_SCRATCH_RECLAIM'] = '1'
     os.environ['HSA_ENABLE_SDMA'] = '1'
     os.environ['HSA_FORCE_FINE_GRAIN_PCIE'] = '1'

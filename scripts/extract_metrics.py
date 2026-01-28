@@ -97,15 +97,12 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     
     steps_per_second = 1.0 / avg_step_time
     
-    # Get parallelism configuration from config.yaml
-    # Priority: explicit argument > environment variable
     if not parallel_strategy:
         parallel_strategy = os.environ.get('PARALLEL', None)
     
-    # Load full parallelism config from config.yaml
     parallelism_config = get_parallelism_config(
         parallel_strategy or "unknown",
-        model_name or "llama",  # Default to llama if not specified
+        model_name or "llama",
         platform
     )
     

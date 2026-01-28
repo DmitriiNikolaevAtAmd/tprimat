@@ -7,6 +7,7 @@ from datasets import load_dataset
 
 os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "120")
 
+DATA_DIR = os.environ.get("DATA_DIR", "/data")
 
 MODELS = {
     "meta-llama/Llama-3.1-8B": "meta-llama-llama-31-8b",
@@ -87,7 +88,7 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="/data/tprimat/allenai-c4-raw.jsonl",
+        default=f"{DATA_DIR}/allenai-c4-raw.jsonl",
         help="Output JSONL file path",
     )
     parser.add_argument(

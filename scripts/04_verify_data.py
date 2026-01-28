@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import struct
 import random
 import sys
 import numpy as np
 from pathlib import Path
 
+DATA_DIR = os.environ.get("DATA_DIR", "/data")
 
 DTYPE = np.dtype(np.int32)
 DTYPE_CODE = 4
 
 
 def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> bool:
-    """Verify encoded dataset integrity. Returns True if valid."""
-    
     bin_path = Path(f"{input_prefix}.bin")
     idx_path = Path(f"{input_prefix}.idx")
     is_nemo_format = "-nemo" in input_prefix
@@ -24,7 +24,6 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     print(f"Verifying {input_prefix}...")
     print(f"  Format: {'NeMo' if is_nemo_format else 'Mega'}")
     
-    # Check files exist
     if not bin_path.exists():
         print(f"FAIL: Binary file not found: {bin_path}")
         return False
@@ -32,7 +31,6 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
         print(f"FAIL: Index file not found: {idx_path}")
         return False
     
-    # Read index file
     print(f"\n[1/5] Checking index file...")
     try:
         with open(idx_path, 'rb') as f:
@@ -55,7 +53,6 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
                 warnings.append(f"num_docs ({num_docs}) != num_seqs ({num_seqs})")
             
             if is_nemo_format:
-                # NeMo/Megatron order: lengths → pointers → doc_indices
                 lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
                 pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
                 doc_indices = np.frombuffer(f.read((num_docs + 1) * 8), dtype=np.int64)
@@ -65,18 +62,15 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
                 print(f"    - pointers array: {len(pointers)} elements")
                 print(f"    - doc_indices array: {len(doc_indices)} elements (N+1)")
                 
-                # NeMo critical assertion: sequence_lengths.shape[0] == document_indices[-1]
                 if len(lengths) != doc_indices[-1]:
                     errors.append(f"NeMo assertion FAILED: len(lengths)={len(lengths)} != doc_indices[-1]={doc_indices[-1]}")
                 else:
                     print(f"  NeMo assertion PASSED: len(lengths)={len(lengths)} == doc_indices[-1]={doc_indices[-1]}")
                 
-                # Verify doc_indices structure: should be [0, 1, 2, ..., N]
                 expected_doc_indices = np.arange(num_docs + 1, dtype=np.int64)
                 if not np.array_equal(doc_indices, expected_doc_indices):
                     errors.append(f"NeMo doc_indices malformed: expected [0..{num_docs}], got [{doc_indices[0]}..{doc_indices[-1]}]")
             else:
-                # Mega format order: doc_idx → pointers → lengths
                 print(f"  Mega format detected:")
                 doc_idx = np.frombuffer(f.read(num_docs * 8), dtype=np.int64)
                 pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
@@ -93,7 +87,6 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
         print(f"FAIL: {e}")
         return False
     
-    # Check binary file size
     print(f"\n[2/5] Checking binary file...")
     bin_size = bin_path.stat().st_size
     seq_length = int(lengths[0]) if len(lengths) > 0 else 0
@@ -105,11 +98,9 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     if bin_size != expected_size:
         errors.append(f"Binary size {bin_size} != expected {expected_size}")
     
-    # Check all lengths are uniform
     if not np.all(lengths == seq_length):
         errors.append(f"Non-uniform sequence lengths found")
     
-    # Check pointers are valid
     print(f"\n[3/5] Checking pointers...")
     if np.any(pointers < 0):
         errors.append("Negative pointers found")
@@ -118,26 +109,23 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     if np.any(pointers % DTYPE.itemsize != 0):
         errors.append("Unaligned pointers found")
     
-    # Check sequential layout
     expected_pointers = np.arange(num_seqs, dtype=np.int64) * bytes_per_seq
     if not np.array_equal(pointers, expected_pointers):
         warnings.append("Non-sequential pointer layout")
     
     print(f"  Pointer range: [{pointers.min():,}, {pointers.max():,}]")
     
-    # Load tokenizer for validation
     print(f"\n[4/5] Validating tokens...")
     try:
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
-        vocab_size = len(tokenizer)  # includes added tokens
+        vocab_size = len(tokenizer)
         print(f"  Tokenizer: {tokenizer_name}")
         print(f"  Vocab size: {vocab_size:,} (base: {tokenizer.vocab_size:,})")
     except Exception as e:
         warnings.append(f"Could not load tokenizer: {e}")
         vocab_size = None
     
-    # Read and validate random samples
     print(f"\n[5/5] Sampling {num_samples} sequences...")
     
     sample_indices = random.sample(range(num_seqs), min(num_samples, num_seqs))
@@ -150,19 +138,16 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
             data = f.read(bytes_per_seq)
             tokens = np.frombuffer(data, dtype=DTYPE)
             
-            # Check token count
             if len(tokens) != seq_length:
                 errors.append(f"Sequence {idx}: got {len(tokens)} tokens, expected {seq_length}")
                 continue
             
-            # Check token range
             if np.any(tokens < 0):
                 errors.append(f"Sequence {idx}: negative tokens found")
             
             if vocab_size and np.any(tokens >= vocab_size):
                 errors.append(f"Sequence {idx}: tokens exceed vocab size")
             
-            # Try decoding
             if tokenizer:
                 try:
                     text = tokenizer.decode(tokens[:50], skip_special_tokens=False)
@@ -175,7 +160,6 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     if decode_errors > 0:
         warnings.append(f"{decode_errors} sequences failed to decode")
     
-    # Report results
     print("\n" + "=" * 50)
     
     if errors:
@@ -211,7 +195,7 @@ def main():
     parser.add_argument(
         "--input-dir",
         type=str,
-        default="/data/tprimat",
+        default=DATA_DIR,
         help="Directory containing encoded datasets",
     )
     parser.add_argument(

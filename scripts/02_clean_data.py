@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 from pathlib import Path
+
+DATA_DIR = os.environ.get("DATA_DIR", "/data")
 
 
 def clean_data(input_file: str, output_file: str, min_chars: int, min_words: int):
@@ -44,13 +47,13 @@ def main():
     parser.add_argument(
         "--input",
         type=str,
-        default="/data/tprimat/allenai-c4-raw.jsonl",
+        default=f"{DATA_DIR}/allenai-c4-raw.jsonl",
         help="Input raw JSONL file",
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="/data/tprimat/allenai-c4.jsonl",
+        default=f"{DATA_DIR}/allenai-c4.jsonl",
         help="Output clean JSONL file",
     )
     parser.add_argument(

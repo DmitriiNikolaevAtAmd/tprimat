@@ -16,15 +16,31 @@ import nemo_run as run
 from nemo.lightning import MegatronStrategy
 from utils import BenchmarkCallback
 
-DATA_DIR = Path("/data/tprimat")
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(Path(__file__).parent.parent / "output")))
+
+SEED = int(os.environ.get("SEED", 42))
+MBS = int(os.environ.get("MBS", 1))
+GBS = int(os.environ.get("GBS", 128))
+SEQ_LEN = int(os.environ.get("SEQ_LEN", 2048))
+LR = float(os.environ.get("LR", 3e-4))
+WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.1))
+BETA1 = float(os.environ.get("BETA1", 0.9))
+BETA2 = float(os.environ.get("BETA2", 0.95))
+PRECISION = os.environ.get("PRECISION", "bf16")
+FP8_HYBRID = os.environ.get("FP8_HYBRID", "false").lower() == "true"
+FP8_PARAM = os.environ.get("FP8_PARAM", "false").lower() == "true"
+WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
+GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
+TP = int(os.environ.get("TP", 1))
+PP = int(os.environ.get("PP", 1))
+DP = int(os.environ.get("DP", 4))
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],
     force=True
 )
 logger = logging.getLogger(__name__)
@@ -61,17 +77,19 @@ def train_model(model_name: str):
         sys.exit(1)
     
     platform_prefix = "amd"
+    num_gpus = torch.cuda.device_count()
     
-    logger.info(f"CUDA devices available: {torch.cuda.device_count()}")
+    logger.info(f"CUDA devices available: {num_gpus}")
     
     config = get_model_config(model_name)
     
     logger.info(f"Setting up {config['display_name']} training...")
-    torch.manual_seed(42)
-    torch.cuda.manual_seed_all(42)
-    np.random.seed(42)
-    random.seed(42)
-    os.environ['PYTHONHASHSEED'] = '42'
+    
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
+    os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
     logger.info(f"Creating {config['display_name']} training recipe...")
@@ -79,18 +97,17 @@ def train_model(model_name: str):
         name=config['recipe_name'],
         dir="/data",
         num_nodes=1,
-        num_gpus_per_node=8,
+        num_gpus_per_node=num_gpus,
     )
     
     recipe.trainer.strategy = MegatronStrategy(
-        tensor_model_parallel_size=2,
-        pipeline_model_parallel_size=1,
+        tensor_model_parallel_size=TP,
+        pipeline_model_parallel_size=PP,
         context_parallel_size=1,
         virtual_pipeline_model_parallel_size=None,
         sequence_parallel=True,
     )
     
-    # Verify data preparation was completed (check mega format which other scripts use)
     mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
     idx_file = mega_dataset_path + ".idx"
     bin_file = mega_dataset_path + ".bin"
@@ -103,31 +120,33 @@ def train_model(model_name: str):
             f"python scripts/02_clean_data.py && python scripts/03_encode_data.py"
         )
     
-    # Use NeMo's MockDataModule for benchmarking (standard NeMo practice)
-    # This ensures consistent benchmarking across runs while verifying data prep completed
     logger.info(f"Data validation passed: {mega_dataset_path}")
     logger.info("Using NeMo MockDataModule for consistent benchmarking")
+    
     from nemo.collections.llm.gpt.data.mock import MockDataModule
     recipe.data = MockDataModule(
-        seq_length=2048,
-        micro_batch_size=1,
-        global_batch_size=64,
-        num_train_samples=3200,  # 50 steps * 64 batch size
-        num_val_samples=64,
-        num_test_samples=64,
+        seq_length=SEQ_LEN,
+        micro_batch_size=MBS,
+        global_batch_size=GBS,
+        num_train_samples=TRAIN_ITERS * GBS,
+        num_val_samples=GBS,
+        num_test_samples=GBS,
     )
     
-    recipe.trainer.max_steps = 50
-    recipe.optim.config.lr = 0.0003
+    recipe.trainer.max_steps = TRAIN_ITERS
+    recipe.optim.config.lr = LR
     recipe.optim.config.min_lr = 0.0
-    recipe.optim.config.weight_decay = 0.1
-    recipe.optim.config.adam_beta1 = 0.9
-    recipe.optim.config.adam_beta2 = 0.95
-    recipe.optim.lr_scheduler.warmup_steps = 10
+    recipe.optim.config.weight_decay = WEIGHT_DECAY
+    recipe.optim.config.adam_beta1 = BETA1
+    recipe.optim.config.adam_beta2 = BETA2
+    recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS
     recipe.optim.lr_scheduler.constant_steps = 0
     
-    recipe.model.config.fp8 = "hybrid"
-    recipe.model.config.fp8_param = True
+    if FP8_HYBRID:
+        recipe.model.config.fp8 = "hybrid"
+    else:
+        recipe.model.config.fp8 = None
+    recipe.model.config.fp8_param = FP8_PARAM
     recipe.model.config.recompute_granularity = "selective"
     recipe.model.config.recompute_method = "uniform"
     
@@ -149,6 +168,18 @@ def train_model(model_name: str):
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []
     recipe.trainer.callbacks.append(benchmark_callback)
+    
+    logger.info(f"Configuration:")
+    logger.info(f"  Sequence length: {SEQ_LEN}")
+    logger.info(f"  Micro batch size: {MBS}")
+    logger.info(f"  Global batch size: {GBS}")
+    logger.info(f"  Training steps: {TRAIN_ITERS}")
+    logger.info(f"  Learning rate: {LR}")
+    logger.info(f"  Warmup steps: {WARMUP_STEPS}")
+    logger.info(f"  Precision: {PRECISION}")
+    logger.info(f"  FP8 Hybrid: {FP8_HYBRID}")
+    logger.info(f"  FP8 Param: {FP8_PARAM}")
+    logger.info(f"  TP: {TP}, PP: {PP}, DP: {DP}")
     
     logger.info(f"Starting {config['display_name']} training...")
     run.run(recipe, direct=True)

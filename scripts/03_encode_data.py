@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 import struct
 import numpy as np
 from pathlib import Path
 from transformers import AutoTokenizer
 
+DATA_DIR = os.environ.get("DATA_DIR", "/data")
 
 DTYPE = np.dtype(np.int32)
 DTYPE_CODE = 4
@@ -101,19 +103,17 @@ TOKENIZERS = {
 
 
 def main():
-    default_data_dir = "/data/tprimat"
-    
     parser = argparse.ArgumentParser(description="Encode JSONL to Megatron format")
     parser.add_argument(
         "--input",
         type=str,
-        default=f"{default_data_dir}/allenai-c4.jsonl",
+        default=f"{DATA_DIR}/allenai-c4.jsonl",
         help="Input clean JSONL file",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=default_data_dir,
+        default=DATA_DIR,
         help="Output directory for encoded datasets",
     )
     parser.add_argument(
