@@ -1,7 +1,5 @@
 torch>=2.0.0
 lightning>=2.0.0
-nemo_toolkit[nlp]>=2.0.0
-nemo_run
 matplotlib>=3.5.0
 numpy>=1.21.0
 pyyaml>=6.0

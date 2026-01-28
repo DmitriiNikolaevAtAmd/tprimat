@@ -33,15 +33,6 @@ WORKDIR /workspace/tprimat
 COPY amd-requirements.txt /workspace/tprimat/
 RUN pip install --no-cache-dir -r amd-requirements.txt
 
-# Install ROCm-optimized dependencies
-RUN pip install --no-cache-dir git+https://github.com/ROCm/transformer-engine.git@main
-RUN pip install --no-cache-dir git+https://github.com/ROCm/flash-attention.git@main
-
-# Install NeMo from source to ensure compatibility
-RUN git clone https://github.com/NVIDIA/NeMo.git && \
-    cd NeMo && \
-    pip install --no-cache-dir .
-
 COPY . /workspace/tprimat/
 
 SHELL ["/usr/bin/fish", "-c"]
