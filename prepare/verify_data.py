@@ -54,13 +54,13 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
             
             if is_nemo_format:
                 lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
-                pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
                 doc_indices = np.frombuffer(f.read((num_docs + 1) * 8), dtype=np.int64)
+                pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
                 
                 print(f"  NeMo format detected:")
                 print(f"    - lengths array: {len(lengths)} elements")
-                print(f"    - pointers array: {len(pointers)} elements")
                 print(f"    - doc_indices array: {len(doc_indices)} elements (N+1)")
+                print(f"    - pointers array: {len(pointers)} elements")
                 
                 if len(lengths) != doc_indices[-1]:
                     errors.append(f"NeMo assertion FAILED: len(lengths)={len(lengths)} != doc_indices[-1]={doc_indices[-1]}")
