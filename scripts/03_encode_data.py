@@ -190,22 +190,20 @@ TOKENIZERS = {
 
 
 def main():
-    # Default paths relative to project root (parent of scripts/)
-    script_dir = Path(__file__).parent.resolve()
-    project_root = script_dir.parent
-    default_data_dir = project_root / "data"
+    # Default data directory (consistent with 01_fetch_deps.py and 02_clean_data.py)
+    default_data_dir = "/data/tprimat"
     
     parser = argparse.ArgumentParser(description="Encode JSONL to Megatron format")
     parser.add_argument(
         "--input",
         type=str,
-        default=str(default_data_dir / "allenai-c4-100k.jsonl"),
+        default=f"{default_data_dir}/allenai-c4-100k.jsonl",
         help="Input clean JSONL file",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=str(default_data_dir),
+        default=default_data_dir,
         help="Output directory for encoded datasets",
     )
     parser.add_argument(
