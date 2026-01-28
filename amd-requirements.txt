@@ -1,17 +1,11 @@
-# Core requirements
 torch>=2.0.0
 lightning>=2.0.0
-
-# Benchmarking and visualization
+nemo_toolkit[nlp]>=2.0.0
+nemo_run
 matplotlib>=3.5.0
 numpy>=1.21.0
 pyyaml>=6.0
-
-# Data Preparation
 datasets>=2.10.0
 huggingface_hub>=0.13.0
 transformers>=4.30.0
-
-# Optional for advanced profiling
 tensorboard>=2.10.0
-

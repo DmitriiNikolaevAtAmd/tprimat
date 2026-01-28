@@ -23,5 +23,8 @@ export NCCL_TIMEOUT=3600
 export TORCH_DIST_TIMEOUT=3600
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export PARALLEL="amd_optimized"
+export HSA_OVERRIDE_GFX_VERSION=11.0.0 # Adjust based on your specific AMD GPU (e.g., 11.0.0 for MI300/RX7900)
+export NCCL_LIB_DIR=/opt/rocm/rccl/lib
+export NCCL_INCLUDE_DIR=/opt/rocm/rccl/include
 python3 -u amd_nemo.py llama
 
