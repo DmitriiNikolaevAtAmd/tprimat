@@ -2,7 +2,9 @@
 set -e
 cd "$(dirname "$0")"
 TPRIMAT_PATH="$(cd .. && pwd)"
+set -a
 source "$TPRIMAT_PATH/config.env"
+set +a
 
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
 OUTPUT_DIR="${OUTPUT_DIR:-$TPRIMAT_PATH/output}"
@@ -30,6 +32,7 @@ import os
 import yaml
 
 path = os.environ["PATCHED_CONFIG"]
+data_dir = os.environ.get("DATA_DIR", "/data")
 config = yaml.safe_load(open(path))
 config["tensor_model_parallel_size"] = int(os.environ["TP"])
 config["pipeline_model_parallel_size"] = int(os.environ["PP"])
@@ -49,6 +52,10 @@ if warmup_steps >= train_iters:
 config["train_iters"] = train_iters
 config["lr_decay_iters"] = train_iters
 config["lr_warmup_iters"] = warmup_steps
+
+# Set data path to the Megatron-format dataset
+config["data_path"] = f"{data_dir}/allenai-c4-qwen-mega"
+
 with open(path, "w") as f:
     yaml.dump(config, f)
 PY
