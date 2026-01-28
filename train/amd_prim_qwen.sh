@@ -66,6 +66,15 @@ if [ ! -f "$TRAIN_SCRIPT" ]; then
 fi
 
 LOG_FILE="$OUTPUT_DIR/training_main_qwen.log"
+# Calculate safe warmup steps
+SAFE_WARMUP=$WARMUP_STEPS
+if [ "$SAFE_WARMUP" -ge "$TRAIN_ITERS" ]; then
+    SAFE_WARMUP=$((TRAIN_ITERS / 2))
+    echo "Warning: Capping WARMUP_STEPS to $SAFE_WARMUP because TRAIN_ITERS is $TRAIN_ITERS"
+fi
+
+export SAFE_WARMUP
+
 bash "$TRAIN_SCRIPT" \
     --train_iters "$TRAIN_ITERS" \
     --global_batch_size "$GBS" \
@@ -75,7 +84,7 @@ bash "$TRAIN_SCRIPT" \
     --pipeline_model_parallel_size "$PP" \
     --lr "$LR" \
     --min_lr 0.0 \
-    --lr_warmup_iters "$WARMUP_STEPS" \
+    --lr_warmup_iters "$SAFE_WARMUP" \
     --lr_decay_style cosine \
     --lr_decay_iters "$TRAIN_ITERS" \
     --weight_decay "$WEIGHT_DECAY" \
