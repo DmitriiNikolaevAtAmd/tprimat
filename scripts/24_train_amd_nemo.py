@@ -91,7 +91,7 @@ def train_model(model_name: str):
     )
     
     # Verify data preparation was completed (check mega format which other scripts use)
-    mega_dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_name}-mega")
+    mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
     idx_file = mega_dataset_path + ".idx"
     bin_file = mega_dataset_path + ".bin"
     if not os.path.exists(idx_file) or not os.path.exists(bin_file):

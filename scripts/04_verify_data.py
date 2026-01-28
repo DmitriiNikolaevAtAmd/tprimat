@@ -199,10 +199,10 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
 
 
 DATASETS = {
-    "llama-mega": ("allenai-c4-100k-llama-mega", "meta-llama/Llama-3.1-8B"),
-    "qwen-mega": ("allenai-c4-100k-qwen-mega", "Qwen/Qwen2.5-7B"),
-    "llama-nemo": ("allenai-c4-100k-llama-nemo", "meta-llama/Llama-3.1-8B"),
-    "qwen-nemo": ("allenai-c4-100k-qwen-nemo", "Qwen/Qwen2.5-7B"),
+    "llama-mega": ("allenai-c4-llama-mega", "meta-llama/Llama-3.1-8B"),
+    "qwen-mega": ("allenai-c4-qwen-mega", "Qwen/Qwen2.5-7B"),
+    "llama-nemo": ("allenai-c4-llama-nemo", "meta-llama/Llama-3.1-8B"),
+    "qwen-nemo": ("allenai-c4-qwen-nemo", "Qwen/Qwen2.5-7B"),
 }
 
 

@@ -123,7 +123,7 @@ def train_model(model_name: str):
     )
     
     # Verify data preparation was completed (check mega format which other scripts use)
-    mega_dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_name}-mega")
+    mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
     idx_file = mega_dataset_path + ".idx"
     bin_file = mega_dataset_path + ".bin"
     if not os.path.exists(idx_file) or not os.path.exists(bin_file):
@@ -149,13 +149,13 @@ def train_model(model_name: str):
         num_test_samples=64,
     )
     
-    recipe.trainer.max_steps = 50
+    recipe.trainer.max_steps = int(os.environ.get("TRAIN_ITERS", 500))
     recipe.optim.config.lr = 0.0003
     recipe.optim.config.min_lr = 0.0
     recipe.optim.config.weight_decay = 0.1
     recipe.optim.config.adam_beta1 = 0.9
     recipe.optim.config.adam_beta2 = 0.95
-    recipe.optim.lr_scheduler.warmup_steps = 10
+    recipe.optim.lr_scheduler.warmup_steps = int(os.environ.get("WARMUP_STEPS", 50))
     recipe.optim.lr_scheduler.constant_steps = 0
     
     recipe.model.config.fp8 = "hybrid"

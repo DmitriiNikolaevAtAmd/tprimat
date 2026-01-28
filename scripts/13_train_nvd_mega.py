@@ -156,7 +156,7 @@ def train_model(model_name: str, model_config: dict):
                 find_unused_parameters=False
             )
             logger.info(f"Wrapped model with DDP on device {local_rank}")
-        dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_name}-mega")
+        dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
         
         # Verify real data exists - synthetic data is not allowed
         idx_file = dataset_path + ".idx"
@@ -201,7 +201,7 @@ def train_model(model_name: str, model_config: dict):
         
         # Add LR scheduler with warmup and cosine decay
         from transformers import get_cosine_schedule_with_warmup
-        num_warmup_steps = 10
+        num_warmup_steps = int(os.environ.get("WARMUP_STEPS", 50))
         num_training_steps = model_config['num_steps']
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
@@ -353,7 +353,7 @@ def train_llama():
         'seq_length': 2048,
         'micro_batch_size': 1,
         'grad_accum_steps': 8,
-        'num_steps': 50,
+        'num_steps': int(os.environ.get("TRAIN_ITERS", 500)),
         'learning_rate': 3e-4,
         'tensor_parallel': 1,
         'pipeline_parallel': 1,
@@ -367,7 +367,7 @@ def train_qwen():
         'seq_length': 2048,
         'micro_batch_size': 1,
         'grad_accum_steps': 8,
-        'num_steps': 50,
+        'num_steps': int(os.environ.get("TRAIN_ITERS", 500)),
         'learning_rate': 3e-4,
         'tensor_parallel': 1,
         'pipeline_parallel': 1,

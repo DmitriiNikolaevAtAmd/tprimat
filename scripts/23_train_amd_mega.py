@@ -156,7 +156,7 @@ def train_model(model_name: str, model_config: dict):
                 find_unused_parameters=False
             )
             logger.info(f"Wrapped model with DDP on device {local_rank}")
-        dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_name}-mega")
+        dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
         
         # Verify real data exists - synthetic data is not allowed
         idx_file = dataset_path + ".idx"

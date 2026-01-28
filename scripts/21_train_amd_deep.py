@@ -177,7 +177,7 @@ def train_model(model_name, model_short_name):
     loss_values = []
     learning_rates = []
     
-    dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_short_name}-mega")
+    dataset_path = str(DATA_DIR / f"allenai-c4-{model_short_name}-mega")
     
     # Verify real data exists - synthetic data is not allowed
     idx_file = dataset_path + ".idx"

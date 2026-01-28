@@ -131,13 +131,13 @@ def train_model(model_name, model_short_name):
     grad_accum = 8
     global_batch_size = micro_batch * grad_accum * world_size
     seq_length = 2048
-    total_steps = 50
+    total_steps = int(os.environ.get("TRAIN_ITERS", 500))
     
     step_times = []
     loss_values = []
     learning_rates = []
     
-    dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_short_name}-mega")
+    dataset_path = str(DATA_DIR / f"allenai-c4-{model_short_name}-mega")
     
     # Verify real data exists - synthetic data is not allowed
     idx_file = dataset_path + ".idx"
@@ -220,9 +220,10 @@ def train_model(model_name, model_short_name):
         weight_decay=0.1,
     )
     
+    num_warmup_steps = int(os.environ.get("WARMUP_STEPS", 50))
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer,
-        num_warmup_steps=10,
+        num_warmup_steps=num_warmup_steps,
         num_training_steps=total_steps,
     )
     

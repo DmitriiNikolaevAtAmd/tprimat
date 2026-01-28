@@ -166,7 +166,7 @@ def train_model(model_name, model_short_name):
     step_times = []
     loss_values = []
     learning_rates = []
-    dataset_path = str(DATA_DIR / f"allenai-c4-100k-{model_short_name}-mega")
+    dataset_path = str(DATA_DIR / f"allenai-c4-{model_short_name}-mega")
     
     # Verify real data exists - synthetic data is not allowed
     idx_file = dataset_path + ".idx"
@@ -227,8 +227,8 @@ def train_model(model_name, model_short_name):
     if rank == 0:
         print("Starting training...")
     model_engine.train()
-    total_steps = 50
-    num_warmup_steps = 10
+    total_steps = int(os.environ.get("TRAIN_ITERS", 500))
+    num_warmup_steps = int(os.environ.get("WARMUP_STEPS", 50))
     use_external_scheduler = False
     if lr_scheduler is None:
         base_lr = optimizer.param_groups[0]['lr'] if optimizer and optimizer.param_groups else 0.0003

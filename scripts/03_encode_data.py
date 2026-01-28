@@ -197,7 +197,7 @@ def main():
     parser.add_argument(
         "--input",
         type=str,
-        default=f"{default_data_dir}/allenai-c4-100k.jsonl",
+        default=f"{default_data_dir}/allenai-c4.jsonl",
         help="Input clean JSONL file",
     )
     parser.add_argument(
@@ -217,7 +217,7 @@ def main():
     
     # Encode for each tokenizer
     for model_name, tokenizer_name in TOKENIZERS.items():
-        output_prefix = f"{args.output_dir}/allenai-c4-100k-{model_name}-mega"
+        output_prefix = f"{args.output_dir}/allenai-c4-{model_name}-mega"
         print(f"\n{'='*60}")
         print(f"Encoding for {model_name.upper()}")
         print(f"{'='*60}")
@@ -228,7 +228,7 @@ def main():
         )
         
         # NeMo format (different index structure)
-        nemo_prefix = f"{args.output_dir}/allenai-c4-100k-{model_name}-nemo"
+        nemo_prefix = f"{args.output_dir}/allenai-c4-{model_name}-nemo"
         write_nemo_index(nemo_prefix, tokens_array, args.seq_length, num_sequences)
 
 

@@ -107,7 +107,7 @@ def train_llama():
     # Enable gradient checkpointing for memory efficiency
     model.gradient_checkpointing_enable()
     logger.info("Enabled gradient checkpointing")
-    dataset_path = str(DATA_DIR / "allenai-c4-100k-llama-mega")
+    dataset_path = str(DATA_DIR / "allenai-c4-llama-mega")
     
     # Verify real data exists - synthetic data is not allowed
     idx_file = dataset_path + ".idx"
@@ -124,11 +124,14 @@ def train_llama():
     logger.info(f"Dataset: {dataset_path}")
     
     # Create dataset
+    max_steps = int(os.environ.get("TRAIN_ITERS", 500))
+    warmup_steps = int(os.environ.get("WARMUP_STEPS", 50))
+    
     dataset = PretrainingDataset(
         data_path=dataset_path,
         tokenizer=tokenizer,
         seq_length=2048,
-        max_steps=50,
+        max_steps=max_steps,
         global_batch_size=64
     )
     
@@ -150,17 +153,17 @@ def train_llama():
         weight_decay=0.1,
         adam_beta1=0.9,
         adam_beta2=0.95,
-        max_steps=50,
-        warmup_steps=10,
+        max_steps=max_steps,
+        warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
         logging_steps=1,
         save_strategy="no",
-        bf16=True,  # Use bfloat16 for training
+        bf16=True,
         bf16_full_eval=False,
         dataloader_num_workers=0,
         ddp_find_unused_parameters=False,
         gradient_checkpointing=True,
-        optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",  # Use 8-bit optimizer to save memory
+        optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",
         remove_unused_columns=False,
         report_to="none",
         # Distributed training settings
@@ -235,7 +238,7 @@ def train_qwen():
     logger.info(f"  Per-device batch size: {per_device_batch_size}")
     logger.info(f"  Gradient accumulation steps: {gradient_accumulation_steps}")
     logger.info(f"  Global batch size: {global_batch_size}")
-    dataset_path = str(DATA_DIR / "allenai-c4-100k-qwen-mega")
+    dataset_path = str(DATA_DIR / "allenai-c4-qwen-mega")
     
     # Verify real data exists - synthetic data is not allowed
     idx_file = dataset_path + ".idx"
@@ -251,12 +254,14 @@ def train_qwen():
     
     logger.info(f"Dataset: {dataset_path}")
     
-    # Create dataset
+    max_steps = int(os.environ.get("TRAIN_ITERS", 500))
+    warmup_steps = int(os.environ.get("WARMUP_STEPS", 50))
+    
     dataset = PretrainingDataset(
         data_path=dataset_path,
         tokenizer=tokenizer,
         seq_length=2048,
-        max_steps=50,
+        max_steps=max_steps,
         global_batch_size=global_batch_size
     )
     training_args = TrainingArguments(
@@ -267,17 +272,17 @@ def train_qwen():
         weight_decay=0.1,
         adam_beta1=0.9,
         adam_beta2=0.95,
-        max_steps=50,
-        warmup_steps=10,
+        max_steps=max_steps,
+        warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
         logging_steps=1,
         save_strategy="no",
-        bf16=True,  # Use bfloat16 for training
+        bf16=True,
         bf16_full_eval=False,
         dataloader_num_workers=0,
         ddp_find_unused_parameters=False,
         gradient_checkpointing=True,
-        optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",  # Use 8-bit optimizer to save memory
+        optim="adamw_bnb_8bit" if HAS_BITSANDBYTES else "adamw_torch_fused",
         remove_unused_columns=False,
         report_to="none",
         # Distributed training settings
