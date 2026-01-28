@@ -35,5 +35,5 @@ RUN pip install --no-cache-dir -r amd-requirements.txt
 
 COPY . /workspace/tprimat/
 
-SHELL ["/bin/bash", "-c"]
-CMD ["/bin/bash"]
+SHELL ["/usr/bin/fish", "-c"]
+CMD ["/usr/bin/fish"]
