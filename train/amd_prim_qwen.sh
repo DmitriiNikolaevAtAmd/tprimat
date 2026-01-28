@@ -15,6 +15,7 @@ cd "$PRIMUS_PATH"
 
 PATCHED_CONFIG="$OUTPUT_DIR/qwen2.5_7B-BF16-pretrain.yaml"
 cp "$CONFIG_FILE" "$PATCHED_CONFIG"
+export PATCHED_CONFIG
 
 python3 - <<'PY'
 import os, yaml

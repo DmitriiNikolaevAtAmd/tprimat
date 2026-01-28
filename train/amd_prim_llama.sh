@@ -18,6 +18,7 @@ cd "$PRIMUS_PATH"
 
 PATCHED_CONFIG="$OUTPUT_DIR/llama3.1_8B-BF16-pretrain.yaml"
 cp "$CONFIG_FILE" "$PATCHED_CONFIG"
+export PATCHED_CONFIG
 
 python3 - <<'PY'
 import os, yaml
