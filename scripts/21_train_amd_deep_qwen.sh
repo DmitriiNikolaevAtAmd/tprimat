@@ -11,10 +11,9 @@ export HSA_ENABLE_SDMA=1
 export NCCL_DEBUG=INFO
 export RCCL_DEBUG=INFO
 
-torchrun --nproc_per_node="$NUM_GPUS" \
-         --nnodes=1 \
-         --node_rank=0 \
-         --master_addr=localhost \
-         --master_port=29500 \
-         33_train_amd_fsdp.py qwen
+deepspeed --num_gpus="$NUM_GPUS" \
+          --num_nodes=1 \
+          --master_addr=localhost \
+          --master_port=29500 \
+          21_train_amd_deep.py qwen
 

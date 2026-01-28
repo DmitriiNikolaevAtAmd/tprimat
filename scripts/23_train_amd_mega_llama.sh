@@ -17,8 +17,8 @@ if [ "$NUM_GPUS" -gt 1 ]; then
              --node_rank=0 \
              --master_addr=localhost \
              --master_port=29500 \
-             34_train_amd_mega.py llama
+             23_train_amd_mega.py llama
 else
-    python3 -u 34_train_amd_mega.py llama
+    python3 -u 23_train_amd_mega.py llama
 fi
 
