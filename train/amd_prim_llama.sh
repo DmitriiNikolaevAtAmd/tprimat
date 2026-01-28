@@ -64,8 +64,9 @@ overrides["lr_decay_iters"] = train_iters
 overrides["lr_warmup_iters"] = warmup_steps
 
 # Use local data instead of mock data
+# Note: Primus/Megatron requires the correct indexed dataset format (nemo format)
 overrides["mock_data"] = False
-overrides["train_data_path"] = f"{data_dir}/allenai-c4-llama-mega"
+overrides["train_data_path"] = f"{data_dir}/allenai-c4-llama-nemo"
 
 with open(path, "w") as f:
     yaml.dump(config, f, default_flow_style=False)
