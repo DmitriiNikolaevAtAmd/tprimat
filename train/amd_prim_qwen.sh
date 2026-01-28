@@ -119,9 +119,10 @@ if last_doc != num_seqs:
     )
 PY
 
-TRAIN_SCRIPT="./examples/run_pretrain.sh"
+# Prefer the direct training entrypoint to avoid prepare step.
+TRAIN_SCRIPT="./examples/train.sh"
 if [ ! -f "$TRAIN_SCRIPT" ]; then
-    TRAIN_SCRIPT="./examples/train.sh"
+    TRAIN_SCRIPT="./examples/run_pretrain.sh"
 fi
 if [ ! -f "$TRAIN_SCRIPT" ]; then
     echo "ERROR: No training script found in examples/"
