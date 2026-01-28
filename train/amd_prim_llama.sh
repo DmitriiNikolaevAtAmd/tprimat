@@ -67,18 +67,15 @@ overrides["lr_warmup_iters"] = warmup_steps
 # Note: Primus/Megatron requires the correct indexed dataset format (mega format)
 overrides["mock_data"] = False
 data_prefix = f"{data_dir}/allenai-c4-llama-mega"
-overrides["train_data_path"] = data_prefix
-overrides["valid_data_path"] = data_prefix
-overrides["test_data_path"] = data_prefix
-# Fallback key used in some Megatron configs
+# Use a single data source (data_path) to satisfy Megatron validation.
 overrides["data_path"] = data_prefix
+overrides["train_data_path"] = None
+overrides["valid_data_path"] = None
+overrides["test_data_path"] = None
 
 print("[config-check] data overrides:", {
     k: overrides.get(k)
     for k in (
-        "train_data_path",
-        "valid_data_path",
-        "test_data_path",
         "data_path",
     )
     if k in overrides
