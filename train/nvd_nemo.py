@@ -9,9 +9,11 @@ sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 import torch
+import torch.profiler
 import random
 import numpy as np
 import logging
+from contextlib import nullcontext
 from nemo.collections import llm
 import nemo_run as run
 from nemo.lightning import MegatronStrategy
@@ -37,6 +39,11 @@ GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
 TP = int(os.environ.get("TP", 1))
 PP = int(os.environ.get("PP", 1))
 DP = int(os.environ.get("DP", 4))
+PROFILING = os.environ.get("PROFILING", "false").lower() == "true"
+PROFILE_WAIT = int(os.environ.get("PROFILE_WAIT", 1))
+PROFILE_WARMUP = int(os.environ.get("PROFILE_WARMUP", 1))
+PROFILE_ACTIVE = int(os.environ.get("PROFILE_ACTIVE", 3))
+PROFILE_REPEAT = int(os.environ.get("PROFILE_REPEAT", 1))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,6 +52,57 @@ logging.basicConfig(
     force=True
 )
 logger = logging.getLogger(__name__)
+
+
+def get_profiler_context(output_dir: Path, model_name: str):
+    """Create Kineto GPU profiler context if profiling is enabled."""
+    if not PROFILING:
+        return nullcontext()
+    
+    profile_dir = output_dir / "profiles"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    
+    logger.info(f"Kineto GPU profiling enabled")
+    logger.info(f"  Profile output: {profile_dir}")
+    logger.info(f"  Schedule: wait={PROFILE_WAIT}, warmup={PROFILE_WARMUP}, "
+                f"active={PROFILE_ACTIVE}, repeat={PROFILE_REPEAT}")
+    
+    def trace_handler(prof):
+        trace_file = profile_dir / f"nvd_nemo_{model_name}_rank{torch.distributed.get_rank() if torch.distributed.is_initialized() else 0}.json"
+        logger.info(f"Exporting trace to {trace_file}")
+        prof.export_chrome_trace(str(trace_file))
+        
+        # Also export stacks for flame graph generation
+        stacks_file = profile_dir / f"nvd_nemo_{model_name}_rank{torch.distributed.get_rank() if torch.distributed.is_initialized() else 0}_stacks.txt"
+        try:
+            prof.export_stacks(str(stacks_file), "self_cuda_time_total")
+            logger.info(f"Exported CUDA stacks to {stacks_file}")
+        except Exception as e:
+            logger.warning(f"Could not export stacks: {e}")
+        
+        # Print summary table
+        logger.info("\n" + prof.key_averages().table(
+            sort_by="cuda_time_total", row_limit=20
+        ))
+    
+    return torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
+        schedule=torch.profiler.schedule(
+            wait=PROFILE_WAIT,
+            warmup=PROFILE_WARMUP,
+            active=PROFILE_ACTIVE,
+            repeat=PROFILE_REPEAT,
+        ),
+        on_trace_ready=trace_handler,
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True,
+        with_flops=True,
+        with_modules=True,
+    )
 
 
 def load_env_file(env_path: str) -> None:
@@ -213,9 +271,16 @@ def train_model(model_name: str):
     logger.info(f"  FP8 Hybrid: {FP8_HYBRID}")
     logger.info(f"  FP8 Param: {FP8_PARAM}")
     logger.info(f"  TP: {TP}, PP: {PP}, DP: {DP}")
+    logger.info(f"  Profiling: {PROFILING}")
     
     logger.info(f"Starting {config['display_name']} training...")
-    run.run(recipe, direct=True)
+    
+    with get_profiler_context(OUTPUT_DIR, model_name) as profiler:
+        run.run(recipe, direct=True)
+        if profiler is not None and PROFILING:
+            # Ensure final trace is exported
+            profiler.step()
+    
     logger.info(f"{config['display_name']} training completed!")
 
 
