@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+cd "$(dirname "$0")"
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
 OUTPUT_DIR="./output"
 mkdir -p "$OUTPUT_DIR"

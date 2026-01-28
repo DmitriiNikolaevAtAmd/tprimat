@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+cd "$(dirname "$0")"
 OUTPUT_DIR="./output"
 mkdir -p "$OUTPUT_DIR"
 export HF_HOME="./cache"

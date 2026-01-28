@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+cd "$(dirname "$0")"
 ./11_train_nvd_deep_llama.sh
 sleep 10
 ./11_train_nvd_deep_qwen.sh

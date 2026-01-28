@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+cd "$(dirname "$0")"
 MODEL="llama"
 NUM_GPUS=8
 
