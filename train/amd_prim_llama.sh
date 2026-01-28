@@ -19,6 +19,19 @@ export GLOO_LOG_LEVEL=WARN
 export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-ens51np0}"
 export RCCL_MSCCL_ENABLE=0
 
+TP="${TP:-1}"
+PP="${PP:-1}"
+DP="${DP:-8}"
+MBS="${MBS:-1}"
+GBS="${GBS:-64}"
+SEQ_LEN="${SEQ_LEN:-2048}"
+GRAD_ACCUM="${GRAD_ACCUM:-8}"
+TRAIN_ITERS="${TRAIN_ITERS:-500}"
+LR="${LR:-0.0003}"
+WEIGHT_DECAY="${WEIGHT_DECAY:-0.1}"
+WARMUP_STEPS="${WARMUP_STEPS:-50}"
+NUM_GPUS="$((TP * PP * DP))"
+
 echo "[*] Checking HuggingFace authentication..."
 if [ -n "$HF_TOKEN" ]; then
     export HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
@@ -63,26 +76,26 @@ import yaml
 with open('$PATCHED_CONFIG', 'r') as f:
     config = yaml.safe_load(f)
 
-config['tensor_model_parallel_size'] = 1
-config['pipeline_model_parallel_size'] = 1
+config['tensor_model_parallel_size'] = int('$TP')
+config['pipeline_model_parallel_size'] = int('$PP')
 config['sequence_parallel'] = False
-config['global_batch_size'] = 64
-config['micro_batch_size'] = 1
-config['seq_length'] = 2048
-config['encoder_seq_length'] = 2048
-config['gradient_accumulation_steps'] = 8
+config['global_batch_size'] = int('$GBS')
+config['micro_batch_size'] = int('$MBS')
+config['seq_length'] = int('$SEQ_LEN')
+config['encoder_seq_length'] = int('$SEQ_LEN')
+config['gradient_accumulation_steps'] = int('$GRAD_ACCUM')
 config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
-config['train_iters'] = 500
-config['lr_decay_iters'] = 500
-config['lr_warmup_iters'] = 50
+config['train_iters'] = int('$TRAIN_ITERS')
+config['lr_decay_iters'] = int('$TRAIN_ITERS')
+config['lr_warmup_iters'] = int('$WARMUP_STEPS')
 
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
 "
-    echo "Config patched: TP=1, PP=1, DP=8, micro_batch=1, global_batch=64, seq_len=2048 (matches nvd_nemo)"
+    echo "Config patched: TP=$TP, PP=$PP, DP=$DP, micro_batch=$MBS, global_batch=$GBS, seq_len=$SEQ_LEN"
 else
     echo "WARNING: pyyaml not available, using unpatched config"
 fi
@@ -104,18 +117,18 @@ filter_noise() {
 }
 
 bash "$TRAIN_SCRIPT" \
-    --train_iters 500 \
-    --global_batch_size 64 \
-    --micro_batch_size 1 \
-    --seq_length 2048 \
-    --tensor_model_parallel_size 1 \
-    --pipeline_model_parallel_size 1 \
-    --lr 0.0003 \
+    --train_iters "$TRAIN_ITERS" \
+    --global_batch_size "$GBS" \
+    --micro_batch_size "$MBS" \
+    --seq_length "$SEQ_LEN" \
+    --tensor_model_parallel_size "$TP" \
+    --pipeline_model_parallel_size "$PP" \
+    --lr "$LR" \
     --min_lr 0.0 \
-    --lr_warmup_iters 50 \
+    --lr_warmup_iters "$WARMUP_STEPS" \
     --lr_decay_style cosine \
-    --lr_decay_iters 500 \
-    --weight_decay 0.1 \
+    --lr_decay_iters "$TRAIN_ITERS" \
+    --weight_decay "$WEIGHT_DECAY" \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama_raw.log" | filter_noise | tee "$TPRIMAT_PATH/output/training_main_llama.log"
 
 cd "$TPRIMAT_PATH"
@@ -124,10 +137,10 @@ python3 evaluate/extract_prim_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_llama.log" \
     --model-name "llama" \
     --output "$TPRIMAT_PATH/output/train_amd_prim_llama.json" \
-    --num-gpus 8 \
-    --global-batch-size 64 \
-    --micro-batch-size 1 \
-    --tensor-parallel-size 1 \
-    --pipeline-parallel-size 1 \
-    --sequence-length 2048 \
-    --parallel-strategy "TP1_SP"
+    --num-gpus "$NUM_GPUS" \
+    --global-batch-size "$GBS" \
+    --micro-batch-size "$MBS" \
+    --tensor-parallel-size "$TP" \
+    --pipeline-parallel-size "$PP" \
+    --sequence-length "$SEQ_LEN" \
+    --parallel-strategy "TP${TP}_PP${PP}_DP${DP}"
