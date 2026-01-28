@@ -118,7 +118,7 @@ bash "$TRAIN_SCRIPT" \
 
 cd "$TPRIMAT_PATH"
 
-python3 extract_metrics.py \
+python3 scripts/extract_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_qwen.log" \
     --model-name "qwen" \
     --output "$TPRIMAT_PATH/output/train_amd_prim_qwen.json" \

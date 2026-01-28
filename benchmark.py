@@ -78,7 +78,7 @@ def extract_metrics(log_file: str, model: str, parallel_strategy: str, output_di
     num_gpus = config.hardware.platforms[platform].num_gpus
     
     cmd = [
-        "python3", "extract_metrics.py",
+        "python3", "scripts/extract_metrics.py",
         "--log-file", log_file,
         "--model-name", model,
         "--output", output_path,

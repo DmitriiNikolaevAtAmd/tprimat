@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+cd "$(dirname "$0")"
 
 OUTPUT_BASE=${1:-"output"}
 mkdir -p "$OUTPUT_BASE"
