@@ -72,12 +72,16 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
                     errors.append(f"NeMo doc_indices malformed: expected [0..{num_docs}], got [{doc_indices[0]}..{doc_indices[-1]}]")
             else:
                 print(f"  Mega format detected:")
-                doc_idx = np.frombuffer(f.read(num_docs * 8), dtype=np.int64)
+                doc_idx = np.frombuffer(f.read((num_docs + 1) * 8), dtype=np.int64)
                 pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
                 lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
-                print(f"    - doc_idx array: {len(doc_idx)} elements")
+                print(f"    - doc_idx array: {len(doc_idx)} elements (N+1)")
                 print(f"    - pointers array: {len(pointers)} elements")
                 print(f"    - lengths array: {len(lengths)} elements")
+                if len(doc_idx) > 0 and doc_idx[-1] != num_seqs:
+                    errors.append(
+                        f"Mega doc_idx malformed: doc_idx[-1]={doc_idx[-1]} != num_seqs={num_seqs}"
+                    )
         
         print(f"  Sequences: {num_seqs:,}")
         print(f"  Seq length: {lengths[0] if len(lengths) > 0 else 'N/A'}")

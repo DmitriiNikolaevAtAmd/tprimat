@@ -97,16 +97,16 @@ with open(idx_path, "rb") as f:
     _dtype = struct.unpack("<B", f.read(1))[0]
     num_seqs = struct.unpack("<Q", f.read(8))[0]
     num_docs = struct.unpack("<Q", f.read(8))[0]
-    doc_indices = f.read(num_docs * 8)
+    doc_indices = f.read((num_docs + 1) * 8)
     f.read(num_seqs * 8)          # pointers
     f.read(num_seqs * 4)          # lengths
     last_doc = struct.unpack("<Q", doc_indices[-8:])[0] if doc_indices else 0
 
 print(f"[data-check] {prefix}: num_seqs={num_seqs}, num_docs={num_docs}, doc_indices[-1]={last_doc}")
-if last_doc != max(0, num_docs - 1):
+if last_doc != num_seqs:
     raise SystemExit(
         "ERROR: Mega idx mismatch: document_indices[-1] "
-        f"({last_doc}) != num_docs-1 ({max(0, num_docs - 1)}). Re-encode Mega data."
+        f"({last_doc}) != num_seqs ({num_seqs}). Re-encode Mega data."
     )
 PY
 

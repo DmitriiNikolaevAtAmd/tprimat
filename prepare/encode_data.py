@@ -58,7 +58,8 @@ def encode_dataset(input_file: str, output_prefix: str, tokenizer_name: str, seq
         f.write(struct.pack('<Q', num_sequences))
         f.write(struct.pack('<Q', num_sequences))
         
-        doc_idx = np.arange(num_sequences, dtype=np.int64)
+        # Megatron expects document indices with a terminal entry.
+        doc_idx = np.arange(num_sequences + 1, dtype=np.int64)
         f.write(doc_idx.tobytes())
         
         pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
