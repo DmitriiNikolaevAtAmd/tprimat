@@ -15,7 +15,6 @@ from typing import Dict, List, Optional, Any, Tuple
 import torch
 from lightning.pytorch.callbacks import Callback
 
-# Try to import Transformers trainer callback
 try:
     from transformers import TrainerCallback, TrainerState, TrainerControl, TrainingArguments
     HF_AVAILABLE = True
@@ -23,7 +22,6 @@ except ImportError:
     HF_AVAILABLE = False
     TrainerCallback = object  # Dummy base class
 
-# Try to import config_loader
 try:
     from config_loader import load_config
     CONFIG_LOADER_AVAILABLE = True

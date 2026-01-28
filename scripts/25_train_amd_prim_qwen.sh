@@ -9,21 +9,16 @@ export PYTHONHASHSEED="42"
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
-
-# Suppress warnings for cleaner output
 export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
 export HF_HUB_DISABLE_PROGRESS_BARS=1
-
-# Disable debug logging for better performance
 export RCCL_DEBUG=WARN
 export NCCL_DEBUG=WARN
 export GLOO_LOG_LEVEL=WARN
-
-# RCCL network interface
 export NCCL_SOCKET_IFNAME="${NCCL_SOCKET_IFNAME:-ens51np0}"
 export RCCL_MSCCL_ENABLE=0
+
 mkdir -p "$TPRIMAT_PATH/output"
 if [ ! -d "$PRIMUS_PATH" ]; then
     echo "ERROR: Primus directory not found at: $PRIMUS_PATH"
@@ -40,8 +35,6 @@ fi
 
 cd "$PRIMUS_PATH"
 
-# Patch config to match nvd_nemo settings (TP=1 variant)
-# TP=1, PP=1, DP=8, micro_batch=1, global_batch=64, seq_len=2048
 PATCHED_CONFIG="$TPRIMAT_PATH/output/qwen2.5_7B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
@@ -51,26 +44,18 @@ import yaml
 with open('$PATCHED_CONFIG', 'r') as f:
     config = yaml.safe_load(f)
 
-# Parallelism settings (TP=1 means pure data parallel)
 config['tensor_model_parallel_size'] = 1
 config['pipeline_model_parallel_size'] = 1
-config['sequence_parallel'] = False  # sequence_parallel requires TP > 1
-
-# Batch settings (matching nvd_nemo exactly)
+config['sequence_parallel'] = False
 config['global_batch_size'] = 64
 config['micro_batch_size'] = 1
 config['seq_length'] = 2048
 config['encoder_seq_length'] = 2048
-# gradient_accumulation = global_batch / (DP * micro_batch) = 64 / (8 * 1) = 8
 config['gradient_accumulation_steps'] = 8
-
-# Enable performance optimizations
 config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
-
-# Ensure training parameters
 config['train_iters'] = 500
 config['lr_decay_iters'] = 500
 config['lr_warmup_iters'] = 50
@@ -85,7 +70,6 @@ fi
 
 export EXP="$PATCHED_CONFIG"
 
-# Note: examples/train.sh may not exist; use run_pretrain.sh instead
 TRAIN_SCRIPT="./examples/run_pretrain.sh"
 if [ ! -f "$TRAIN_SCRIPT" ]; then
     TRAIN_SCRIPT="./examples/train.sh"
@@ -96,7 +80,6 @@ if [ ! -f "$TRAIN_SCRIPT" ]; then
     exit 1
 fi
 
-# Filter noisy library messages that can't be suppressed via env vars
 filter_noise() {
     grep -v -E "(^\[Primus CLI\]|^\[Primus\] sys\.path|^Supported flash-attn versions|^\[aiter\]|^fused_indices_to_multihot|^\[PrimusPatch\]|^\[Gloo\] Rank|waiting for baton release)"
 }

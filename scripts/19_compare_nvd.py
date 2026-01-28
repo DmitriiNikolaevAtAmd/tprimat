@@ -19,29 +19,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-# ============================================================================
-# DATA LOADING
-# ============================================================================
-
 def load_nvidia_benchmarks(results_dir: str) -> Dict[str, Dict]:
     """Load all NVIDIA benchmark results with framework and model information."""
     results_path = Path(results_dir)
     
     benchmarks = {}
     
-    # Look for NVIDIA training results: train_*_{model}.json
     for json_file in sorted(results_path.glob("train_*.json")):
         try:
             with open(json_file, 'r') as f:
                 data = json.load(f)
             
-            # Only include NVIDIA results (platform = "nvd")
             platform = data.get('platform', '')
             if platform != 'nvd':
                 continue
             
-            # Extract framework and model name from filename
-            # Format: train_nvd_{framework}_{model}.json (e.g., "train_nvd_mega_llama")
             filename = json_file.stem
             parts = filename.split('_')
             
@@ -49,25 +41,22 @@ def load_nvidia_benchmarks(results_dir: str) -> Dict[str, Dict]:
             model_name = None
             
             if len(parts) >= 4 and parts[1] == 'nvd':
-                framework = parts[2]  # mega/tran/deep/nemo
-                model_name = parts[3]  # llama or qwen
+                framework = parts[2]
+                model_name = parts[3]
             elif len(parts) >= 3:
-                # Fallback for old naming format
                 framework = parts[1]
                 model_name = parts[2]
             
             if framework and model_name:
-                # Normalize framework names for display
                 framework_display = {
                     'mega': 'Megatron',
                     'tran': 'Transformers',
                     'deep': 'DeepSpeed',
                     'nemo': 'NeMo',
                     'fsdp': 'FSDP',
-                    'nvd': 'NVIDIA'  # Fallback
+                    'nvd': 'NVIDIA'
                 }.get(framework, framework.upper())
                 
-                # Store with key like "mega-llama"
                 key = f"{framework}-{model_name}"
                 data['framework'] = framework
                 data['framework_display'] = framework_display
@@ -81,10 +70,6 @@ def load_nvidia_benchmarks(results_dir: str) -> Dict[str, Dict]:
     return benchmarks
 
 
-# ============================================================================
-# PLOTTING
-# ============================================================================
-
 def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "nvd_compare.png"):
     """Create visual comparison of all NVIDIA framework-model combinations."""
     
@@ -92,44 +77,30 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
         print("[!] No NVIDIA benchmark data to plot")
         return None
     
-    # Create 2x2 grid for comprehensive comparison with elegant styling
     fig, axes = plt.subplots(2, 2, figsize=(16, 11), facecolor='white')
     fig.suptitle('NVIDIA H100 - Framework Comparison', fontsize=20, fontweight='bold', y=0.995, color='#1E4D2B')
-    
-    # Flatten axes for easier indexing
     axes = axes.flatten()
     
-    # Setup - elegant colors and markers for each framework-model combo
-    # Colors: Different hues for frameworks, darker/lighter for models
     style_map = {
-        # Megatron - Blue shades
         'mega-llama': {'color': '#2E86AB', 'marker': 'o', 'label': 'Megatron Llama', 'linestyle': '-'},
         'mega-qwen':  {'color': '#5FA8D3', 'marker': 's', 'label': 'Megatron Qwen', 'linestyle': '--'},
-        # Transformers - Green shades
         'tran-llama': {'color': '#06A77D', 'marker': 'o', 'label': 'Transformers Llama', 'linestyle': '-'},
         'tran-qwen':  {'color': '#4DB896', 'marker': 's', 'label': 'Transformers Qwen', 'linestyle': '--'},
-        # DeepSpeed - Orange shades
         'deep-llama': {'color': '#D97B2C', 'marker': 'o', 'label': 'DeepSpeed Llama', 'linestyle': '-'},
         'deep-qwen':  {'color': '#F4A261', 'marker': 's', 'label': 'DeepSpeed Qwen', 'linestyle': '--'},
-        # NeMo - Purple shades
         'nemo-llama': {'color': '#9B59B6', 'marker': 'o', 'label': 'NeMo Llama', 'linestyle': '-'},
         'nemo-qwen':  {'color': '#BB8FCE', 'marker': 's', 'label': 'NeMo Qwen', 'linestyle': '--'},
-        # FSDP - Red shades
         'fsdp-llama': {'color': '#C41E3A', 'marker': 'o', 'label': 'FSDP Llama', 'linestyle': '-'},
         'fsdp-qwen':  {'color': '#E74C3C', 'marker': 's', 'label': 'FSDP Qwen', 'linestyle': '--'},
     }
     
-    # Extract training config for calculations (use first available)
     first_data = next(iter(benchmarks.values()))
     config = first_data.get('training_config', {})
     
-    # 1. Per-GPU Throughput (Bar Chart)
     ax1 = axes[0]
     labels = []
     values = []
     colors_list = []
-    
-    # Order keys for consistent display
     ordered_keys = sorted(benchmarks.keys())
     
     for key in ordered_keys:
@@ -150,7 +121,6 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
         ax1.set_xticklabels(labels, rotation=45, ha='right', fontsize=9)
         ax1.grid(axis='y', alpha=0.3, linestyle='--', linewidth=0.5)
         
-        # Add value labels on bars
         for bar, value in zip(bars, values):
             height = bar.get_height()
             ax1.text(bar.get_x() + bar.get_width()/2., height,
@@ -161,7 +131,6 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
                 ha='center', va='center', transform=ax1.transAxes)
         ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=14)
     
-    # 2. Training Loss over Time
     ax2 = axes[1]
     has_data = False
     
@@ -169,7 +138,6 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
         if key in benchmarks and 'loss_values' in benchmarks[key] and key in style_map:
             loss_values = benchmarks[key]['loss_values']
             if loss_values:
-                # Subsample for readability if too many points
                 steps = range(len(loss_values))
                 style = style_map[key]
                 ax2.plot(steps, loss_values, 
@@ -179,7 +147,7 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
                         label=style['label'], 
                         linewidth=2, 
                         markersize=2, 
-                        markevery=max(1, len(loss_values)//50),  # Show fewer markers
+                        markevery=max(1, len(loss_values)//50),
                         alpha=0.85)
                 has_data = True
     
@@ -194,7 +162,6 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
                 ha='center', va='center', transform=ax2.transAxes)
         ax2.set_title('Training Loss over Time', fontweight='bold', fontsize=14)
     
-    # 3. Step Duration over Time
     ax3 = axes[2]
     has_data = False
     
@@ -214,7 +181,6 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
                         markevery=max(1, len(step_times)//50),
                         alpha=0.85)
                 
-                # Add average line annotation
                 avg_time = sum(step_times[1:]) / (len(step_times) - 1) if len(step_times) > 1 else sum(step_times) / len(step_times)
                 ax3.axhline(y=avg_time, color=style['color'], linestyle=':', alpha=0.3, linewidth=1.2)
                 has_data = True
@@ -230,7 +196,6 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
                 ha='center', va='center', transform=ax3.transAxes)
         ax3.set_title('Step Duration over Time', fontweight='bold', fontsize=14)
     
-    # 4. Learning Rate over Time (Line Chart)
     ax4 = axes[3]
     has_data = False
     
@@ -257,7 +222,6 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
         ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=14, pad=10)
         ax4.legend(fontsize=9, loc='best', framealpha=0.9)
         ax4.grid(alpha=0.3, linestyle='--', linewidth=0.5)
-        # Use scientific notation for y-axis if values are small
         ax4.ticklabel_format(style='scientific', axis='y', scilimits=(0,0))
     else:
         ax4.text(0.5, 0.5, 'Learning rate data not available', 
@@ -271,10 +235,6 @@ def create_nvidia_comparison_plot(benchmarks: Dict[str, Dict], output_file: str 
     return fig
 
 
-# ============================================================================
-# METRICS COMPARISON
-# ============================================================================
-
 def print_nvidia_comparison(benchmarks: Dict[str, Dict]):
     """Print comprehensive comparison of NVIDIA benchmark metrics."""
     
@@ -282,7 +242,6 @@ def print_nvidia_comparison(benchmarks: Dict[str, Dict]):
     print("NVIDIA H100 - FRAMEWORK PERFORMANCE COMPARISON")
     print("="*100)
     
-    # Extract GPU info (should be same for all)
     first_data = next(iter(benchmarks.values()))
     gpu_info = first_data['gpu_info']
     config = first_data.get('training_config', {})
@@ -292,11 +251,9 @@ def print_nvidia_comparison(benchmarks: Dict[str, Dict]):
     print(f"  PyTorch: {gpu_info.get('pytorch_version', 'N/A')}")
     print(f"  CUDA: {gpu_info.get('software_version', 'N/A')}")
     
-    # Group by model for easier comparison
     llama_benchmarks = {k: v for k, v in benchmarks.items() if 'llama' in k}
     qwen_benchmarks = {k: v for k, v in benchmarks.items() if 'qwen' in k}
     
-    # Print Llama comparison
     if llama_benchmarks:
         print("\n" + "-"*100)
         print("LLAMA 3.1 8B COMPARISON")
@@ -316,7 +273,6 @@ def print_nvidia_comparison(benchmarks: Dict[str, Dict]):
             
             print(f"{framework:<20} {tps_gpu:>15,.1f} {step_time:>15.3f}s {final_loss:>12.4f} {total_time:>12.1f}s")
     
-    # Print Qwen comparison
     if qwen_benchmarks:
         print("\n" + "-"*100)
         print("QWEN 2.5 7B COMPARISON")
@@ -336,12 +292,10 @@ def print_nvidia_comparison(benchmarks: Dict[str, Dict]):
             
             print(f"{framework:<20} {tps_gpu:>15,.1f} {step_time:>15.3f}s {final_loss:>12.4f} {total_time:>12.1f}s")
     
-    # Overall winner analysis
     print("\n" + "="*100)
     print("PERFORMANCE SUMMARY")
     print("="*100)
     
-    # Find best throughput
     best_throughput = max(benchmarks.items(), 
                          key=lambda x: x[1]['performance_metrics'].get('tokens_per_second_per_gpu', 0))
     best_tps = best_throughput[1]['performance_metrics']['tokens_per_second_per_gpu']
@@ -351,7 +305,6 @@ def print_nvidia_comparison(benchmarks: Dict[str, Dict]):
     print(f"\n  Highest Throughput: {best_framework} {best_model}")
     print(f"    {best_tps:,.1f} tokens/s/GPU")
     
-    # Find fastest step time
     best_step_time = min(benchmarks.items(), 
                         key=lambda x: x[1]['performance_metrics'].get('avg_step_time_seconds', float('inf')))
     best_step = best_step_time[1]['performance_metrics']['avg_step_time_seconds']
@@ -361,7 +314,6 @@ def print_nvidia_comparison(benchmarks: Dict[str, Dict]):
     print(f"\n  Fastest Step Time: {best_step_framework} {best_step_model}")
     print(f"    {best_step:.3f} seconds/step")
     
-    # Calculate relative performance
     print(f"\n  Throughput Range:")
     min_tps = min(v['performance_metrics'].get('tokens_per_second_per_gpu', float('inf')) 
                   for v in benchmarks.values())
@@ -371,10 +323,6 @@ def print_nvidia_comparison(benchmarks: Dict[str, Dict]):
     
     print("\n" + "="*100 + "\n")
 
-
-# ============================================================================
-# MAIN
-# ============================================================================
 
 def main():
     parser = argparse.ArgumentParser(
@@ -409,8 +357,7 @@ def main():
     
     print(f"\n  Found {len(benchmarks)} NVIDIA benchmark(s)")
     
-    # Generate comparison plot (save in root directory, not results_dir)
-    output_path = args.output
+    output_path = os.path.join(args.results_dir, args.output)
     print(f"\nGenerating comparison plot: {output_path}")
     try:
         create_nvidia_comparison_plot(benchmarks, output_path)
@@ -419,7 +366,6 @@ def main():
         import traceback
         traceback.print_exc()
     
-    # Print detailed comparison
     print_nvidia_comparison(benchmarks)
     
     return 0

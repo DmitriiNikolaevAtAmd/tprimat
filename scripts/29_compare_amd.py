@@ -19,10 +19,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-# ============================================================================
-# DATA LOADING
-# ============================================================================
-
 def load_amd_benchmarks(results_dir: str) -> Dict[str, Dict]:
     """Load all AMD benchmark results with framework and model information."""
     results_path = Path(results_dir)
@@ -81,10 +77,6 @@ def load_amd_benchmarks(results_dir: str) -> Dict[str, Dict]:
     
     return benchmarks
 
-
-# ============================================================================
-# PLOTTING
-# ============================================================================
 
 def create_amd_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "amd_compare.png"):
     """Create visual comparison of all AMD framework-model combinations."""
@@ -276,10 +268,6 @@ def create_amd_comparison_plot(benchmarks: Dict[str, Dict], output_file: str = "
     return fig
 
 
-# ============================================================================
-# METRICS COMPARISON
-# ============================================================================
-
 def print_amd_comparison(benchmarks: Dict[str, Dict]):
     """Print comprehensive comparison of AMD benchmark metrics."""
     
@@ -377,10 +365,6 @@ def print_amd_comparison(benchmarks: Dict[str, Dict]):
     print("\n" + "="*100 + "\n")
 
 
-# ============================================================================
-# MAIN
-# ============================================================================
-
 def main():
     parser = argparse.ArgumentParser(
         description='AMD GPU benchmark comparison - all frameworks and models'
@@ -414,8 +398,7 @@ def main():
     
     print(f"\n  Found {len(benchmarks)} AMD benchmark(s)")
     
-    # Generate comparison plot (save in root directory, not results_dir)
-    output_path = args.output
+    output_path = os.path.join(args.results_dir, args.output)
     print(f"\nGenerating comparison plot: {output_path}")
     try:
         create_amd_comparison_plot(benchmarks, output_path)
@@ -424,7 +407,6 @@ def main():
         import traceback
         traceback.print_exc()
     
-    # Print detailed comparison
     print_amd_comparison(benchmarks)
     
     return 0

@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 from datasets import load_dataset
 
-# Increase HuggingFace timeout (default is 10s)
 os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "120")
 
 
