@@ -71,6 +71,7 @@ fi
 export EXP="$PATCHED_CONFIG"
 
 DATASET_PREFIX="${DATA_DIR}/allenai-c4-qwen-mega"
+export DATASET_PREFIX
 python3 - <<'PY'
 import os
 import struct
