@@ -17,7 +17,7 @@ import yaml
 with open('$PATCHED_CONFIG', 'r') as f:
     config = yaml.safe_load(f)
 
-config['tensor_model_parallel_size'] = 2
+config['tensor_model_parallel_size'] = 1
 config['pipeline_model_parallel_size'] = 1
 config['sequence_parallel'] = False
 config['global_batch_size'] = 128
@@ -62,7 +62,7 @@ bash "$TRAIN_SCRIPT" \
     --global_batch_size 128 \
     --micro_batch_size 1 \
     --seq_length 2048 \
-    --tensor_model_parallel_size 2 \
+    --tensor_model_parallel_size 1 \
     --pipeline_model_parallel_size 1 \
     --lr 3.0e-4 \
     --min_lr 0.0 \
@@ -81,7 +81,7 @@ python3 evaluate/extract_prim_metrics.py \
     --num-gpus 8 \
     --global-batch-size 128 \
     --micro-batch-size 1 \
-    --tensor-parallel-size 2 \
+    --tensor-parallel-size 1 \
     --pipeline-parallel-size 1 \
     --sequence-length 2048 \
-    --parallel-strategy "TP2_PP1_DP4"
+    --parallel-strategy "TP1_PP1_DP8"
