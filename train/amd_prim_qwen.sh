@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
-cd "$(dirname "$0")"
-TPRIMAT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TPRIMAT_PATH="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
 
 export PYTORCH_ALLOC_CONF='expandable_segments:True'
