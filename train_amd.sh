@@ -11,4 +11,4 @@ export DATA_DIR="./data"
 ./train/amd_prim_llama.sh
 ./train/amd_prim_qwen.sh
 
-./evaluate/compare_amd.sh
+./evaluate/validate_outputs.sh --platform amd && ./evaluate/compare_amd.sh
