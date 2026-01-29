@@ -4,6 +4,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TPRIMAT_PATH="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
 
+# Source config.env if it exists
+if [ -f "$TPRIMAT_PATH/config.env" ]; then
+    set -a
+    source "$TPRIMAT_PATH/config.env"
+    set +a
+fi
+
 mkdir -p "$TPRIMAT_PATH/output"
 CONFIG_FILE="examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml"
 cd "$PRIMUS_PATH"
