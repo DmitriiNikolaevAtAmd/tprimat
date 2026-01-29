@@ -24,3 +24,5 @@ fi
 ./train/amd_prim_qwen.sh
 
 ./evaluate/validate_outputs.sh --platform amd && ./evaluate/compare_amd.sh
+
+./wrap.sh

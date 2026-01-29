@@ -112,7 +112,10 @@ def train_model(model_name: str, model_config: dict):
     set_seed(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    grad_accum = model_config['grad_accum_steps']
+    # Normalize grad accumulation across distributed ranks so GBS stays comparable
+    base_grad_accum = int(model_config.get("grad_accum_steps", GRAD_ACCUM))
+    grad_accum = base_grad_accum // world_size if world_size > 1 else base_grad_accum
+    grad_accum = max(1, grad_accum)
     global_batch_size = MBS * grad_accum * world_size
     
     if torch.cuda.is_available():

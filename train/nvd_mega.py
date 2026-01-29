@@ -16,6 +16,7 @@ import json
 import time
 from pathlib import Path
 from datetime import datetime
+from contextlib import nullcontext
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 WORKSPACE_ROOT = Path(__file__).parent.parent
@@ -81,8 +82,18 @@ class PretrainingDataset:
                 input_ids = tokens[:self.seq_length]
             
             batch_tokens.append(input_ids)
-        
-        return torch.stack(batch_tokens).to(device)
+
+        # Keep batch on CPU; we'll transfer once with non_blocking=True.
+        batch = torch.stack(batch_tokens)
+        if batch.device.type != "cpu":
+            batch = batch.cpu()
+        # Pin memory helps H2D copies when using non_blocking=True
+        if torch.cuda.is_available():
+            try:
+                batch = batch.pin_memory()
+            except Exception:
+                pass
+        return batch.to(device, non_blocking=True)
 
 
 def set_seed(seed):
@@ -98,13 +109,18 @@ def train_model(model_name: str, model_config: dict):
     logger.info(f"Starting Mega-LM training for {model_name}")
     logger.info(f"=" * 80)
     
-    rank = int(os.environ.get('RANK', 0))
-    local_rank = int(os.environ.get('LOCAL_RANK', 0))
-    world_size = int(os.environ.get('WORLD_SIZE', 1))
+    rank = int(os.environ.get("RANK", 0))
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    world_size = int(os.environ.get("WORLD_SIZE", 1))
     
     if world_size > 1:
         torch.cuda.set_device(local_rank)
-        torch.distributed.init_process_group(backend='nccl')
+        torch.distributed.init_process_group(backend="nccl")
+        # Ensure DDP doesn't spend extra time in broadcast bucket views
+        try:
+            torch.distributed.barrier()
+        except Exception:
+            pass
         logger.info(f"Initialized distributed training: rank={rank}, world_size={world_size}")
     else:
         logger.info("Running in single-GPU mode")
@@ -112,7 +128,10 @@ def train_model(model_name: str, model_config: dict):
     set_seed(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
-    grad_accum = model_config['grad_accum_steps']
+    # Normalize grad accumulation across distributed ranks so GBS stays comparable
+    base_grad_accum = int(model_config.get("grad_accum_steps", GRAD_ACCUM))
+    grad_accum = base_grad_accum // world_size if world_size > 1 else base_grad_accum
+    grad_accum = max(1, grad_accum)
     global_batch_size = MBS * grad_accum * world_size
     
     if torch.cuda.is_available():
@@ -150,7 +169,17 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"Initializing model: {model_config['hf_model']} (random weights)")
         torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
         config = AutoConfig.from_pretrained(model_config['hf_model'], trust_remote_code=True)
-        model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+        # Prefer FlashAttention2 when available (major perf win on NVIDIA)
+        try:
+            model = AutoModelForCausalLM.from_config(
+                config,
+                torch_dtype=torch_dtype,
+                attn_implementation="flash_attention_2",
+            )
+            logger.info("Enabled FlashAttention2")
+        except Exception as e:
+            logger.warning(f"FlashAttention2 not available, using default attention: {e}")
+            model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
         model.config.use_cache = False
         
         if world_size == 1:
@@ -164,11 +193,13 @@ def train_model(model_name: str, model_config: dict):
             model.gradient_checkpointing_enable()
             logger.info("Enabled gradient checkpointing")
         
+        is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
             device = torch.device(f'cuda:{local_rank}')
             model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
             logger.info(f"Wrapped model with DDP on device {local_rank}")
+            is_ddp = True
         
         dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
         
@@ -226,11 +257,16 @@ def train_model(model_name: str, model_config: dict):
                 input_ids = dataset.get_batch(batch_size, device)
                 labels = input_ids.clone()
                 
-                with torch.amp.autocast('cuda', dtype=torch_dtype):
-                    outputs = model(input_ids=input_ids, labels=labels)
-                    loss = outputs.loss / grad_accum
-                
-                loss.backward()
+                # Avoid DDP gradient all-reduce on every micro-step
+                sync_ctx = nullcontext()
+                if is_ddp and micro_step < (grad_accum - 1):
+                    sync_ctx = model.no_sync()
+
+                with sync_ctx:
+                    with torch.amp.autocast('cuda', dtype=torch_dtype):
+                        outputs = model(input_ids=input_ids, labels=labels)
+                        loss = outputs.loss / grad_accum
+                    loss.backward()
                 step_losses.append(loss.item() * grad_accum)
             
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

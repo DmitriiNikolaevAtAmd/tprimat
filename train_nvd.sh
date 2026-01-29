@@ -43,3 +43,5 @@ sleep 10
 ./train/nvd_tran_qwen.sh
 
 ./evaluate/validate_outputs.sh --platform nvd && ./evaluate/compare_nvd.sh
+
+./wrap.sh
