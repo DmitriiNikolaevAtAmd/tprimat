@@ -32,6 +32,7 @@ config['fp32_residual_connection'] = False
 config['train_iters'] = 50
 config['lr_decay_iters'] = 50
 config['lr_warmup_iters'] = 10
+config['mock_data'] = True
 
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
