@@ -6,9 +6,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
 export OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/output}"
-export DATA_DIR="${DATA_DIR:-$ROOT_DIR/data}"
-export HF_HOME="${HF_HOME:-$ROOT_DIR/cache}"
-mkdir -p "$OUTPUT_DIR" "$HF_HOME"
+export DATA_DIR="${DATA_DIR:-/data/tprimat}"
+mkdir -p "$OUTPUT_DIR"
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 export USE_TF=NO

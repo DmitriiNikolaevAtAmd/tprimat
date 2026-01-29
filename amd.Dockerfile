@@ -25,9 +25,7 @@ ENV NCCL_NET_GDR_LEVEL=PHB
 ENV NCCL_IB_DISABLE=0
 ENV RCCL_MSCCL_ENABLE=0
 
-ENV HF_HOME="/workspace/cache/huggingface"
-
-RUN mkdir -p /workspace/tprimat /workspace/cache/huggingface
+RUN mkdir -p /workspace/tprimat
 WORKDIR /workspace/tprimat
 
 COPY amd-requirements.txt /workspace/tprimat/
