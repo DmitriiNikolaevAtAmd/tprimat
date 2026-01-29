@@ -53,10 +53,6 @@ if [ ! -f "$TRAIN_SCRIPT" ]; then
     exit 1
 fi
 
-filter_noise() {
-    grep -v -E "(^\[Primus CLI\]|^\[Primus\] sys\.path|^Supported flash-attn versions|^\[aiter\]|^fused_indices_to_multihot|^\[PrimusPatch\]|^\[Gloo\] Rank|waiting for baton release)"
-}
-
 bash "$TRAIN_SCRIPT" \
     --train_iters 50 \
     --global_batch_size 128 \
@@ -70,7 +66,7 @@ bash "$TRAIN_SCRIPT" \
     --lr_decay_style cosine \
     --lr_decay_iters 50 \
     --weight_decay 0.1 \
-    2>&1 | tee "$TPRIMAT_PATH/output/training_main_qwen_raw.log" | filter_noise | tee "$TPRIMAT_PATH/output/training_main_qwen.log"
+    2>&1 | tee "$TPRIMAT_PATH/output/training_main_qwen.log"
 
 cd "$TPRIMAT_PATH"
 
