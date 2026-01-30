@@ -32,7 +32,8 @@ config['global_batch_size'] = 128
 config['micro_batch_size'] = 1
 config['seq_length'] = 2048
 config['encoder_seq_length'] = 2048
-config['gradient_accumulation_steps'] = 64
+# grad_accum = GBS / (MBS * num_gpus) = 128 / (1 * 8) = 16
+config['gradient_accumulation_steps'] = 16
 config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
