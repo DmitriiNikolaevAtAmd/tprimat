@@ -28,12 +28,12 @@ with open('$PATCHED_CONFIG', 'r') as f:
 config['tensor_model_parallel_size'] = 1
 config['pipeline_model_parallel_size'] = 1
 config['sequence_parallel'] = False
-config['global_batch_size'] = 128
+config['global_batch_size'] = 64
 config['micro_batch_size'] = 1
 config['seq_length'] = 2048
 config['encoder_seq_length'] = 2048
-# grad_accum = GBS / (MBS * num_gpus) = 128 / (1 * 8) = 16
-config['gradient_accumulation_steps'] = 16
+# grad_accum = GBS / (MBS * num_gpus) = 64 / (1 * 8) = 8
+config['gradient_accumulation_steps'] = 8
 config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
@@ -64,7 +64,7 @@ fi
 
 bash "$TRAIN_SCRIPT" \
     --train_iters 50 \
-    --global_batch_size 128 \
+    --global_batch_size 64 \
     --micro_batch_size 1 \
     --seq_length 2048 \
     --tensor_model_parallel_size 1 \
@@ -84,7 +84,7 @@ python3 evaluate/extract_prim_metrics.py \
     --model-name "qwen" \
     --output "$TPRIMAT_PATH/output/train_amd_prim_qwen.json" \
     --num-gpus 8 \
-    --global-batch-size 128 \
+    --global-batch-size 64 \
     --micro-batch-size 1 \
     --tensor-parallel-size 1 \
     --pipeline-parallel-size 1 \
