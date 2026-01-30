@@ -14,6 +14,12 @@ fi
 
 mkdir -p "$TPRIMAT_PATH/output"
 
+# Training batch config
+NUM_GPUS="${NUM_GPUS:-8}"
+GBS="${GBS:-64}"
+MBS="${MBS:-1}"
+GRAD_ACCUM=$((GBS / (MBS * NUM_GPUS)))
+
 # Critical AMD performance settings
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
@@ -39,12 +45,12 @@ with open('$PATCHED_CONFIG', 'r') as f:
 config['tensor_model_parallel_size'] = 1
 config['pipeline_model_parallel_size'] = 1
 config['sequence_parallel'] = True
-config['global_batch_size'] = 64
-config['micro_batch_size'] = 1
+config['global_batch_size'] = int('$GBS')
+config['micro_batch_size'] = int('$MBS')
 config['seq_length'] = 2048
 config['encoder_seq_length'] = 2048
-# grad_accum = GBS / (MBS * num_gpus) = 64 / (1 * 8) = 8
-config['gradient_accumulation_steps'] = 8
+# grad_accum = GBS / (MBS * num_gpus)
+config['gradient_accumulation_steps'] = int('$GRAD_ACCUM')
 config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
@@ -75,8 +81,8 @@ fi
 
 bash "$TRAIN_SCRIPT" \
     --train_iters 50 \
-    --global_batch_size 64 \
-    --micro_batch_size 1 \
+    --global_batch_size "$GBS" \
+    --micro_batch_size "$MBS" \
     --seq_length 2048 \
     --tensor_model_parallel_size 1 \
     --pipeline_model_parallel_size 1 \
@@ -94,9 +100,9 @@ python3 evaluate/extract_prim_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_llama.log" \
     --model-name "llama" \
     --output "$TPRIMAT_PATH/output/train_amd_prim_llama.json" \
-    --num-gpus 8 \
-    --global-batch-size 64 \
-    --micro-batch-size 1 \
+    --num-gpus "$NUM_GPUS" \
+    --global-batch-size "$GBS" \
+    --micro-batch-size "$MBS" \
     --tensor-parallel-size 1 \
     --pipeline-parallel-size 1 \
     --sequence-length 2048 \
