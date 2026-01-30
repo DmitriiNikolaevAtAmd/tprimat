@@ -20,6 +20,11 @@ GBS="${GBS:-64}"
 MBS="${MBS:-1}"
 GRAD_ACCUM=$((GBS / (MBS * NUM_GPUS)))
 
+# Training schedule
+TRAIN_ITERS="${TRAIN_ITERS:-50}"
+LR_WARMUP_ITERS="${LR_WARMUP_ITERS:-10}"
+LR_DECAY_ITERS="${LR_DECAY_ITERS:-$TRAIN_ITERS}"
+
 # Critical AMD performance settings
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
@@ -65,10 +70,10 @@ config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
-# Training schedule (match Jan 27 performance config)
-config['train_iters'] = 500
-config['lr_decay_iters'] = 500
-config['lr_warmup_iters'] = 50
+# Training schedule
+config['train_iters'] = int('$TRAIN_ITERS')
+config['lr_decay_iters'] = int('$LR_DECAY_ITERS')
+config['lr_warmup_iters'] = int('$LR_WARMUP_ITERS')
 
 # Disable logging/profiling
 config['disable_tensorboard'] = True
@@ -106,7 +111,7 @@ if [ ! -f "$TRAIN_SCRIPT" ]; then
 fi
 
 bash "$TRAIN_SCRIPT" \
-    --train_iters 500 \
+    --train_iters "$TRAIN_ITERS" \
     --global_batch_size "$GBS" \
     --micro_batch_size "$MBS" \
     --seq_length 2048 \
@@ -114,9 +119,9 @@ bash "$TRAIN_SCRIPT" \
     --pipeline_model_parallel_size 1 \
     --lr 3.0e-4 \
     --min_lr 0.0 \
-    --lr_warmup_iters 50 \
+    --lr_warmup_iters "$LR_WARMUP_ITERS" \
     --lr_decay_style cosine \
-    --lr_decay_iters 500 \
+    --lr_decay_iters "$LR_DECAY_ITERS" \
     --weight_decay 0.1 \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_qwen.log"
 
