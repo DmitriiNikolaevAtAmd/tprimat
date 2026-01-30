@@ -2,7 +2,14 @@
 import os
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Resolve relative paths before importing transformers (which uses HF_HOME)
+_workspace_root = Path(__file__).parent.parent
+sys.path.insert(0, str(_workspace_root))
+for _env_var in ("HF_HOME", "HF_DATASETS_CACHE"):
+    _val = os.environ.get(_env_var)
+    if _val and not os.path.isabs(_val):
+        os.environ[_env_var] = str(_workspace_root / _val)
 
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
@@ -19,7 +26,8 @@ from datetime import datetime
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 WORKSPACE_ROOT = Path(__file__).parent.parent
-OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(WORKSPACE_ROOT / "output")))
+_output_dir = os.environ.get("OUTPUT_DIR", "output")
+OUTPUT_DIR = Path(_output_dir) if os.path.isabs(_output_dir) else WORKSPACE_ROOT / _output_dir
 
 SEED = int(os.environ.get("SEED", 42))
 MBS = int(os.environ.get("MBS", 1))

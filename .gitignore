@@ -100,9 +100,6 @@ tmp/
 temp/
 *.tmp
 
-# Accidentally created directories
-scripts/
-
 # Numeric-only directories
 [0-9]*/
 ![0-9]*[!0-9]*/

@@ -2,6 +2,7 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TPRIMAT_PATH="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$TPRIMAT_PATH"
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
 
 # Source config.env if it exists
