@@ -13,6 +13,17 @@ if [ -f "$TPRIMAT_PATH/config.env" ]; then
 fi
 
 mkdir -p "$TPRIMAT_PATH/output"
+
+# Critical AMD performance settings
+export RCCL_DEBUG=ERROR
+export NCCL_DEBUG=ERROR
+export RCCL_MSCCL_ENABLE=0
+export HSA_NO_SCRATCH_RECLAIM=1
+export HSA_ENABLE_SDMA=1
+export HSA_FORCE_FINE_GRAIN_PCIE=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export CUDA_DEVICE_MAX_CONNECTIONS=1
+
 CONFIG_FILE="examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml"
 cd "$PRIMUS_PATH"
 
@@ -27,7 +38,7 @@ with open('$PATCHED_CONFIG', 'r') as f:
 
 config['tensor_model_parallel_size'] = 1
 config['pipeline_model_parallel_size'] = 1
-config['sequence_parallel'] = False
+config['sequence_parallel'] = True
 config['global_batch_size'] = 64
 config['micro_batch_size'] = 1
 config['seq_length'] = 2048
@@ -89,4 +100,4 @@ python3 evaluate/extract_prim_metrics.py \
     --tensor-parallel-size 1 \
     --pipeline-parallel-size 1 \
     --sequence-length 2048 \
-    --parallel-strategy "TP1_PP1_DP8"
+    --parallel-strategy "TP1_SP"
