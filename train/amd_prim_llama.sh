@@ -23,12 +23,22 @@ GRAD_ACCUM=$((GBS / (MBS * NUM_GPUS)))
 # Critical AMD performance settings
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
+export GLOO_LOG_LEVEL=ERROR
 export RCCL_MSCCL_ENABLE=0
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
+export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_DEVICE_MAX_CONNECTIONS=1
+
+# Disable extra logging/profiling noise
+export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
+export TOKENIZERS_PARALLELISM=false
+export TRANSFORMERS_VERBOSITY=error
+export HF_HUB_DISABLE_PROGRESS_BARS=1
+export TORCH_CPP_LOG_LEVEL=ERROR
+export TORCH_SHOW_CPP_STACKTRACES=0
 
 CONFIG_FILE="examples/megatron/configs/MI300X/llama3.1_8B-BF16-pretrain.yaml"
 cd "$PRIMUS_PATH"
@@ -44,7 +54,7 @@ with open('$PATCHED_CONFIG', 'r') as f:
 
 config['tensor_model_parallel_size'] = 1
 config['pipeline_model_parallel_size'] = 1
-config['sequence_parallel'] = True
+config['sequence_parallel'] = False
 config['global_batch_size'] = int('$GBS')
 config['micro_batch_size'] = int('$MBS')
 config['seq_length'] = 2048
@@ -55,10 +65,26 @@ config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
-config['train_iters'] = 50
-config['lr_decay_iters'] = 50
-config['lr_warmup_iters'] = 10
-config['mock_data'] = True
+# Training schedule (match Jan 27 performance config)
+config['train_iters'] = 500
+config['lr_decay_iters'] = 500
+config['lr_warmup_iters'] = 50
+
+# Disable logging/profiling
+config['disable_tensorboard'] = True
+config['disable_wandb'] = True
+config['disable_mlflow'] = True
+config['log_interval'] = 0
+config['log_timers_to_tensorboard'] = False
+config['log_throughput'] = False
+config['log_memory_to_tensorboard'] = False
+config['log_learning_rate_to_tensorboard'] = False
+config['log_loss_scale_to_tensorboard'] = False
+config['profile'] = False
+config['use_pytorch_profiler'] = False
+config['torch_profiler_with_stack'] = False
+config['torch_profiler_record_shapes'] = False
+config['torch_profiler_use_gzip'] = False
 
 with open('$PATCHED_CONFIG', 'w') as f:
     yaml.dump(config, f)
@@ -80,7 +106,7 @@ if [ ! -f "$TRAIN_SCRIPT" ]; then
 fi
 
 bash "$TRAIN_SCRIPT" \
-    --train_iters 50 \
+    --train_iters 500 \
     --global_batch_size "$GBS" \
     --micro_batch_size "$MBS" \
     --seq_length 2048 \
@@ -88,9 +114,9 @@ bash "$TRAIN_SCRIPT" \
     --pipeline_model_parallel_size 1 \
     --lr 3.0e-4 \
     --min_lr 0.0 \
-    --lr_warmup_iters 10 \
+    --lr_warmup_iters 50 \
     --lr_decay_style cosine \
-    --lr_decay_iters 50 \
+    --lr_decay_iters 500 \
     --weight_decay 0.1 \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama.log"
 
