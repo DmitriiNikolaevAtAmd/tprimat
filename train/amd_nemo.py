@@ -123,16 +123,14 @@ def train_model(model_name: str):
         )
     
     logger.info(f"Data validation passed: {mega_dataset_path}")
-    logger.info("Using NeMo MockDataModule for consistent benchmarking")
+    logger.info("Using NeMo PreTrainingDataModule with real C4 dataset")
     
-    from nemo.collections.llm.gpt.data.mock import MockDataModule
-    recipe.data = MockDataModule(
+    from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
+    recipe.data = PreTrainingDataModule(
+        paths=[mega_dataset_path],
         seq_length=SEQ_LEN,
         micro_batch_size=MBS,
         global_batch_size=GBS,
-        num_train_samples=TRAIN_ITERS * GBS,
-        num_val_samples=GBS,
-        num_test_samples=GBS,
     )
     
     recipe.trainer.max_steps = TRAIN_ITERS
