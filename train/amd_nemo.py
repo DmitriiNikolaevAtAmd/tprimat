@@ -20,6 +20,8 @@ import random
 import numpy as np
 import logging
 from nemo.collections import llm
+from nemo.collections.llm.gpt.model.llama import Llama31Config8B, LlamaModel
+from nemo.collections.llm.gpt.model.qwen2 import Qwen25Config7B, Qwen2Model
 import nemo_run as run
 from nemo.lightning import MegatronStrategy
 from lib.utils import BenchmarkCallback
@@ -118,6 +120,23 @@ def train_model(model_name: str):
         sequence_parallel=True,
     )
     
+    # CRITICAL: Create model config explicitly with correct seq_length from the start
+    # This ensures the RoPE embedding is created with the correct max_sequence_length
+    if model_name == "llama":
+        model_config = run.Config(
+            Llama31Config8B,
+            seq_length=SEQ_LEN,
+        )
+        recipe.model = run.Config(LlamaModel, config=model_config)
+        logger.info(f"Created Llama31Config8B with seq_length={SEQ_LEN}")
+    elif model_name == "qwen":
+        model_config = run.Config(
+            Qwen25Config7B,
+            seq_length=SEQ_LEN,
+        )
+        recipe.model = run.Config(Qwen2Model, config=model_config)
+        logger.info(f"Created Qwen25Config7B with seq_length={SEQ_LEN}")
+    
     mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-nemo")
     idx_file = mega_dataset_path + ".idx"
     bin_file = mega_dataset_path + ".bin"
@@ -150,9 +169,7 @@ def train_model(model_name: str):
     recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS
     recipe.optim.lr_scheduler.constant_steps = 0
     
-    # Set model's seq_length to match data seq_length (critical for RoPE embeddings)
-    recipe.model.config.seq_length = SEQ_LEN
-    
+    # Model seq_length was set during config creation above
     if FP8_HYBRID:
         recipe.model.config.fp8 = "hybrid"
     else:
