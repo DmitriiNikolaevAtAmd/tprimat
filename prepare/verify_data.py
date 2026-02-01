@@ -34,9 +34,9 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     print(f"\n[1/5] Checking index file...")
     try:
         with open(idx_path, 'rb') as f:
-            # Megatron _HDR_MAGIC is exactly 8 bytes
-            magic = f.read(8)
-            if magic != b'MMIDIDX\x00':
+            # Megatron _INDEX_HEADER is exactly 9 bytes: b"MMIDIDX\x00\x00"
+            magic = f.read(9)
+            if magic != b'MMIDIDX\x00\x00':
                 errors.append(f"Invalid magic: {magic}")
             
             version = struct.unpack('<Q', f.read(8))[0]
@@ -50,32 +50,33 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
             num_seqs = struct.unpack('<Q', f.read(8))[0]
             num_docs = struct.unpack('<Q', f.read(8))[0]
             
-            if num_docs != num_seqs:
-                warnings.append(f"num_docs ({num_docs}) != num_seqs ({num_seqs})")
+            # num_docs should be num_seqs + 1 (len(document_indices) for N sequences)
+            if num_docs != num_seqs + 1:
+                warnings.append(f"num_docs ({num_docs}) != num_seqs + 1 ({num_seqs + 1})")
             
-            # Both mega and nemo formats now use identical Megatron-compatible layout:
+            # Megatron-compatible layout (matches Megatron _IndexReader):
             # 1. sequence_lengths (int32 * num_seqs)
             # 2. sequence_pointers (int64 * num_seqs)
-            # 3. document_indices (int64 * (num_docs + 1))
+            # 3. document_indices (int64 * num_docs) -- Megatron reads count=document_count
             lengths = np.frombuffer(f.read(num_seqs * 4), dtype=np.int32)
             pointers = np.frombuffer(f.read(num_seqs * 8), dtype=np.int64)
-            doc_indices = np.frombuffer(f.read((num_docs + 1) * 8), dtype=np.int64)
+            doc_indices = np.frombuffer(f.read(num_docs * 8), dtype=np.int64)
             
             format_name = "NeMo" if is_nemo_format else "Mega"
             print(f"  {format_name} format (Megatron-compatible):")
             print(f"    - lengths array: {len(lengths)} elements")
             print(f"    - pointers array: {len(pointers)} elements")
-            print(f"    - doc_indices array: {len(doc_indices)} elements (N+1)")
+            print(f"    - doc_indices array: {len(doc_indices)} elements")
             
-            # Verify Megatron's critical assertion
+            # Verify Megatron's critical assertion: sequence_lengths.shape[0] == document_indices[-1]
             if len(lengths) != doc_indices[-1]:
                 errors.append(f"Megatron assertion FAILED: len(lengths)={len(lengths)} != doc_indices[-1]={doc_indices[-1]}")
             else:
                 print(f"  Megatron assertion PASSED: len(lengths)={len(lengths)} == doc_indices[-1]={doc_indices[-1]}")
             
-            expected_doc_indices = np.arange(num_docs + 1, dtype=np.int64)
+            expected_doc_indices = np.arange(num_docs, dtype=np.int64)
             if not np.array_equal(doc_indices, expected_doc_indices):
-                errors.append(f"doc_indices malformed: expected [0..{num_docs}], got [{doc_indices[0]}..{doc_indices[-1]}]")
+                errors.append(f"doc_indices malformed: expected [0..{num_docs-1}], got [{doc_indices[0]}..{doc_indices[-1]}]")
         
         print(f"  Sequences: {num_seqs:,}")
         print(f"  Seq length: {lengths[0] if len(lengths) > 0 else 'N/A'}")
