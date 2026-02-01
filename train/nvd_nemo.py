@@ -2,14 +2,7 @@
 import os
 import sys
 from pathlib import Path
-
-# Resolve relative paths before importing transformers (which uses HF_HOME)
-_workspace_root = Path(__file__).parent.parent
-sys.path.insert(0, str(_workspace_root))
-for _env_var in ("HF_HOME", "HF_DATASETS_CACHE"):
-    _val = os.environ.get(_env_var)
-    if _val and not os.path.isabs(_val):
-        os.environ[_env_var] = str(_workspace_root / _val)
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
@@ -22,15 +15,13 @@ import numpy as np
 import logging
 from lightning.pytorch.callbacks import Callback
 from nemo.collections import llm
-from nemo.collections.llm import Llama31Config8B, LlamaModel, Qwen25Config7B, Qwen2Model
 import nemo_run as run
 from nemo.lightning import MegatronStrategy
 from lib.utils import BenchmarkCallback
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 WORKSPACE_ROOT = Path(__file__).parent.parent
-_output_dir = os.environ.get("OUTPUT_DIR", "output")
-OUTPUT_DIR = Path(_output_dir) if os.path.isabs(_output_dir) else WORKSPACE_ROOT / _output_dir
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(WORKSPACE_ROOT / "output")))
 
 SEED = int(os.environ.get("SEED", 42))
 MBS = int(os.environ.get("MBS", 1))
@@ -229,28 +220,7 @@ def train_model(model_name: str):
         sequence_parallel=True,
     )
     
-    # CRITICAL: Create model config explicitly with correct seq_length from the start
-    # This ensures the RoPE embedding is created with the correct max_sequence_length
-    # The default recipe sets seq_length=8192, but we need SEQ_LEN + 1
-    # The +1 accounts for add_extra_token_to_sequence=True in GPTDatasetConfig
-    effective_seq_length = SEQ_LEN + 1
-    if model_name == "llama":
-        # Use Llama31Config8B with seq_length set at creation time
-        model_config = run.Config(
-            Llama31Config8B,
-            seq_length=effective_seq_length,
-        )
-        recipe.model = run.Config(LlamaModel, config=model_config)
-        logger.info(f"Created Llama31Config8B with seq_length={effective_seq_length} (SEQ_LEN + 1 for extra token)")
-    elif model_name == "qwen":
-        model_config = run.Config(
-            Qwen25Config7B,
-            seq_length=effective_seq_length,
-        )
-        recipe.model = run.Config(Qwen2Model, config=model_config)
-        logger.info(f"Created Qwen25Config7B with seq_length={effective_seq_length} (SEQ_LEN + 1 for extra token)")
-    
-    mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-nemo")
+    mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
     idx_file = mega_dataset_path + ".idx"
     bin_file = mega_dataset_path + ".bin"
     if not os.path.exists(idx_file) or not os.path.exists(bin_file):
@@ -263,14 +233,16 @@ def train_model(model_name: str):
         )
     
     logger.info(f"Data validation passed: {mega_dataset_path}")
-    logger.info("Using NeMo PreTrainingDataModule with real C4 dataset")
+    logger.info("Using NeMo MockDataModule for consistent benchmarking")
     
-    from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
-    recipe.data = PreTrainingDataModule(
-        paths=[mega_dataset_path],
+    from nemo.collections.llm.gpt.data.mock import MockDataModule
+    recipe.data = MockDataModule(
         seq_length=SEQ_LEN,
         micro_batch_size=MBS,
         global_batch_size=GBS,
+        num_train_samples=TRAIN_ITERS * GBS,
+        num_val_samples=GBS,
+        num_test_samples=GBS,
     )
     
     recipe.trainer.max_steps = TRAIN_ITERS
@@ -282,8 +254,6 @@ def train_model(model_name: str):
     recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS
     recipe.optim.lr_scheduler.constant_steps = 0
     
-    # Model seq_length was set during config creation above
-    # Configure additional model parameters
     if FP8_HYBRID:
         recipe.model.config.fp8 = "hybrid"
     else:
