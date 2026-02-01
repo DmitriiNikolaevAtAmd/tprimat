@@ -150,6 +150,9 @@ def train_model(model_name: str):
     recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS
     recipe.optim.lr_scheduler.constant_steps = 0
     
+    # Set model's seq_length to match data seq_length (critical for RoPE embeddings)
+    recipe.model.config.seq_length = SEQ_LEN
+    
     if FP8_HYBRID:
         recipe.model.config.fp8 = "hybrid"
     else:
