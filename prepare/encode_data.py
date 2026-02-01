@@ -67,7 +67,8 @@ def encode_dataset(input_file: str, output_prefix: str, tokenizer_name: str, seq
         f"Format error: {sequence_lengths.shape[0]} != {document_indices[-1]}"
     
     with open(idx_path, "wb") as f:
-        f.write(b'MMIDIDX\x00\x00')
+        # Megatron _HDR_MAGIC is exactly 8 bytes: b'MMIDIDX\x00'
+        f.write(b'MMIDIDX\x00')
         f.write(struct.pack('<Q', 1))  # version
         f.write(struct.pack('<B', DTYPE_CODE))  # dtype code
         f.write(struct.pack('<Q', num_sequences))  # number of sequences
@@ -95,7 +96,8 @@ def write_nemo_index(output_prefix: str, tokens_array: np.ndarray, seq_length: i
     assert sequence_lengths.shape[0] == document_indices[-1]
     
     with open(idx_path, "wb") as f:
-        f.write(b'MMIDIDX\x00\x00')
+        # Megatron _HDR_MAGIC is exactly 8 bytes: b'MMIDIDX\x00'
+        f.write(b'MMIDIDX\x00')
         f.write(struct.pack('<Q', 1))
         f.write(struct.pack('<B', DTYPE_CODE))
         f.write(struct.pack('<Q', num_sequences))

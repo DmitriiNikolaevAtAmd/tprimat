@@ -34,8 +34,9 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     print(f"\n[1/5] Checking index file...")
     try:
         with open(idx_path, 'rb') as f:
-            magic = f.read(9)
-            if magic != b'MMIDIDX\x00\x00':
+            # Megatron _HDR_MAGIC is exactly 8 bytes
+            magic = f.read(8)
+            if magic != b'MMIDIDX\x00':
                 errors.append(f"Invalid magic: {magic}")
             
             version = struct.unpack('<Q', f.read(8))[0]
