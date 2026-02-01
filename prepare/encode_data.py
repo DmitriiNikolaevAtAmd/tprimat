@@ -51,21 +51,30 @@ def encode_dataset(input_file: str, output_prefix: str, tokenizer_name: str, seq
     
     bytes_per_seq = seq_length * DTYPE.itemsize
     
+    # Megatron IndexedDataset format expects:
+    # 1. sequence_lengths (int32 array of length num_sequences)
+    # 2. sequence_pointers (int64 array of length num_sequences)  
+    # 3. document_indices (int64 array of length num_documents + 1)
+    # The assertion requires: sequence_lengths.shape[0] == document_indices[-1]
+    
+    num_documents = num_sequences
+    sequence_lengths = np.full(num_sequences, seq_length, dtype=np.int32)
+    sequence_pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
+    document_indices = np.arange(num_documents + 1, dtype=np.int64)
+    
+    # Verify the invariant that Megatron checks
+    assert sequence_lengths.shape[0] == document_indices[-1], \
+        f"Format error: {sequence_lengths.shape[0]} != {document_indices[-1]}"
+    
     with open(idx_path, "wb") as f:
         f.write(b'MMIDIDX\x00\x00')
-        f.write(struct.pack('<Q', 1))
-        f.write(struct.pack('<B', DTYPE_CODE))
-        f.write(struct.pack('<Q', num_sequences))
-        f.write(struct.pack('<Q', num_sequences))
-        
-        doc_idx = np.arange(num_sequences, dtype=np.int64)
-        f.write(doc_idx.tobytes())
-        
-        pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
-        f.write(pointers.tobytes())
-        
-        lengths = np.full(num_sequences, seq_length, dtype=np.int32)
-        f.write(lengths.tobytes())
+        f.write(struct.pack('<Q', 1))  # version
+        f.write(struct.pack('<B', DTYPE_CODE))  # dtype code
+        f.write(struct.pack('<Q', num_sequences))  # number of sequences
+        f.write(struct.pack('<Q', num_documents))  # number of documents
+        f.write(sequence_lengths.tobytes())
+        f.write(sequence_pointers.tobytes())
+        f.write(document_indices.tobytes())
     
     return tokens_array, num_sequences
 

@@ -118,7 +118,7 @@ def train_model(model_name: str):
         sequence_parallel=True,
     )
     
-    mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
+    mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-nemo")
     idx_file = mega_dataset_path + ".idx"
     bin_file = mega_dataset_path + ".bin"
     if not os.path.exists(idx_file) or not os.path.exists(bin_file):
