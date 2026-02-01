@@ -22,8 +22,7 @@ import numpy as np
 import logging
 from lightning.pytorch.callbacks import Callback
 from nemo.collections import llm
-from nemo.collections.llm.gpt.model.llama import Llama31Config8B, Llama3Config8B, LlamaModel
-from nemo.collections.llm.gpt.model.qwen2 import Qwen25Config7B, Qwen2Model
+from nemo.collections.llm import Llama31Config8B, LlamaModel, Qwen25Config7B, Qwen2Model
 import nemo_run as run
 from nemo.lightning import MegatronStrategy
 from lib.utils import BenchmarkCallback
@@ -232,22 +231,24 @@ def train_model(model_name: str):
     
     # CRITICAL: Create model config explicitly with correct seq_length from the start
     # This ensures the RoPE embedding is created with the correct max_sequence_length
-    # The default recipe sets seq_length=8192, but we need SEQ_LEN
+    # The default recipe sets seq_length=8192, but we need SEQ_LEN + 1
+    # The +1 accounts for add_extra_token_to_sequence=True in GPTDatasetConfig
+    effective_seq_length = SEQ_LEN + 1
     if model_name == "llama":
         # Use Llama31Config8B with seq_length set at creation time
         model_config = run.Config(
             Llama31Config8B,
-            seq_length=SEQ_LEN,  # Set during config creation, not after
+            seq_length=effective_seq_length,
         )
         recipe.model = run.Config(LlamaModel, config=model_config)
-        logger.info(f"Created Llama31Config8B with seq_length={SEQ_LEN}")
+        logger.info(f"Created Llama31Config8B with seq_length={effective_seq_length} (SEQ_LEN + 1 for extra token)")
     elif model_name == "qwen":
         model_config = run.Config(
             Qwen25Config7B,
-            seq_length=SEQ_LEN,
+            seq_length=effective_seq_length,
         )
         recipe.model = run.Config(Qwen2Model, config=model_config)
-        logger.info(f"Created Qwen25Config7B with seq_length={SEQ_LEN}")
+        logger.info(f"Created Qwen25Config7B with seq_length={effective_seq_length} (SEQ_LEN + 1 for extra token)")
     
     mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-nemo")
     idx_file = mega_dataset_path + ".idx"
