@@ -13,6 +13,7 @@ import torch.profiler
 import random
 import numpy as np
 import logging
+from transformers import AutoTokenizer
 from lightning.pytorch.callbacks import Callback
 from nemo.collections import llm
 import nemo_run as run
@@ -207,6 +208,20 @@ def train_model(model_name: str):
     os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
+    logger.info(f"Loading tokenizer for {config['display_name']}...")
+    tokenizer = AutoTokenizer.from_pretrained(
+        config["tokenizer_path"],
+        trust_remote_code=True,
+    )
+    tokenizer_vocab_size = len(tokenizer)
+    base_vocab_size = getattr(tokenizer, "vocab_size", tokenizer_vocab_size)
+    if tokenizer_vocab_size != base_vocab_size:
+        logger.info(
+            "Tokenizer vocab size differs from base: len=%d base=%d",
+            tokenizer_vocab_size,
+            base_vocab_size,
+        )
+
     logger.info(f"Creating {config['display_name']} training recipe...")
     recipe = config['recipe_fn'](
         name=config['recipe_name'],
@@ -214,6 +229,9 @@ def train_model(model_name: str):
         num_nodes=1,
         num_gpus_per_node=num_gpus,
     )
+
+    # Ensure model vocab matches tokenizer to avoid out-of-bounds embedding ids.
+    recipe.model.config.vocab_size = tokenizer_vocab_size
     
     recipe.trainer.strategy = MegatronStrategy(
         tensor_model_parallel_size=TP,

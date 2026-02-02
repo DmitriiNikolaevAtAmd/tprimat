@@ -15,7 +15,10 @@ DTYPE_CODE = 4
 
 def encode_dataset(input_file: str, output_prefix: str, tokenizer_name: str, seq_length: int):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
-    eos_token_id = tokenizer.eos_token_id or 0
+    vocab_size = len(tokenizer)
+    eos_token_id = tokenizer.eos_token_id
+    if eos_token_id is None:
+        raise ValueError(f"{tokenizer_name} has no eos_token_id configured")
     
     all_tokens = []
     
@@ -29,6 +32,15 @@ def encode_dataset(input_file: str, output_prefix: str, tokenizer_name: str, seq
             text = doc.get("text", "")
             
             tokens = tokenizer.encode(text, add_special_tokens=False)
+            if tokens:
+                max_token = max(tokens)
+                min_token = min(tokens)
+                if min_token < 0 or max_token >= vocab_size:
+                    raise ValueError(
+                        "Token id out of range for tokenizer "
+                        f"{tokenizer_name}: min={min_token} max={max_token} "
+                        f"vocab={vocab_size}"
+                    )
             all_tokens.extend(tokens)
             all_tokens.append(eos_token_id)
     
