@@ -17,10 +17,10 @@ if [ "${DATA_DIR:-}" = "/data/tprimat" ] && [ ! -e "/data/tprimat" ] && [ -d "$R
     ln -s "$ROOT_DIR/data" /data/tprimat
 fi
 
-# ./prepare/fetch_deps.py
-# ./prepare/clean_data.py
-# ./prepare/encode_data.py
-# ./prepare/verify_data.py
+./prepare/fetch_deps.py
+./prepare/clean_data.py
+./prepare/encode_data.py
+./prepare/verify_data.py
 
 # Optional dataset verification before training
 export VERIFY_DATA="${VERIFY_DATA:-true}"
