@@ -22,13 +22,8 @@ GRAD_ACCUM=$((GBS / (MBS * NUM_GPUS)))
 
 # Training schedule
 TRAIN_ITERS="${TRAIN_ITERS:-500}"
-LR_WARMUP_ITERS="${LR_WARMUP_ITERS:-${WARMUP_STEPS:-50}}"
+LR_WARMUP_ITERS="${LR_WARMUP_ITERS:-50}"
 LR_DECAY_ITERS="${LR_DECAY_ITERS:-$TRAIN_ITERS}"
-
-if [ "$LR_WARMUP_ITERS" -ge "$LR_DECAY_ITERS" ]; then
-    echo "ERROR: LR_WARMUP_ITERS ($LR_WARMUP_ITERS) must be < LR_DECAY_ITERS ($LR_DECAY_ITERS)"
-    exit 1
-fi
 
 # Critical AMD performance settings
 export RCCL_DEBUG=ERROR
@@ -63,7 +58,7 @@ with open('$PATCHED_CONFIG', 'r') as f:
     config = yaml.safe_load(f)
 
 config['tensor_model_parallel_size'] = 1
-config['pipeline_model_parallel_size'] = 2
+config['pipeline_model_parallel_size'] = 1
 config['sequence_parallel'] = False
 config['global_batch_size'] = int('$GBS')
 config['micro_batch_size'] = int('$MBS')
@@ -140,6 +135,6 @@ python3 evaluate/extract_prim_metrics.py \
     --global-batch-size "$GBS" \
     --micro-batch-size "$MBS" \
     --tensor-parallel-size 1 \
-    --pipeline-parallel-size 2 \
+    --pipeline-parallel-size 1 \
     --sequence-length 2048 \
     --parallel-strategy "TP1_PP2_SP0"
