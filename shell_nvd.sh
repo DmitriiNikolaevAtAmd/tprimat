@@ -9,4 +9,5 @@ docker run --gpus all -it --rm \
     -w /workspace/tprimat \
     --env-file config.env \
     --env-file secrets.env \
+    -e CUDA_LAUNCH_BLOCKING=1 \
     primat:nvd "$@"
