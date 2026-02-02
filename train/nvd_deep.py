@@ -67,15 +67,23 @@ class PretrainingDataset(Dataset):
         tokens = self.indexed_dataset[dataset_idx]
         
         if len(tokens) < self.seq_length:
-            pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
+            if self.tokenizer.pad_token_id is not None:
+                pad_token = self.tokenizer.pad_token_id
+            elif self.tokenizer.eos_token_id is not None:
+                pad_token = self.tokenizer.eos_token_id
+            else:
+                raise ValueError("Tokenizer has no pad_token_id or eos_token_id")
             padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
             input_ids = torch.cat([tokens, padding])
+            labels = input_ids.clone()
+            labels[len(tokens):] = -100
         else:
             input_ids = tokens[:self.seq_length]
+            labels = input_ids.clone()
         
         return {
             'input_ids': input_ids,
-            'labels': input_ids.clone(),
+            'labels': labels,
         }
 
 
