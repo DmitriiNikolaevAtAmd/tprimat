@@ -22,6 +22,11 @@ fi
 # ./prepare/encode_data.py
 # ./prepare/verify_data.py
 
+# Optional dataset verification before training
+export VERIFY_DATA="${VERIFY_DATA:-true}"
+export VERIFY_SAMPLES="${VERIFY_SAMPLES:-100}"
+export VERIFY_FULL_SCAN="${VERIFY_FULL_SCAN:-false}"
+
 # ./train/nvd_deep_llama.sh
 # sleep 10
 # ./train/nvd_deep_qwen.sh

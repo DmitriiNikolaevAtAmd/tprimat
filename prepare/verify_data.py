@@ -13,7 +13,12 @@ DTYPE = np.dtype(np.int32)
 DTYPE_CODE = 4
 
 
-def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> bool:
+def verify_dataset(
+    input_prefix: str,
+    tokenizer_name: str,
+    num_samples: int,
+    full_scan: bool = False,
+) -> bool:
     bin_path = Path(f"{input_prefix}.bin")
     idx_path = Path(f"{input_prefix}.idx")
     is_nemo_format = "-nemo" in input_prefix
@@ -159,6 +164,23 @@ def verify_dataset(input_prefix: str, tokenizer_name: str, num_samples: int) -> 
     if decode_errors > 0:
         warnings.append(f"{decode_errors} sequences failed to decode")
     
+    if full_scan:
+        print(f"\n[6/6] Full token range scan...")
+        try:
+            total_tokens = bin_size // DTYPE.itemsize
+            token_memmap = np.memmap(bin_path, dtype=DTYPE, mode="r", shape=(total_tokens,))
+            min_token = int(token_memmap.min())
+            max_token = int(token_memmap.max())
+            print(f"  Token range: [{min_token}, {max_token}] over {total_tokens:,} tokens")
+            if min_token < 0:
+                errors.append(f"Full scan: negative token id found (min={min_token})")
+            if vocab_size and max_token >= vocab_size:
+                errors.append(
+                    f"Full scan: token id exceeds vocab size (max={max_token}, vocab={vocab_size})"
+                )
+        except Exception as e:
+            warnings.append(f"Full scan failed: {e}")
+
     print("\n" + "=" * 50)
     
     if errors:
@@ -203,6 +225,11 @@ def main():
         default=100,
         help="Number of random sequences to validate (default: 100)",
     )
+    parser.add_argument(
+        "--full-scan",
+        action="store_true",
+        help="Scan all tokens to validate min/max token id",
+    )
     
     args = parser.parse_args()
     
@@ -212,7 +239,7 @@ def main():
         print(f"\n{'='*60}")
         print(f"Verifying {model_name.upper()} dataset: {input_prefix}")
         print(f"{'='*60}")
-        success = verify_dataset(input_prefix, tokenizer_name, args.samples)
+        success = verify_dataset(input_prefix, tokenizer_name, args.samples, args.full_scan)
         if not success:
             all_success = False
     

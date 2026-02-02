@@ -45,6 +45,9 @@ PROFILE_WAIT = int(os.environ.get("PROFILE_WAIT", 1))
 PROFILE_WARMUP = int(os.environ.get("PROFILE_WARMUP", 1))
 PROFILE_ACTIVE = int(os.environ.get("PROFILE_ACTIVE", 3))
 PROFILE_REPEAT = int(os.environ.get("PROFILE_REPEAT", 1))
+VERIFY_DATA = os.environ.get("VERIFY_DATA", "false").lower() == "true"
+VERIFY_SAMPLES = int(os.environ.get("VERIFY_SAMPLES", 100))
+VERIFY_FULL_SCAN = os.environ.get("VERIFY_FULL_SCAN", "false").lower() == "true"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -234,6 +237,27 @@ def train_model(model_name: str):
     
     logger.info(f"Data validation passed: {mega_dataset_path}")
     logger.info("Using NeMo PreTrainingDataModule with real C4 dataset")
+
+    if VERIFY_DATA:
+        try:
+            from prepare.verify_data import verify_dataset
+            logger.info(
+                "Verifying dataset tokens (samples=%d, full_scan=%s)",
+                VERIFY_SAMPLES,
+                VERIFY_FULL_SCAN,
+            )
+            ok = verify_dataset(
+                mega_dataset_path,
+                config["tokenizer_path"],
+                VERIFY_SAMPLES,
+                VERIFY_FULL_SCAN,
+            )
+            if not ok:
+                logger.error("Dataset verification failed. Aborting training.")
+                sys.exit(1)
+        except Exception as e:
+            logger.error("Dataset verification errored: %s", e)
+            sys.exit(1)
     
     from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
     recipe.data = PreTrainingDataModule(
@@ -297,6 +321,7 @@ def train_model(model_name: str):
     logger.info(f"  FP8 Param: {FP8_PARAM}")
     logger.info(f"  TP: {TP}, PP: {PP}, DP: {DP}")
     logger.info(f"  Profiling: {PROFILING}")
+    logger.info(f"  Verify data: {VERIFY_DATA} (samples={VERIFY_SAMPLES}, full_scan={VERIFY_FULL_SCAN})")
     
     logger.info(f"Starting {config['display_name']} training...")
     
