@@ -217,7 +217,7 @@ def train_model(model_name: str):
         pipeline_model_parallel_size=PP,
         context_parallel_size=1,
         virtual_pipeline_model_parallel_size=None,
-        sequence_parallel=True,
+        sequence_parallel=False,
     )
     
     mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
