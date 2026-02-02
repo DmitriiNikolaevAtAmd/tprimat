@@ -21,7 +21,7 @@ fi
 # ./prepare/verify_data.py
 
 ./train/amd_prim_llama.sh
-./train/amd_prim_qwen.sh
+# ./train/amd_prim_qwen.sh
 
 ./evaluate/validate_outputs.sh --platform amd && ./evaluate/compare_amd.sh
 
