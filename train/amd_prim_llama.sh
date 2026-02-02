@@ -59,7 +59,7 @@ with open('$PATCHED_CONFIG', 'r') as f:
 
 config['tensor_model_parallel_size'] = 2
 config['pipeline_model_parallel_size'] = 1
-config['sequence_parallel'] = True
+config['sequence_parallel'] = False
 config['global_batch_size'] = int('$GBS')
 config['micro_batch_size'] = int('$MBS')
 config['seq_length'] = 2048
