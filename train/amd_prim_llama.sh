@@ -57,7 +57,7 @@ import yaml
 with open('$PATCHED_CONFIG', 'r') as f:
     config = yaml.safe_load(f)
 
-config['tensor_model_parallel_size'] = 1
+config['tensor_model_parallel_size'] = 2
 config['pipeline_model_parallel_size'] = 1
 config['sequence_parallel'] = False
 config['global_batch_size'] = int('$GBS')
