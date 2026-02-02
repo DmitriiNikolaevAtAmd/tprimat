@@ -251,6 +251,7 @@ def train_model(model_name: str):
     recipe.optim.config.adam_beta2 = BETA2
     recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS
     recipe.optim.lr_scheduler.constant_steps = 0
+    recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS
     
     if FP8_HYBRID:
         recipe.model.config.fp8 = "hybrid"

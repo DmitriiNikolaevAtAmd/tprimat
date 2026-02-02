@@ -59,7 +59,7 @@ with open('$PATCHED_CONFIG', 'r') as f:
 
 config['tensor_model_parallel_size'] = 2
 config['pipeline_model_parallel_size'] = 1
-config['sequence_parallel'] = False
+config['sequence_parallel'] = True
 config['global_batch_size'] = int('$GBS')
 config['micro_batch_size'] = int('$MBS')
 config['seq_length'] = 2048
@@ -115,7 +115,7 @@ bash "$TRAIN_SCRIPT" \
     --global_batch_size "$GBS" \
     --micro_batch_size "$MBS" \
     --seq_length 2048 \
-    --tensor_model_parallel_size 1 \
+    --tensor_model_parallel_size 2 \
     --pipeline_model_parallel_size 1 \
     --lr 3.0e-4 \
     --min_lr 0.0 \
@@ -134,7 +134,7 @@ python3 evaluate/extract_prim_metrics.py \
     --num-gpus "$NUM_GPUS" \
     --global-batch-size "$GBS" \
     --micro-batch-size "$MBS" \
-    --tensor-parallel-size 1 \
+    --tensor-parallel-size 2 \
     --pipeline-parallel-size 1 \
     --sequence-length 2048 \
-    --parallel-strategy "TP1_SP"
+    --parallel-strategy "TP2_SP"
