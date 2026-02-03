@@ -2,40 +2,25 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TPRIMAT_PATH="$(cd "$SCRIPT_DIR/.." && pwd)"
-ROOT_DIR="$TPRIMAT_PATH"
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
-
-# Source config.env if it exists
-if [ -f "$TPRIMAT_PATH/config.env" ]; then
-    set -a
-    source "$TPRIMAT_PATH/config.env"
-    set +a
-fi
 
 mkdir -p "$TPRIMAT_PATH/output"
 
-# Parallel config (Primus-specific to avoid config.env overrides)
-TP_PRIMUS="${TP_PRIMUS:-4}"
-PP_PRIMUS="${PP_PRIMUS:-2}"
-DP_PRIMUS="${DP_PRIMUS:-1}"
-TP="$TP_PRIMUS"
-PP="$PP_PRIMUS"
-DP="$DP_PRIMUS"
+# Parallel config - qwen AMD (identical_config 01)
+TP=4
+PP=2
+DP=1
+GRAD_ACCUM=128
 
-# Training batch config (Primus-specific)
-NUM_GPUS="${NUM_GPUS:-$((TP * PP * DP))}"
-MBS_PRIMUS="${MBS_PRIMUS:-1}"
-GRAD_ACCUM_PRIMUS="${GRAD_ACCUM_PRIMUS:-128}"
-GBS_PRIMUS_DEFAULT=$((MBS_PRIMUS * NUM_GPUS * GRAD_ACCUM_PRIMUS))
-GBS_PRIMUS="${GBS_PRIMUS:-$GBS_PRIMUS_DEFAULT}"
-GBS="$GBS_PRIMUS"
-MBS="$MBS_PRIMUS"
-GRAD_ACCUM="$GRAD_ACCUM_PRIMUS"
+# Training batch config
+NUM_GPUS=$((TP * PP * DP))  # 8
+MBS=1
+GBS=$((MBS * NUM_GPUS * GRAD_ACCUM))  # 1024
 
 # Training schedule
-TRAIN_ITERS="${TRAIN_ITERS:-500}"
-LR_WARMUP_ITERS="${LR_WARMUP_ITERS:-50}"
-LR_DECAY_ITERS="${LR_DECAY_ITERS:-$TRAIN_ITERS}"
+TRAIN_ITERS=500
+LR_WARMUP_ITERS=50
+LR_DECAY_ITERS=$TRAIN_ITERS
 
 # Critical AMD performance settings
 export RCCL_DEBUG=ERROR
@@ -69,25 +54,22 @@ import yaml
 with open('$PATCHED_CONFIG', 'r') as f:
     config = yaml.safe_load(f)
 
-config['tensor_model_parallel_size'] = int('$TP')
-config['pipeline_model_parallel_size'] = int('$PP')
+config['tensor_model_parallel_size'] = 4
+config['pipeline_model_parallel_size'] = 2
 config['sequence_parallel'] = False
-config['global_batch_size'] = int('$GBS')
-config['micro_batch_size'] = int('$MBS')
+config['global_batch_size'] = 1024
+config['micro_batch_size'] = 1
 config['seq_length'] = 2048
 config['encoder_seq_length'] = 2048
-# grad_accum = GBS / (MBS * num_gpus)
-config['gradient_accumulation_steps'] = int('$GRAD_ACCUM')
+config['gradient_accumulation_steps'] = 128
 config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
-# Training schedule
-config['train_iters'] = int('$TRAIN_ITERS')
-config['lr_decay_iters'] = int('$LR_DECAY_ITERS')
-config['lr_warmup_iters'] = int('$LR_WARMUP_ITERS')
+config['train_iters'] = 500
+config['lr_decay_iters'] = 500
+config['lr_warmup_iters'] = 50
 
-# Disable logging/profiling
 config['disable_tensorboard'] = True
 config['disable_wandb'] = True
 config['disable_mlflow'] = True
@@ -123,17 +105,17 @@ if [ ! -f "$TRAIN_SCRIPT" ]; then
 fi
 
 bash "$TRAIN_SCRIPT" \
-    --train_iters "$TRAIN_ITERS" \
-    --global_batch_size "$GBS" \
-    --micro_batch_size "$MBS" \
+    --train_iters 500 \
+    --global_batch_size 1024 \
+    --micro_batch_size 1 \
     --seq_length 2048 \
-    --tensor_model_parallel_size "$TP" \
-    --pipeline_model_parallel_size "$PP" \
+    --tensor_model_parallel_size 4 \
+    --pipeline_model_parallel_size 2 \
     --lr 3.0e-4 \
     --min_lr 0.0 \
-    --lr_warmup_iters "$LR_WARMUP_ITERS" \
+    --lr_warmup_iters 50 \
     --lr_decay_style cosine \
-    --lr_decay_iters "$LR_DECAY_ITERS" \
+    --lr_decay_iters 500 \
     --weight_decay 0.1 \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_qwen.log"
 
@@ -143,10 +125,10 @@ python3 evaluate/extract_prim_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_qwen.log" \
     --model-name "qwen" \
     --output "$TPRIMAT_PATH/output/train_amd_prim_qwen.json" \
-    --num-gpus "$NUM_GPUS" \
-    --global-batch-size "$GBS" \
-    --micro-batch-size "$MBS" \
-    --tensor-parallel-size "$TP" \
-    --pipeline-parallel-size "$PP" \
+    --num-gpus 8 \
+    --global-batch-size 1024 \
+    --micro-batch-size 1 \
+    --tensor-parallel-size 4 \
+    --pipeline-parallel-size 2 \
     --sequence-length 2048 \
-    --parallel-strategy "TP${TP}_PP${PP}_SP0"
+    --parallel-strategy "TP4_PP2_DP1"
