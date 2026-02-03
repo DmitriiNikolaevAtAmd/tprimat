@@ -20,13 +20,14 @@ def download_tokenizer(
 ):
     if model_name.lower() in TOKENIZER_REGISTRY:
         hf_path = TOKENIZER_REGISTRY[model_name.lower()]
+        folder_name = model_name.lower()
         print(f"[Info] Resolved '{model_name}' -> '{hf_path}'")
     else:
         hf_path = model_name
+        folder_name = hf_path.replace("/", "_")
         print(f"[Info] Using HuggingFace path directly: {hf_path}")
     
-    tokenizer_name = hf_path.replace("/", "_")
-    save_dir = output_dir / tokenizer_name
+    save_dir = output_dir / folder_name
     
     if save_dir.exists() and (save_dir / "tokenizer.json").exists():
         print(f"[Info] Tokenizer already exists: {save_dir}")

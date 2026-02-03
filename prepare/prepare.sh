@@ -58,9 +58,9 @@ Environment Variables:
   DATA_DIR      Override default data directory
 
 Examples:
-  # Download BookCorpus and prepare for Megatron with Llama 3 tokenizer
+  # Download BookCorpus and prepare for Megatron with Llama tokenizer
   export HF_TOKEN=your_token
-  $(basename $0) --dataset bookcorpus --tokenizer llama3-8b --tokenize
+  $(basename $0) --dataset bookcorpus --tokenizer llama --tokenize
 
   # Download all supported datasets and tokenizers
   $(basename $0) --all
@@ -154,8 +154,9 @@ prepare_all() {
     log_info "Step 2/4: Downloading C4 samples..."
     download_c4 10000
     
-    log_info "Step 3/4: Downloading Llama 3 8B tokenizer..."
-    download_tokenizer "llama3-8b" || log_warn "Failed to download Llama 3 tokenizer (may require HF_TOKEN)"
+    log_info "Step 3/4: Downloading tokenizers (llama, qwen)..."
+    download_tokenizer "llama" || log_warn "Failed to download Llama tokenizer (may require HF_TOKEN)"
+    download_tokenizer "qwen" || log_warn "Failed to download Qwen tokenizer"
     
     log_info "Step 4/4: Tokenizing data for Megatron..."
     if [ -d "${DATA_DIR}/tokenizers" ] && [ "$(ls -A ${DATA_DIR}/tokenizers 2>/dev/null)" ]; then
