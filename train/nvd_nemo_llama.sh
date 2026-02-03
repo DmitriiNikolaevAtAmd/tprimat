@@ -18,8 +18,9 @@ export NCCL_DEBUG=INFO
 
 # Truly identical parallel config
 export TP=4
-export PP=1
+export PP=2
 export DP=2
+export GRAD_ACCUM=128
 
 # Kineto GPU profiling (can be overridden by config.env)
 export PROFILING="${PROFILING:-true}"

@@ -17,8 +17,9 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 
 export TP=4
-export PP=1
+export PP=2
 export DP=2
+export GRAD_ACCUM=128
 
 export PROFILING="${PROFILING:-true}"
 export PROFILE_WAIT="${PROFILE_WAIT:-2}"

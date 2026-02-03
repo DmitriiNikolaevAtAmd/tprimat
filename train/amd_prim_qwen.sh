@@ -14,11 +14,23 @@ fi
 
 mkdir -p "$TPRIMAT_PATH/output"
 
-# Training batch config
-NUM_GPUS="${NUM_GPUS:-8}"
-GBS="${GBS:-64}"
-MBS="${MBS:-1}"
-GRAD_ACCUM=$((GBS / (MBS * NUM_GPUS)))
+# Parallel config (Primus-specific to avoid config.env overrides)
+TP_PRIMUS="${TP_PRIMUS:-4}"
+PP_PRIMUS="${PP_PRIMUS:-2}"
+DP_PRIMUS="${DP_PRIMUS:-1}"
+TP="$TP_PRIMUS"
+PP="$PP_PRIMUS"
+DP="$DP_PRIMUS"
+
+# Training batch config (Primus-specific)
+NUM_GPUS="${NUM_GPUS:-$((TP * PP * DP))}"
+MBS_PRIMUS="${MBS_PRIMUS:-1}"
+GRAD_ACCUM_PRIMUS="${GRAD_ACCUM_PRIMUS:-128}"
+GBS_PRIMUS_DEFAULT=$((MBS_PRIMUS * NUM_GPUS * GRAD_ACCUM_PRIMUS))
+GBS_PRIMUS="${GBS_PRIMUS:-$GBS_PRIMUS_DEFAULT}"
+GBS="$GBS_PRIMUS"
+MBS="$MBS_PRIMUS"
+GRAD_ACCUM="$GRAD_ACCUM_PRIMUS"
 
 # Training schedule
 TRAIN_ITERS="${TRAIN_ITERS:-500}"
@@ -57,8 +69,8 @@ import yaml
 with open('$PATCHED_CONFIG', 'r') as f:
     config = yaml.safe_load(f)
 
-config['tensor_model_parallel_size'] = 4
-config['pipeline_model_parallel_size'] = 1
+config['tensor_model_parallel_size'] = int('$TP')
+config['pipeline_model_parallel_size'] = int('$PP')
 config['sequence_parallel'] = False
 config['global_batch_size'] = int('$GBS')
 config['micro_batch_size'] = int('$MBS')
@@ -115,8 +127,8 @@ bash "$TRAIN_SCRIPT" \
     --global_batch_size "$GBS" \
     --micro_batch_size "$MBS" \
     --seq_length 2048 \
-    --tensor_model_parallel_size 4 \
-    --pipeline_model_parallel_size 1 \
+    --tensor_model_parallel_size "$TP" \
+    --pipeline_model_parallel_size "$PP" \
     --lr 3.0e-4 \
     --min_lr 0.0 \
     --lr_warmup_iters "$LR_WARMUP_ITERS" \
@@ -134,7 +146,7 @@ python3 evaluate/extract_prim_metrics.py \
     --num-gpus "$NUM_GPUS" \
     --global-batch-size "$GBS" \
     --micro-batch-size "$MBS" \
-    --tensor-parallel-size 4 \
-    --pipeline-parallel-size 1 \
+    --tensor-parallel-size "$TP" \
+    --pipeline-parallel-size "$PP" \
     --sequence-length 2048 \
-    --parallel-strategy "TP4_PP1_SP0"
+    --parallel-strategy "TP${TP}_PP${PP}_SP0"
