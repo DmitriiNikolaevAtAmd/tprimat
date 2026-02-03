@@ -16,6 +16,10 @@ mkdir -p "$OUTPUT_DIR"
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 
+export TP=4
+export PP=1
+export DP=2
+
 export PROFILING="${PROFILING:-true}"
 export PROFILE_WAIT="${PROFILE_WAIT:-2}"
 export PROFILE_WARMUP="${PROFILE_WARMUP:-2}"
