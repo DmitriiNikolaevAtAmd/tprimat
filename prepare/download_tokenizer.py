@@ -8,36 +8,8 @@ from transformers import AutoTokenizer
 
 # Supported tokenizers with their HuggingFace paths
 TOKENIZER_REGISTRY = {
-    # Llama 2
-    "llama2-7b": "meta-llama/Llama-2-7b-hf",
-    "llama2-70b": "meta-llama/Llama-2-70b-hf",
-    # Llama 3
-    "llama3-8b": "meta-llama/Meta-Llama-3-8B",
-    "llama3-70b": "meta-llama/Meta-Llama-3-70B",
-    # Llama 3.1
-    "llama3.1-8b": "meta-llama/Llama-3.1-8B",
-    "llama3.1-70b": "meta-llama/Llama-3.1-70B",
-    "llama3.1-405b": "meta-llama/Llama-3.1-405B",
-    # Llama 3.3
-    "llama3.3-70b": "meta-llama/Llama-3.3-70B-Instruct",
-    # Llama 4
-    "llama4-scout": "meta-llama/Llama-4-Scout-17B-16E",
-    "llama4-maverick": "meta-llama/Llama-4-Maverick-17B-128E",
-    # DeepSeek
-    "deepseek-v2": "deepseek-ai/DeepSeek-V2",
-    "deepseek-v2-lite": "deepseek-ai/DeepSeek-V2-Lite",
-    "deepseek-v3": "deepseek-ai/DeepSeek-V3",
-    "deepseek-v3.1": "deepseek-ai/DeepSeek-V3.1-Base",
-    "deepseek-moe-16b": "deepseek-ai/deepseek-moe-16b-base",
-    # Qwen
-    "qwen2.5-7b": "Qwen/Qwen2.5-7B",
-    "qwen2.5-72b": "Qwen/Qwen2.5-72B",
-    "qwen3-0.6b": "Qwen/Qwen3-0.6B",
-    "qwen3-1.7b": "Qwen/Qwen3-1.7B",
-    "qwen3-32b": "Qwen/Qwen3-32B",
-    # Mixtral
-    "mixtral-8x7b": "mistralai/Mixtral-8x7B-v0.1",
-    "mixtral-8x22b": "mistralai/Mixtral-8x22B-v0.1",
+    "llama": "meta-llama/Llama-3.1-8B",
+    "qwen": "Qwen/Qwen2.5-7B",
 }
 
 
@@ -98,7 +70,7 @@ def main():
         "model",
         type=str,
         nargs="?",
-        help="Model name (e.g., llama3-8b) or HuggingFace path"
+        help="Model name (llama, qwen) or HuggingFace path"
     )
     parser.add_argument(
         "--output-dir", "-o",
