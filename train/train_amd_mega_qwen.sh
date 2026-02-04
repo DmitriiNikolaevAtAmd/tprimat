@@ -36,12 +36,15 @@ export NCCL_DEBUG=ERROR
 
 cd "$SCRIPT_DIR"
 
+# Use random port to avoid conflicts
+MASTER_PORT=${MASTER_PORT:-$((29500 + RANDOM % 1000))}
+
 if [ "$NUM_GPUS" -gt 1 ]; then
     torchrun --nproc_per_node="$NUM_GPUS" \
              --nnodes=1 \
              --node_rank=0 \
              --master_addr=localhost \
-             --master_port=29500 \
+             --master_port="$MASTER_PORT" \
              train_amd_mega.py qwen
 else
     python3 -u train_amd_mega.py qwen
