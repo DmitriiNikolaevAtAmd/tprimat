@@ -8,20 +8,20 @@ source "$TPRIMAT_PATH/config.env"
 
 mkdir -p "$TPRIMAT_PATH/output"
 
-# Data paths
-DATA_PREFIX="${DATA_DIR}/allenai-c4-llama-mega"
-TOKENIZER_PATH="${DATA_DIR}/meta-llama-llama-31-8b"
+# Data paths (disabled - using default Primus data source)
+# DATA_PREFIX="${DATA_DIR}/allenai-c4-llama-mega"
+# TOKENIZER_PATH="${DATA_DIR}/meta-llama-llama-31-8b"
 
-# Verify data files exist
-if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
-    echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
-    echo "       Run prepare/prepare.sh first to generate the dataset"
-    exit 1
-fi
-if [ ! -d "${TOKENIZER_PATH}" ]; then
-    echo "ERROR: Tokenizer not found at ${TOKENIZER_PATH}"
-    exit 1
-fi
+# Verify data files exist (disabled)
+# if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
+#     echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
+#     echo "       Run prepare/prepare.sh first to generate the dataset"
+#     exit 1
+# fi
+# if [ ! -d "${TOKENIZER_PATH}" ]; then
+#     echo "ERROR: Tokenizer not found at ${TOKENIZER_PATH}"
+#     exit 1
+# fi
 
 # Training batch config (from config.env: TP, PP, DP, GRAD_ACCUM, MBS, SEQ_LEN, etc.)
 NUM_GPUS=$((TP * PP * DP))
@@ -30,8 +30,6 @@ LR_DECAY_ITERS=$TRAIN_ITERS
 
 echo "Config: TP=${TP} PP=${PP} DP=${DP} GRAD_ACCUM=${GRAD_ACCUM}"
 echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
-echo "Data prefix: ${DATA_PREFIX}"
-echo "Tokenizer: ${TOKENIZER_PATH}"
 
 # Critical AMD performance settings
 export RCCL_DEBUG=ERROR
@@ -59,15 +57,13 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$TPRIMAT_PATH/output/llama3.1_8B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-export DATA_PREFIX TOKENIZER_PATH PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GRAD_ACCUM TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY
+export PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GRAD_ACCUM TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY
 if python3 -c "import yaml" 2>/dev/null; then
     python3 << 'PYTHON_EOF'
 import os
 import yaml
 
 patched_config = os.environ['PATCHED_CONFIG']
-data_prefix = os.environ['DATA_PREFIX']
-tokenizer_path = os.environ['TOKENIZER_PATH']
 tp = int(os.environ['TP'])
 pp = int(os.environ['PP'])
 gbs = int(os.environ['GBS'])
@@ -96,10 +92,11 @@ config['train_iters'] = train_iters
 config['lr_decay_iters'] = train_iters
 config['lr_warmup_iters'] = warmup_steps
 
-config['data_path'] = data_prefix
-config['tokenizer_type'] = 'HuggingFaceTokenizer'
-config['tokenizer_model'] = tokenizer_path
-config['split'] = '100,0,0'
+# External data configuration (disabled - using default Primus data source)
+# config['data_path'] = data_prefix
+# config['tokenizer_type'] = 'HuggingFaceTokenizer'
+# config['tokenizer_model'] = tokenizer_path
+# config['split'] = '100,0,0'
 
 config['disable_tensorboard'] = True
 config['disable_wandb'] = True
@@ -149,11 +146,13 @@ bash "$TRAIN_SCRIPT" \
     --lr_decay_style cosine \
     --lr_decay_iters "$TRAIN_ITERS" \
     --weight_decay "$WEIGHT_DECAY" \
-    --data_path "$DATA_PREFIX" \
-    --tokenizer_type HuggingFaceTokenizer \
-    --tokenizer_model "$TOKENIZER_PATH" \
-    --split 100,0,0 \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama.log"
+
+# External data CLI args (disabled)
+#     --data_path "$DATA_PREFIX" \
+#     --tokenizer_type HuggingFaceTokenizer \
+#     --tokenizer_model "$TOKENIZER_PATH" \
+#     --split 100,0,0 \
 
 cd "$TPRIMAT_PATH"
 
