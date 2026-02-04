@@ -22,24 +22,16 @@ if [ ! -d "${TOKENIZER_PATH}" ]; then
     echo "ERROR: Tokenizer not found at ${TOKENIZER_PATH}"
     exit 1
 fi
+
+# Training batch config (from config.env: TP, PP, DP, GRAD_ACCUM, MBS, SEQ_LEN, etc.)
+NUM_GPUS=$((TP * PP * DP))
+GBS=$((MBS * NUM_GPUS * GRAD_ACCUM))
+LR_DECAY_ITERS=$TRAIN_ITERS
+
+echo "Config: TP=${TP} PP=${PP} DP=${DP} GRAD_ACCUM=${GRAD_ACCUM}"
+echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 echo "Data prefix: ${DATA_PREFIX}"
 echo "Tokenizer: ${TOKENIZER_PATH}"
-
-# Parallel config - qwen AMD (identical_config 01)
-TP=4
-PP=2
-DP=1
-GRAD_ACCUM=128
-
-# Training batch config
-NUM_GPUS=$((TP * PP * DP))  # 8
-MBS=1
-GBS=$((MBS * NUM_GPUS * GRAD_ACCUM))  # 1024
-
-# Training schedule
-TRAIN_ITERS=500
-LR_WARMUP_ITERS=50
-LR_DECAY_ITERS=$TRAIN_ITERS
 
 # Critical AMD performance settings
 export RCCL_DEBUG=ERROR
@@ -67,7 +59,7 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$TPRIMAT_PATH/output/qwen2.5_7B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-export DATA_PREFIX TOKENIZER_PATH PATCHED_CONFIG
+export DATA_PREFIX TOKENIZER_PATH PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GRAD_ACCUM TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY
 if python3 -c "import yaml" 2>/dev/null; then
     python3 << 'PYTHON_EOF'
 import os
@@ -76,25 +68,33 @@ import yaml
 patched_config = os.environ['PATCHED_CONFIG']
 data_prefix = os.environ['DATA_PREFIX']
 tokenizer_path = os.environ['TOKENIZER_PATH']
+tp = int(os.environ['TP'])
+pp = int(os.environ['PP'])
+gbs = int(os.environ['GBS'])
+mbs = int(os.environ['MBS'])
+seq_len = int(os.environ['SEQ_LEN'])
+grad_accum = int(os.environ['GRAD_ACCUM'])
+train_iters = int(os.environ['TRAIN_ITERS'])
+warmup_steps = int(os.environ['WARMUP_STEPS'])
 
 with open(patched_config, 'r') as f:
     config = yaml.safe_load(f)
 
-config['tensor_model_parallel_size'] = 4
-config['pipeline_model_parallel_size'] = 2
+config['tensor_model_parallel_size'] = tp
+config['pipeline_model_parallel_size'] = pp
 config['sequence_parallel'] = False
-config['global_batch_size'] = 1024
-config['micro_batch_size'] = 1
-config['seq_length'] = 2048
-config['encoder_seq_length'] = 2048
-config['gradient_accumulation_steps'] = 128
+config['global_batch_size'] = gbs
+config['micro_batch_size'] = mbs
+config['seq_length'] = seq_len
+config['encoder_seq_length'] = seq_len
+config['gradient_accumulation_steps'] = grad_accum
 config['use_distributed_optimizer'] = True
 config['use_flash_attn'] = True
 config['use_fused_rmsnorm'] = True
 config['fp32_residual_connection'] = False
-config['train_iters'] = 500
-config['lr_decay_iters'] = 500
-config['lr_warmup_iters'] = 50
+config['train_iters'] = train_iters
+config['lr_decay_iters'] = train_iters
+config['lr_warmup_iters'] = warmup_steps
 
 config['data_path'] = data_prefix
 config['tokenizer_type'] = 'HuggingFaceTokenizer'
@@ -120,8 +120,6 @@ with open(patched_config, 'w') as f:
     yaml.dump(config, f)
 PYTHON_EOF
     echo "Patched config written to: $PATCHED_CONFIG"
-    echo "  data_path: $DATA_PREFIX"
-    echo "  tokenizer_model: $TOKENIZER_PATH"
 else
     echo "WARNING: pyyaml not available, using unpatched config"
 fi
@@ -139,18 +137,18 @@ if [ ! -f "$TRAIN_SCRIPT" ]; then
 fi
 
 bash "$TRAIN_SCRIPT" \
-    --train_iters 500 \
-    --global_batch_size 1024 \
-    --micro_batch_size 1 \
-    --seq_length 2048 \
-    --tensor_model_parallel_size 4 \
-    --pipeline_model_parallel_size 2 \
-    --lr 3.0e-4 \
+    --train_iters "$TRAIN_ITERS" \
+    --global_batch_size "$GBS" \
+    --micro_batch_size "$MBS" \
+    --seq_length "$SEQ_LEN" \
+    --tensor_model_parallel_size "$TP" \
+    --pipeline_model_parallel_size "$PP" \
+    --lr "$LR" \
     --min_lr 0.0 \
-    --lr_warmup_iters 50 \
+    --lr_warmup_iters "$WARMUP_STEPS" \
     --lr_decay_style cosine \
-    --lr_decay_iters 500 \
-    --weight_decay 0.1 \
+    --lr_decay_iters "$TRAIN_ITERS" \
+    --weight_decay "$WEIGHT_DECAY" \
     --data_path "$DATA_PREFIX" \
     --tokenizer_type HuggingFaceTokenizer \
     --tokenizer_model "$TOKENIZER_PATH" \
@@ -163,10 +161,10 @@ python3 evaluate/extract_prim_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_qwen.log" \
     --model-name "qwen" \
     --output "$TPRIMAT_PATH/output/train_amd_prim_qwen.json" \
-    --num-gpus 8 \
-    --global-batch-size 1024 \
-    --micro-batch-size 1 \
-    --tensor-parallel-size 4 \
-    --pipeline-parallel-size 2 \
-    --sequence-length 2048 \
-    --parallel-strategy "TP4_PP2_DP1"
+    --num-gpus "$NUM_GPUS" \
+    --global-batch-size "$GBS" \
+    --micro-batch-size "$MBS" \
+    --tensor-parallel-size "$TP" \
+    --pipeline-parallel-size "$PP" \
+    --sequence-length "$SEQ_LEN" \
+    --parallel-strategy "TP${TP}_PP${PP}_DP${DP}"

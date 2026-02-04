@@ -33,7 +33,12 @@ BETA2 = float(os.environ.get("BETA2", 0.95))
 PRECISION = os.environ.get("PRECISION", "bf16")
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 500))
-GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
+GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 8))
+
+# Parallelism
+TP = int(os.environ.get("TP", 1))
+PP = int(os.environ.get("PP", 1))
+DP = int(os.environ.get("DP", 8))
 
 MODELS = {
     "llama": "meta-llama/Llama-3.1-8B",
@@ -210,7 +215,10 @@ def train_model(model_name: str):
                     "micro_batch_size": MBS,
                     "sequence_length": SEQ_LEN,
                     "num_gpus": world_size,
-                    "parallel_strategy": "ddp",
+                    "parallel_strategy": f"TP{TP}_PP{PP}_DP{DP}",
+                    "tensor_parallel_size": TP,
+                    "pipeline_parallel_size": PP,
+                    "data_parallel_size": DP,
                     "gradient_accumulation_steps": grad_accum,
                 },
                 "performance_metrics": {
