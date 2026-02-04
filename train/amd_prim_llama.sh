@@ -4,7 +4,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TPRIMAT_PATH="$(cd "$SCRIPT_DIR/.." && pwd)"
 PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
 
+source "$TPRIMAT_PATH/config.env"
+
 mkdir -p "$TPRIMAT_PATH/output"
+
+# Data paths
+DATA_PREFIX="${DATA_DIR}/allenai-c4-llama-mega"
+TOKENIZER_PATH="${DATA_DIR}/meta-llama-llama-31-8b"
 
 # Parallel config - llama AMD (identical_config 01)
 TP=4
@@ -70,6 +76,11 @@ config['train_iters'] = 500
 config['lr_decay_iters'] = 500
 config['lr_warmup_iters'] = 50
 
+config['data_path'] = '$DATA_PREFIX'
+config['tokenizer_type'] = 'HuggingFaceTokenizer'
+config['tokenizer_model'] = '$TOKENIZER_PATH'
+config['split'] = '100,0,0'
+
 config['disable_tensorboard'] = True
 config['disable_wandb'] = True
 config['disable_mlflow'] = True
@@ -117,6 +128,10 @@ bash "$TRAIN_SCRIPT" \
     --lr_decay_style cosine \
     --lr_decay_iters 500 \
     --weight_decay 0.1 \
+    --data_path "$DATA_PREFIX" \
+    --tokenizer_type HuggingFaceTokenizer \
+    --tokenizer_model "$TOKENIZER_PATH" \
+    --split 100,0,0 \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama.log"
 
 cd "$TPRIMAT_PATH"
