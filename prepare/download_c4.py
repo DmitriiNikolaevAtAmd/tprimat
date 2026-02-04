@@ -29,11 +29,15 @@ def download_c4(
         trust_remote_code=True
     )
     
+    output_file = output_dir / "c4_raw.jsonl"
+    megatron_file = output_dir / "c4_megatron.json"
+    
+    import json
+    
     if streaming:
         print("[Info] Dataset loaded in streaming mode")
         
         if max_samples:
-            output_file = output_dir / f"c4_{subset}_{split}_{max_samples}.jsonl"
             print(f"[Info] Saving {max_samples} samples to {output_file}...")
             
             samples = []
@@ -42,12 +46,18 @@ def download_c4(
                     break
                 samples.append(sample)
             
-            import json
             with open(output_file, "w") as f:
                 for sample in samples:
                     f.write(json.dumps(sample) + "\n")
             
             print(f"[Info] Saved {len(samples)} samples to {output_file}")
+            
+            # Create Megatron-compatible JSON (text-only format)
+            print(f"[Info] Creating Megatron-compatible file: {megatron_file}...")
+            with open(megatron_file, "w") as f:
+                for sample in samples:
+                    f.write(json.dumps({"text": sample["text"]}) + "\n")
+            print(f"[Info] Saved Megatron format to {megatron_file}")
         else:
             print("[Info] Streaming mode - use dataset directly in training")
             print("[Info] Example usage:")
@@ -56,7 +66,6 @@ def download_c4(
             print("       for sample in ds:")
             print("           print(sample['text'])")
     else:
-        output_file = output_dir / f"c4_{subset}_{split}.jsonl"
         print(f"[Info] Dataset loaded: {len(dataset)} samples")
         print(f"[Info] Saving to {output_file}...")
         
@@ -65,6 +74,13 @@ def download_c4(
         
         dataset.to_json(str(output_file))
         print(f"[Info] Saved to {output_file}")
+        
+        # Create Megatron-compatible JSON (text-only format)
+        print(f"[Info] Creating Megatron-compatible file: {megatron_file}...")
+        with open(megatron_file, "w") as f:
+            for sample in dataset:
+                f.write(json.dumps({"text": sample["text"]}) + "\n")
+        print(f"[Info] Saved Megatron format to {megatron_file}")
 
 
 def main():
@@ -93,8 +109,8 @@ def main():
     parser.add_argument(
         "--max-samples",
         type=int,
-        default=None,
-        help="Maximum samples to download (default: all)"
+        default=10000,
+        help="Maximum samples to download (default: 10000)"
     )
     parser.add_argument(
         "--no-streaming",

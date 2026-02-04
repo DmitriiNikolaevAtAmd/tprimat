@@ -76,9 +76,11 @@ list_tokenizers() {
 }
 
 download_bookcorpus() {
-    log_info "Downloading BookCorpus dataset..."
+    local max_samples="${1:-10000}"
+    log_info "Downloading BookCorpus dataset (${max_samples} samples)..."
     python3 "${SCRIPT_DIR}/download_bookcorpus.py" \
-        --output-dir "${DATA_DIR}/bookcorpus"
+        --output-dir "${DATA_DIR}/bookcorpus" \
+        --max-samples "${max_samples}"
     log_success "BookCorpus downloaded to ${DATA_DIR}/bookcorpus"
 }
 
@@ -104,14 +106,8 @@ download_tokenizer() {
     log_success "Tokenizer downloaded to ${DATA_DIR}/tokenizers"
 }
 
-tokenize_data() {
+get_tokenizer_model() {
     local tokenizer_model="$1"
-    local input_file="${DATA_DIR}/bookcorpus/bookcorpus_megatron.json"
-    local output_prefix="${DATA_DIR}/megatron/bookcorpus"
-    
-    if [ ! -f "$input_file" ]; then
-        log_error "Input file not found: ${input_file}. Run --dataset bookcorpus first."
-    fi
     
     if [ -z "$tokenizer_model" ]; then
         # Try to find a downloaded tokenizer
@@ -123,13 +119,28 @@ tokenize_data() {
         fi
     fi
     
+    echo "$tokenizer_model"
+}
+
+tokenize_bookcorpus() {
+    local tokenizer_model="$1"
+    local input_file="${DATA_DIR}/bookcorpus/bookcorpus_megatron.json"
+    local output_prefix="${DATA_DIR}/megatron/bookcorpus"
+    
+    if [ ! -f "$input_file" ]; then
+        log_warn "BookCorpus input file not found: ${input_file}. Skipping."
+        return 1
+    fi
+    
+    tokenizer_model=$(get_tokenizer_model "$tokenizer_model")
+    
     if [ -z "$tokenizer_model" ]; then
         log_error "No tokenizer specified. Run --tokenizer <name> first or specify model."
     fi
     
     mkdir -p "${DATA_DIR}/megatron"
     
-    log_info "Tokenizing data with ${tokenizer_model}..."
+    log_info "Tokenizing BookCorpus with ${tokenizer_model}..."
     python3 "${SCRIPT_DIR}/tokenize_megatron.py" \
         --input "$input_file" \
         --output-prefix "$output_prefix" \
@@ -138,7 +149,53 @@ tokenize_data() {
         --split-sentences \
         --append-eod
     
-    log_success "Tokenized data saved to ${DATA_DIR}/megatron/"
+    log_success "BookCorpus tokenized to ${DATA_DIR}/megatron/"
+}
+
+tokenize_c4() {
+    local tokenizer_model="$1"
+    local input_file="${DATA_DIR}/c4/c4_megatron.json"
+    local output_prefix="${DATA_DIR}/megatron/c4"
+    
+    if [ ! -f "$input_file" ]; then
+        log_warn "C4 input file not found: ${input_file}. Skipping."
+        return 1
+    fi
+    
+    tokenizer_model=$(get_tokenizer_model "$tokenizer_model")
+    
+    if [ -z "$tokenizer_model" ]; then
+        log_error "No tokenizer specified. Run --tokenizer <name> first or specify model."
+    fi
+    
+    mkdir -p "${DATA_DIR}/megatron"
+    
+    log_info "Tokenizing C4 with ${tokenizer_model}..."
+    python3 "${SCRIPT_DIR}/tokenize_megatron.py" \
+        --input "$input_file" \
+        --output-prefix "$output_prefix" \
+        --tokenizer-model "$tokenizer_model" \
+        --workers "$WORKERS" \
+        --split-sentences \
+        --append-eod
+    
+    log_success "C4 tokenized to ${DATA_DIR}/megatron/"
+}
+
+tokenize_data() {
+    local tokenizer_model="$1"
+    
+    tokenizer_model=$(get_tokenizer_model "$tokenizer_model")
+    
+    if [ -z "$tokenizer_model" ]; then
+        log_error "No tokenizer specified. Run --tokenizer <name> first or specify model."
+    fi
+    
+    # Tokenize all available datasets
+    tokenize_bookcorpus "$tokenizer_model" || true
+    tokenize_c4 "$tokenizer_model" || true
+    
+    log_success "All available datasets tokenized to ${DATA_DIR}/megatron/"
 }
 
 prepare_all() {
@@ -158,9 +215,12 @@ prepare_all() {
     download_tokenizer "llama" || log_warn "Failed to download Llama tokenizer (may require HF_TOKEN)"
     download_tokenizer "qwen" || log_warn "Failed to download Qwen tokenizer"
     
-    log_info "Step 4/4: Tokenizing data for Megatron..."
+    log_info "Step 4/4: Tokenizing datasets for Megatron..."
     if [ -d "${DATA_DIR}/tokenizers" ] && [ "$(ls -A ${DATA_DIR}/tokenizers 2>/dev/null)" ]; then
-        tokenize_data
+        log_info "  - Tokenizing BookCorpus..."
+        tokenize_bookcorpus || log_warn "BookCorpus tokenization skipped"
+        log_info "  - Tokenizing C4..."
+        tokenize_c4 || log_warn "C4 tokenization skipped"
     else
         log_warn "No tokenizer available. Skipping tokenization."
     fi
