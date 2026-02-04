@@ -36,8 +36,13 @@ export NCCL_DEBUG=ERROR
 
 cd "$SCRIPT_DIR"
 
-# Use random port to avoid conflicts
-MASTER_PORT=${MASTER_PORT:-$((29500 + RANDOM % 1000))}
+# Kill stale distributed training processes from previous runs
+pkill -9 -f "torchrun.*train_amd_mega" 2>/dev/null || true
+sleep 1
+
+# Use random port to avoid conflicts with stale processes
+MASTER_PORT=${MASTER_PORT:-$((30000 + RANDOM % 5000))}
+echo "Using MASTER_PORT: $MASTER_PORT"
 
 if [ "$NUM_GPUS" -gt 1 ]; then
     torchrun --nproc_per_node="$NUM_GPUS" \
