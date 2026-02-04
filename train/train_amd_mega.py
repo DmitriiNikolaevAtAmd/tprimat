@@ -59,7 +59,7 @@ class PretrainingDataset:
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         
-        from lib.mega_dataset import IndexedDataset
+        from lib.amd_mega_dataset import IndexedDataset
         self.indexed_dataset = IndexedDataset(data_path)
         self.iteration = 0
     
