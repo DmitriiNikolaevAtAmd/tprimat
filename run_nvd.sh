@@ -1,3 +1,3 @@
 #!/bin/bash
 set -e
-./shell_nvd.sh ./train_nvd.sh
+./shell_nvd.sh ./train/pretrain_nvd.sh

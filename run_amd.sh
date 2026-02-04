@@ -1,3 +1,3 @@
 #!/bin/bash
 set -e
-./shell_amd.sh ./train_amd.sh
+./shell_amd.sh ./train/pretrain_amd.sh
