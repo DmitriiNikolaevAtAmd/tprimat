@@ -12,6 +12,19 @@ mkdir -p "$TPRIMAT_PATH/output"
 DATA_PREFIX="${DATA_DIR}/allenai-c4-qwen-mega"
 TOKENIZER_PATH="${DATA_DIR}/qwen-qwen25-7b"
 
+# Verify data files exist
+if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
+    echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
+    echo "       Run prepare/prepare.sh first to generate the dataset"
+    exit 1
+fi
+if [ ! -d "${TOKENIZER_PATH}" ]; then
+    echo "ERROR: Tokenizer not found at ${TOKENIZER_PATH}"
+    exit 1
+fi
+echo "Data prefix: ${DATA_PREFIX}"
+echo "Tokenizer: ${TOKENIZER_PATH}"
+
 # Parallel config - qwen AMD (identical_config 01)
 TP=4
 PP=2
@@ -54,10 +67,17 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$TPRIMAT_PATH/output/qwen2.5_7B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
+export DATA_PREFIX TOKENIZER_PATH PATCHED_CONFIG
 if python3 -c "import yaml" 2>/dev/null; then
-    python3 -c "
+    python3 << 'PYTHON_EOF'
+import os
 import yaml
-with open('$PATCHED_CONFIG', 'r') as f:
+
+patched_config = os.environ['PATCHED_CONFIG']
+data_prefix = os.environ['DATA_PREFIX']
+tokenizer_path = os.environ['TOKENIZER_PATH']
+
+with open(patched_config, 'r') as f:
     config = yaml.safe_load(f)
 
 config['tensor_model_parallel_size'] = 4
@@ -76,9 +96,9 @@ config['train_iters'] = 500
 config['lr_decay_iters'] = 500
 config['lr_warmup_iters'] = 50
 
-config['data_path'] = '$DATA_PREFIX'
+config['data_path'] = data_prefix
 config['tokenizer_type'] = 'HuggingFaceTokenizer'
-config['tokenizer_model'] = '$TOKENIZER_PATH'
+config['tokenizer_model'] = tokenizer_path
 config['split'] = '100,0,0'
 
 config['disable_tensorboard'] = True
@@ -96,9 +116,12 @@ config['torch_profiler_with_stack'] = False
 config['torch_profiler_record_shapes'] = False
 config['torch_profiler_use_gzip'] = False
 
-with open('$PATCHED_CONFIG', 'w') as f:
+with open(patched_config, 'w') as f:
     yaml.dump(config, f)
-"
+PYTHON_EOF
+    echo "Patched config written to: $PATCHED_CONFIG"
+    echo "  data_path: $DATA_PREFIX"
+    echo "  tokenizer_model: $TOKENIZER_PATH"
 else
     echo "WARNING: pyyaml not available, using unpatched config"
 fi
