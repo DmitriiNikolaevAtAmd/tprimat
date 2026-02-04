@@ -31,13 +31,13 @@ ENV NCCL_IB_DISABLE=0
 ENV NCCL_SOCKET_IFNAME=ens51np0
 ENV RCCL_MSCCL_ENABLE=0
 
-RUN mkdir -p /workspace/tprimat
-WORKDIR /workspace/tprimat
+RUN mkdir -p /workspace/code
+WORKDIR /workspace/code
 
-COPY amd-requirements.txt /workspace/tprimat/
+COPY amd-requirements.txt /workspace/code/
 RUN pip install --no-cache-dir -r amd-requirements.txt
 
-COPY . /workspace/tprimat/
+COPY . /workspace/code/
 
 SHELL ["/bin/fish", "-c"]
 CMD ["/bin/fish"]

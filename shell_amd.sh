@@ -9,9 +9,9 @@ docker run -it --rm \
     --shm-size=64g \
     --ulimit memlock=-1 \
     --ulimit stack=67108864 \
-    -v $(pwd):/workspace/tprimat \
+    -v $(pwd):/workspace/code \
     -v /data:/data \
-    -w /workspace/tprimat \
+    -w /workspace/code \
     --env-file config.env \
     --env-file secrets.env \
     primat:amd "$@"

@@ -20,9 +20,9 @@ ENV NCCL_NET_GDR_LEVEL=PHB
 ENV USE_APEX=NO
 ENV TRANSFORMERS_NO_APEX=1
 
-RUN mkdir -p /workspace/tprimat
-WORKDIR /workspace/tprimat
-COPY nvd-requirements.txt /workspace/tprimat/
+RUN mkdir -p /workspace/code
+WORKDIR /workspace/code
+COPY nvd-requirements.txt /workspace/code/
 RUN pip install --no-cache-dir -r nvd-requirements.txt
 
 SHELL ["/usr/bin/fish", "-c"]
