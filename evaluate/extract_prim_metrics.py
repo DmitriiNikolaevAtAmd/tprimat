@@ -207,6 +207,8 @@ Examples:
                        help='Pipeline parallel size (default: 1)')
     parser.add_argument('--parallel-strategy', 
                        help='Parallelism strategy name (e.g., balanced, minimal_communication)')
+    parser.add_argument('--peak-memory-gb', type=float,
+                       help='Peak GPU memory usage in GB (from memory probe)')
     parser.add_argument('--verbose', action='store_true',
                        help='Print verbose output')
     
@@ -246,6 +248,15 @@ Examples:
         args.parallel_strategy,
         args.model_name
     )
+    
+    # Add memory metrics from CLI if provided (overrides log-parsed values)
+    if results and args.peak_memory_gb:
+        results["memory_metrics"] = {
+            "peak_memory_allocated_gb": args.peak_memory_gb,
+            "avg_memory_allocated_gb": args.peak_memory_gb,  # Use peak as proxy
+            "min_memory_allocated_gb": args.peak_memory_gb,  # Use peak as proxy
+        }
+        print(f"  + Using memory from probe: {args.peak_memory_gb:.2f} GB")
     
     if results:
         # Determine output path

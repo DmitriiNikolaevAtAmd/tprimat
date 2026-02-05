@@ -133,6 +133,22 @@ if [ ! -f "$TRAIN_SCRIPT" ]; then
     exit 1
 fi
 
+# Start memory monitoring in background (samples every 2 seconds)
+MEMORY_LOG="$TPRIMAT_PATH/output/memory_llama.log"
+(
+    while true; do
+        if command -v rocm-smi &>/dev/null; then
+            # AMD: use rocm-smi
+            rocm-smi --showmeminfo vram 2>/dev/null | grep -E "GPU|Used" >> "$MEMORY_LOG"
+        elif command -v nvidia-smi &>/dev/null; then
+            # NVIDIA: use nvidia-smi
+            nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits >> "$MEMORY_LOG"
+        fi
+        sleep 2
+    done
+) &
+MEMORY_PID=$!
+
 bash "$TRAIN_SCRIPT" \
     --train_iters "$TRAIN_ITERS" \
     --global_batch_size "$GBS" \
@@ -148,6 +164,9 @@ bash "$TRAIN_SCRIPT" \
     --weight_decay "$WEIGHT_DECAY" \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama.log"
 
+# Stop memory monitoring
+kill $MEMORY_PID 2>/dev/null || true
+
 # External data CLI args (disabled)
 #     --data_path "$DATA_PREFIX" \
 #     --tokenizer_type HuggingFaceTokenizer \
@@ -155,6 +174,22 @@ bash "$TRAIN_SCRIPT" \
 #     --split 100,0,0 \
 
 cd "$TPRIMAT_PATH"
+
+# Extract peak memory from rocm-smi/nvidia-smi log
+echo "Extracting peak GPU memory from monitoring log..."
+MEMORY_ARG=""
+if [ -f "$MEMORY_LOG" ]; then
+    MEMORY_OUTPUT=$(python3 evaluate/probe_gpu_memory.py --parse-log "$MEMORY_LOG" --quiet 2>/dev/null || echo "PEAK_MEMORY_GB=0")
+    PEAK_MEMORY_GB=$(echo "$MEMORY_OUTPUT" | grep "PEAK_MEMORY_GB=" | cut -d= -f2)
+    if [ -n "$PEAK_MEMORY_GB" ] && [ "$PEAK_MEMORY_GB" != "0" ]; then
+        echo "  Peak memory: ${PEAK_MEMORY_GB} GB"
+        MEMORY_ARG="--peak-memory-gb $PEAK_MEMORY_GB"
+    else
+        echo "  Warning: Could not extract GPU memory from log"
+    fi
+else
+    echo "  Warning: Memory log not found at $MEMORY_LOG"
+fi
 
 python3 evaluate/extract_prim_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_llama.log" \
@@ -166,4 +201,5 @@ python3 evaluate/extract_prim_metrics.py \
     --tensor-parallel-size "$TP" \
     --pipeline-parallel-size "$PP" \
     --sequence-length "$SEQ_LEN" \
-    --parallel-strategy "TP${TP}_PP${PP}_DP${DP}"
+    --parallel-strategy "TP${TP}_PP${PP}_DP${DP}" \
+    $MEMORY_ARG
