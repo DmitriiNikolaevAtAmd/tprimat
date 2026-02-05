@@ -9,7 +9,7 @@ from transformers import AutoTokenizer
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data/tprimat")
 DATA_SAMPLES = int(os.environ.get("DATA_SAMPLES", 500000))
-TRAIN_SPLIT = float(os.environ.get("TRAIN_SPLIT", 0.9))  # 90% train, 10% test
+TRAIN_SPLIT = float(os.environ.get("TRAIN_SPLIT", 0.9))  # default if env not set
 
 DTYPE = np.dtype(np.int32)
 DTYPE_CODE = 4
@@ -130,20 +130,20 @@ def main():
     parser.add_argument(
         "--input",
         type=str,
-        default=f"{DATA_DIR}/bookcorpus/bookcorpus_megatron.json",
+        default=f"{DATA_DIR}/bookcorpus.jsonl",
         help="Input clean JSONL file",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=f"{DATA_DIR}/megatron",
+        default=DATA_DIR,
         help="Output directory for encoded datasets",
     )
     parser.add_argument(
         "--output-name",
         type=str,
-        default="bookcorpus_text_sentence",
-        help="Base name for output files (default: bookcorpus_text_sentence)",
+        default="bc",
+        help="Base name for output files (default: bc)",
     )
     parser.add_argument(
         "--seq-length",

@@ -23,4 +23,4 @@ torchrun --nproc_per_node="$NUM_GPUS" \
          --node_rank=0 \
          --master_addr=localhost \
          --master_port=29500 \
-         "$SCRIPT_DIR/nvd_fsdp.py" llama
+         "$SCRIPT_DIR/train_nvd_fsdp.py" llama

@@ -55,7 +55,7 @@ BETA2 = float(os.environ.get("BETA2", 0.95))
 PRECISION = os.environ.get("PRECISION", "bf16")
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
-GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
+GA = int(os.environ.get("GA", 32))
 
 
 class PretrainingDataset(Dataset):
@@ -126,7 +126,7 @@ def train_model(model_name, model_short_name):
     
     rank, world_size, local_rank = setup_distributed()
     
-    grad_accum = GRAD_ACCUM // world_size if world_size > 1 else GRAD_ACCUM
+    grad_accum = GA // world_size if world_size > 1 else GA
     global_batch_size = MBS * grad_accum * world_size
     
     if torch.cuda.is_available():

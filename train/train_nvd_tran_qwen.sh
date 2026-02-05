@@ -27,7 +27,7 @@ if [ "$NUM_GPUS" -gt 1 ]; then
              --node_rank=0 \
              --master_addr=localhost \
              --master_port=29500 \
-             "$SCRIPT_DIR/nvd_tran.py" qwen
+             "$SCRIPT_DIR/train_nvd_tran.py" qwen
 else
-    python3 -u "$SCRIPT_DIR/nvd_tran.py" qwen
+    python3 -u "$SCRIPT_DIR/train_nvd_tran.py" qwen
 fi

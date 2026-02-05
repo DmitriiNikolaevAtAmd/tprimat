@@ -41,10 +41,11 @@ BETA2 = float(os.environ.get("BETA2", 0.95))
 PRECISION = os.environ.get("PRECISION", "bf16")
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
-GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
+GA = int(os.environ.get("GA", 32))
 TP = int(os.environ.get("TP", 1))
 PP = int(os.environ.get("PP", 1))
 DP = int(os.environ.get("DP", 4))
+DATASET = os.environ.get("DATASET", "bc")  # bc or c4
 
 try:
     import bitsandbytes as bnb
@@ -137,7 +138,7 @@ def train_model(model_name: str, model_config: dict):
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     
     # Normalize grad accumulation across distributed ranks so GBS stays comparable
-    base_grad_accum = int(model_config.get("grad_accum_steps", GRAD_ACCUM))
+    base_grad_accum = int(model_config.get("grad_accum_steps", GA))
     grad_accum = base_grad_accum // world_size if world_size > 1 else base_grad_accum
     grad_accum = max(1, grad_accum)
     global_batch_size = MBS * grad_accum * world_size
@@ -209,17 +210,16 @@ def train_model(model_name: str, model_config: dict):
             logger.info(f"Wrapped model with DDP on device {local_rank}")
             is_ddp = True
         
-        dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
+        dataset_path = str(DATA_DIR / f"{DATASET}-train")
         
         idx_file = dataset_path + ".idx"
         bin_file = dataset_path + ".bin"
         if not os.path.exists(idx_file) or not os.path.exists(bin_file):
             raise FileNotFoundError(
-                f"Real data not found at {dataset_path}\n"
+                f"Dataset not found at {dataset_path}\n"
                 f"  Missing: {idx_file if not os.path.exists(idx_file) else ''} "
                 f"{bin_file if not os.path.exists(bin_file) else ''}\n"
-                f"  Run data preparation first: python prepare/fetch_deps.py && "
-                f"python prepare/clean_data.py && python prepare/encode_data.py"
+                f"  Run data preparation: bash prepare/data.sh"
             )
         
         logger.info(f"Dataset: {dataset_path}")
@@ -389,7 +389,7 @@ def train_model(model_name: str, model_config: dict):
 def train_llama():
     config = {
         'hf_model': 'meta-llama/Llama-3.1-8B',
-        'grad_accum_steps': GRAD_ACCUM,
+        'grad_accum_steps': GA,
         'tensor_parallel': TP,
         'pipeline_parallel': PP,
     }
@@ -399,7 +399,7 @@ def train_llama():
 def train_qwen():
     config = {
         'hf_model': 'Qwen/Qwen2.5-7B',
-        'grad_accum_steps': GRAD_ACCUM,
+        'grad_accum_steps': GA,
         'tensor_parallel': TP,
         'pipeline_parallel': PP,
     }

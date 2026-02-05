@@ -18,4 +18,4 @@ mkdir -p "$OUTPUT_DIR"
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 
-deepspeed --num_gpus="$NUM_GPUS" "$SCRIPT_DIR/nvd_deep.py" qwen
+deepspeed --num_gpus="$NUM_GPUS" "$SCRIPT_DIR/train_nvd_deep.py" qwen

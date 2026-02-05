@@ -37,7 +37,7 @@ FP8_HYBRID = os.environ.get("FP8_HYBRID", "false").lower() == "true"
 FP8_PARAM = os.environ.get("FP8_PARAM", "false").lower() == "true"
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
-GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
+GA = int(os.environ.get("GA", 32))
 TP = int(os.environ.get("TP", 1))
 PP = int(os.environ.get("PP", 1))
 DP = int(os.environ.get("DP", 4))
@@ -49,6 +49,7 @@ PROFILE_REPEAT = int(os.environ.get("PROFILE_REPEAT", 1))
 VERIFY_DATA = os.environ.get("VERIFY_DATA", "false").lower() == "true"
 VERIFY_SAMPLES = int(os.environ.get("VERIFY_SAMPLES", 100))
 VERIFY_FULL_SCAN = os.environ.get("VERIFY_FULL_SCAN", "false").lower() == "true"
+DATASET = os.environ.get("DATASET", "bc")  # bc (BookCorpus) or c4
 
 logging.basicConfig(
     level=logging.INFO,
@@ -267,9 +268,10 @@ def train_model(model_name: str):
         sequence_parallel=False,
     )
     
-    # Dataset paths: separate train (90%) and test (10%) files
-    train_dataset_path = str(DATA_DIR / "megatron" / "bookcorpus_text_sentence-train")
-    test_dataset_path = str(DATA_DIR / "megatron" / "bookcorpus_text_sentence-test")
+    # Dataset paths: separate train and test files
+    dataset_name = DATASET  # "bc" or "c4"
+    train_dataset_path = str(DATA_DIR / f"{dataset_name}-train")
+    test_dataset_path = str(DATA_DIR / f"{dataset_name}-test")
     
     # Validate train dataset exists
     train_idx = train_dataset_path + ".idx"

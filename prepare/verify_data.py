@@ -204,8 +204,10 @@ def verify_dataset(
 
 
 DATASETS = {
-    "train": ("bookcorpus_text_sentence-train", "meta-llama/Llama-3.1-8B"),
-    "test": ("bookcorpus_text_sentence-test", "meta-llama/Llama-3.1-8B"),
+    "c4-train": ("c4-train", "meta-llama/Llama-3.1-8B"),
+    "c4-test": ("c4-test", "meta-llama/Llama-3.1-8B"),
+    "bc-train": ("bc-train", "meta-llama/Llama-3.1-8B"),
+    "bc-test": ("bc-test", "meta-llama/Llama-3.1-8B"),
 }
 
 
@@ -214,7 +216,7 @@ def main():
     parser.add_argument(
         "--input-dir",
         type=str,
-        default=f"{DATA_DIR}/megatron",
+        default=DATA_DIR,
         help="Directory containing encoded datasets",
     )
     parser.add_argument(

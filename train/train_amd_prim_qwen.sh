@@ -23,12 +23,12 @@ mkdir -p "$TPRIMAT_PATH/output"
 #     exit 1
 # fi
 
-# Training batch config (from config.env: TP, PP, DP, GRAD_ACCUM, MBS, SEQ_LEN, etc.)
+# Training batch config (from config.env: TP, PP, DP, GA, MBS, SEQ_LEN, etc.)
 NUM_GPUS=$((TP * PP * DP))
-GBS=$((MBS * NUM_GPUS * GRAD_ACCUM))
+GBS=$((MBS * NUM_GPUS * GA))
 LR_DECAY_ITERS=$TRAIN_ITERS
 
-echo "Config: TP=${TP} PP=${PP} DP=${DP} GRAD_ACCUM=${GRAD_ACCUM}"
+echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 
 # Critical AMD performance settings
@@ -57,7 +57,7 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$TPRIMAT_PATH/output/qwen2.5_7B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-export PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GRAD_ACCUM TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY
+export PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY
 if python3 -c "import yaml" 2>/dev/null; then
     python3 << 'PYTHON_EOF'
 import os
@@ -69,7 +69,7 @@ pp = int(os.environ['PP'])
 gbs = int(os.environ['GBS'])
 mbs = int(os.environ['MBS'])
 seq_len = int(os.environ['SEQ_LEN'])
-grad_accum = int(os.environ['GRAD_ACCUM'])
+grad_accum = int(os.environ['GA'])
 train_iters = int(os.environ['TRAIN_ITERS'])
 warmup_steps = int(os.environ['WARMUP_STEPS'])
 

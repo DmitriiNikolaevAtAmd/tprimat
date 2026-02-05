@@ -15,11 +15,11 @@ export NCCL_DEBUG=INFO
 export TP=4
 export PP=1
 export DP=2
-export GRAD_ACCUM=64
+export GA=64
 
 # Batch config
 export MBS=1
-export GBS=512  # MBS * NUM_GPUS * GRAD_ACCUM = 1 * 8 * 64
+export GBS=512  # MBS * NUM_GPUS * GA = 1 * 8 * 64
 
 # Training schedule
 export SEQ_LEN=2048

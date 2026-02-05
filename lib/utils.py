@@ -222,7 +222,7 @@ def get_parallelism_config(strategy: str, model: str, platform: str) -> Dict[str
         "tensor_parallel_size": int(os.environ.get("TP", 1)),
         "pipeline_parallel_size": int(os.environ.get("PP", 1)),
         "data_parallel_size": int(os.environ.get("DP", 4)),
-        "gradient_accumulation_steps": int(os.environ.get("GRAD_ACCUM", 32)),
+        "gradient_accumulation_steps": int(os.environ.get("GA", 32)),
     }
 
 

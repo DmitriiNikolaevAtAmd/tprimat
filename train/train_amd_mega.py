@@ -33,7 +33,7 @@ BETA2 = float(os.environ.get("BETA2", 0.95))
 PRECISION = os.environ.get("PRECISION", "bf16")
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 500))
-GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 8))
+GA = int(os.environ.get("GA", 8))
 
 # Parallelism
 TP = int(os.environ.get("TP", 1))
@@ -121,7 +121,7 @@ def train_model(model_name: str):
     
     set_seed(SEED)
     
-    grad_accum = max(1, GRAD_ACCUM // world_size) if world_size > 1 else GRAD_ACCUM
+    grad_accum = max(1, GA // world_size) if world_size > 1 else GA
     global_batch_size = MBS * grad_accum * world_size
     
     gpu_info = get_gpu_info(world_size)

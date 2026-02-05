@@ -46,7 +46,7 @@ BETA2 = float(os.environ.get("BETA2", 0.95))
 PRECISION = os.environ.get("PRECISION", "bf16")
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
-GRAD_ACCUM = int(os.environ.get("GRAD_ACCUM", 32))
+GA = int(os.environ.get("GA", 32))
 
 try:
     import bitsandbytes as bnb
@@ -143,7 +143,7 @@ def train_model(model_name, model_short_name):
     
     logger.info(f"Dataset: {dataset_path}")
     
-    grad_accum = GRAD_ACCUM // num_gpus if num_gpus > 1 else GRAD_ACCUM
+    grad_accum = GA // num_gpus if num_gpus > 1 else GA
     global_batch_size = MBS * grad_accum * num_gpus
     
     dataset = PretrainingDataset(
