@@ -360,6 +360,7 @@ def train_model(model_name: str):
     recipe.log.wandb = None
     recipe.trainer.val_check_interval = None
     recipe.trainer.check_val_every_n_epoch = None
+    recipe.trainer.num_sanity_val_steps = 0
     
     benchmark_callback = BenchmarkCallback(
         output_dir=str(OUTPUT_DIR),
