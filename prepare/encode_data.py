@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 from transformers import AutoTokenizer
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data/tprimat-full")
+DATA_DIR = os.environ.get("DATA_DIR", "/data/tprimat")
 DATA_SAMPLES = int(os.environ.get("DATA_SAMPLES", 500000))
 TRAIN_SPLIT = float(os.environ.get("TRAIN_SPLIT", 0.9))  # 90% train, 10% test
 
