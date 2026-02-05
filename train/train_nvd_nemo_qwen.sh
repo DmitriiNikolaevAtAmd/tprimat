@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 export OUTPUT_DIR="$ROOT_DIR/output"
-export DATA_DIR="/data/tprimat"
+export DATA_DIR="/data/tprimat-full"
 mkdir -p "$OUTPUT_DIR"
 
 export PYTORCH_ALLOC_CONF=expandable_segments:True
@@ -23,8 +23,8 @@ export GBS=1024  # MBS * NUM_GPUS * GRAD_ACCUM = 1 * 8 * 128
 
 # Training schedule
 export SEQ_LEN=2048
-export TRAIN_ITERS=500
-export WARMUP_STEPS=50
+export TRAIN_ITERS=50
+export WARMUP_STEPS=10
 export LR=3.0e-4
 export WEIGHT_DECAY=0.1
 
@@ -35,4 +35,4 @@ export PROFILE_WARMUP=1
 export PROFILE_ACTIVE=2
 export PROFILE_REPEAT=1
 
-python3 -u "$SCRIPT_DIR/nvd_nemo.py" qwen
+python3 -u "$SCRIPT_DIR/train_nvd_nemo.py" qwen

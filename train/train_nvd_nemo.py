@@ -166,13 +166,13 @@ def get_model_config(model_name: str):
             "display_name": "Llama 3.1 8B",
             "recipe_fn": llm.llama31_8b.pretrain_recipe,
             "recipe_name": "llama31_8b_pretrain",
-            "tokenizer_path": "meta-llama/Llama-3.1-8B",
+            "tokenizer_path": str(DATA_DIR / "tokenizers" / "llama"),
         },
         "qwen": {
             "display_name": "Qwen 2.5 7B",
             "recipe_fn": llm.qwen25_7b.pretrain_recipe,
             "recipe_name": "qwen25_7b_pretrain",
-            "tokenizer_path": "Qwen/Qwen2.5-7B",
+            "tokenizer_path": str(DATA_DIR / "tokenizers" / "qwen"),
         }
     }
     
@@ -241,7 +241,7 @@ def train_model(model_name: str):
         sequence_parallel=False,
     )
     
-    mega_dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
+    mega_dataset_path = str(DATA_DIR / "megatron" / "bookcorpus_text_sentence")
     idx_file = mega_dataset_path + ".idx"
     bin_file = mega_dataset_path + ".bin"
     if not os.path.exists(idx_file) or not os.path.exists(bin_file):
@@ -254,7 +254,7 @@ def train_model(model_name: str):
         )
     
     logger.info(f"Data validation passed: {mega_dataset_path}")
-    logger.info("Using NeMo PreTrainingDataModule with real C4 dataset")
+    logger.info("Using NeMo PreTrainingDataModule with BookCorpus dataset")
 
     if VERIFY_DATA:
         try:
