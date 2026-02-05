@@ -180,24 +180,10 @@ kill $MEMORY_PID 2>/dev/null || true
 
 cd "$TPRIMAT_PATH"
 
-# Extract memory values from rocm-smi/nvidia-smi log (with per-step data for line charts)
-echo "Extracting GPU memory from monitoring log..."
-MEMORY_VALUES_FILE="$TPRIMAT_PATH/output/memory_values_llama.json"
+# Extract metrics and include memory values directly in JSON output
 MEMORY_ARG=""
 if [ -f "$MEMORY_LOG" ]; then
-    python3 evaluate/probe_gpu_memory.py \
-        --parse-log "$MEMORY_LOG" \
-        --output-values "$MEMORY_VALUES_FILE" \
-        --quiet 2>/dev/null || true
-    
-    if [ -f "$MEMORY_VALUES_FILE" ]; then
-        echo "  Memory values saved to: $MEMORY_VALUES_FILE"
-        MEMORY_ARG="--memory-values-file $MEMORY_VALUES_FILE"
-    else
-        echo "  Warning: Could not extract GPU memory from log"
-    fi
-else
-    echo "  Warning: Memory log not found at $MEMORY_LOG"
+    MEMORY_ARG="--memory-log $MEMORY_LOG"
 fi
 
 python3 evaluate/extract_prim_metrics.py \
@@ -212,3 +198,6 @@ python3 evaluate/extract_prim_metrics.py \
     --sequence-length "$SEQ_LEN" \
     --parallel-strategy "TP${TP}_PP${PP}_DP${DP}" \
     $MEMORY_ARG
+
+# Clean up temporary memory log
+rm -f "$MEMORY_LOG"

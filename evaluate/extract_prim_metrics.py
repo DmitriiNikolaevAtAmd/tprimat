@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,73 @@ from lib.utils import (
     get_parallelism_config,
     print_summary
 )
+
+
+def parse_memory_log(log_file, num_steps=None):
+    """Parse rocm-smi or nvidia-smi memory log to extract memory values.
+    
+    Args:
+        log_file: Path to memory log file
+        num_steps: If provided, interpolate memory values to match step count
+    
+    Returns dict with memory_values array and summary stats.
+    """
+    if not os.path.exists(log_file):
+        return None
+    
+    raw_values = []
+    
+    with open(log_file, 'r') as f:
+        for line in f:
+            # rocm-smi formats:
+            # "VRAM Total Used Memory (B): 73014444032"
+            # "Used: 69632 MB"
+            # nvidia-smi format: "0, 65432" (index, memory_mb)
+            
+            # Match bytes format
+            match = re.search(r'Used.*\(B\)[:\s]+(\d+)', line)
+            if match:
+                bytes_val = int(match.group(1))
+                raw_values.append(bytes_val / 1e9)
+                continue
+            
+            # Match MB format
+            match = re.search(r'Used[:\s]+(\d+)\s*MB', line, re.IGNORECASE)
+            if match:
+                mb_val = int(match.group(1))
+                raw_values.append(mb_val / 1024)
+                continue
+            
+            # Match nvidia-smi CSV format (index, memory_mb)
+            match = re.search(r'^\d+,\s*(\d+)', line)
+            if match:
+                mb_val = int(match.group(1))
+                raw_values.append(mb_val / 1024)
+                continue
+    
+    if not raw_values:
+        return None
+    
+    # Interpolate to match step count if requested
+    if num_steps and num_steps > 0 and len(raw_values) != num_steps:
+        # Linear interpolation to resample memory values to match steps
+        import numpy as np
+        raw_indices = np.linspace(0, len(raw_values) - 1, len(raw_values))
+        step_indices = np.linspace(0, len(raw_values) - 1, num_steps)
+        memory_values = list(np.interp(step_indices, raw_indices, raw_values))
+    else:
+        memory_values = raw_values
+    
+    # Round values
+    memory_values = [round(v, 2) for v in memory_values]
+    
+    return {
+        "memory_values": memory_values,
+        "peak_memory_gb": round(max(memory_values), 2),
+        "avg_memory_gb": round(sum(memory_values) / len(memory_values), 2),
+        "min_memory_gb": round(min(memory_values), 2),
+        "raw_samples": len(raw_values),
+    }
 
 
 def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, micro_batch_size=1, tensor_parallel_size=1, pipeline_parallel_size=1, parallel_strategy=None, model_name=None):
@@ -209,10 +277,12 @@ Examples:
                        help='Pipeline parallel size (default: 1)')
     parser.add_argument('--parallel-strategy', 
                        help='Parallelism strategy name (e.g., balanced, minimal_communication)')
+    parser.add_argument('--memory-log',
+                       help='rocm-smi/nvidia-smi memory log file to parse')
     parser.add_argument('--peak-memory-gb', type=float,
-                       help='Peak GPU memory usage in GB (from memory probe)')
+                       help='Peak GPU memory usage in GB (deprecated, use --memory-log)')
     parser.add_argument('--memory-values-file',
-                       help='JSON file with memory_values array (from probe_gpu_memory.py --output-values)')
+                       help='JSON file with memory_values array (deprecated, use --memory-log)')
     parser.add_argument('--verbose', action='store_true',
                        help='Print verbose output')
     
@@ -253,9 +323,25 @@ Examples:
         args.model_name
     )
     
-    # Add memory metrics from CLI if provided (overrides log-parsed values)
-    if results and args.memory_values_file:
-        # Load memory values from JSON file (includes per-step data for line charts)
+    # Add memory metrics from rocm-smi/nvidia-smi log (preferred method)
+    if results and args.memory_log:
+        # Get step count to align memory values with iterations
+        num_steps = len(results.get('step_times', []))
+        mem_data = parse_memory_log(args.memory_log, num_steps=num_steps)
+        if mem_data:
+            results["memory_metrics"] = {
+                "peak_memory_allocated_gb": mem_data['peak_memory_gb'],
+                "avg_memory_allocated_gb": mem_data['avg_memory_gb'],
+                "min_memory_allocated_gb": mem_data['min_memory_gb'],
+            }
+            results["memory_values"] = mem_data['memory_values']
+            raw_samples = mem_data.get('raw_samples', len(mem_data['memory_values']))
+            print(f"  + Memory: {raw_samples} samples → {len(mem_data['memory_values'])} values (aligned to steps)")
+            print(f"    Peak: {mem_data['peak_memory_gb']:.2f} GB, Avg: {mem_data['avg_memory_gb']:.2f} GB")
+        else:
+            print(f"  ! Warning: Could not parse memory log: {args.memory_log}")
+    # Legacy: Load from intermediate JSON file
+    elif results and args.memory_values_file:
         try:
             with open(args.memory_values_file, 'r') as f:
                 mem_data = json.load(f)
@@ -266,18 +352,15 @@ Examples:
             }
             if 'memory_values' in mem_data:
                 results["memory_values"] = mem_data['memory_values']
-                print(f"  + Loaded {len(mem_data['memory_values'])} memory samples from: {args.memory_values_file}")
-            else:
-                print(f"  + Using memory from file: {mem_data.get('peak_memory_gb', 0):.2f} GB")
         except (json.JSONDecodeError, IOError) as e:
             print(f"  ! Warning: Could not load memory values file: {e}")
+    # Legacy: Use peak-only value
     elif results and args.peak_memory_gb:
         results["memory_metrics"] = {
             "peak_memory_allocated_gb": args.peak_memory_gb,
-            "avg_memory_allocated_gb": args.peak_memory_gb,  # Use peak as proxy
-            "min_memory_allocated_gb": args.peak_memory_gb,  # Use peak as proxy
+            "avg_memory_allocated_gb": args.peak_memory_gb,
+            "min_memory_allocated_gb": args.peak_memory_gb,
         }
-        print(f"  + Using memory from probe: {args.peak_memory_gb:.2f} GB")
     
     if results:
         # Determine output path
