@@ -241,31 +241,46 @@ def train_model(model_name: str):
         sequence_parallel=False,
     )
     
-    mega_dataset_path = str(DATA_DIR / "megatron" / "bookcorpus_text_sentence")
-    idx_file = mega_dataset_path + ".idx"
-    bin_file = mega_dataset_path + ".bin"
-    if not os.path.exists(idx_file) or not os.path.exists(bin_file):
+    # Dataset paths: separate train (90%) and test (10%) files
+    train_dataset_path = str(DATA_DIR / "megatron" / "bookcorpus_text_sentence-train")
+    test_dataset_path = str(DATA_DIR / "megatron" / "bookcorpus_text_sentence-test")
+    
+    # Validate train dataset exists
+    train_idx = train_dataset_path + ".idx"
+    train_bin = train_dataset_path + ".bin"
+    if not os.path.exists(train_idx) or not os.path.exists(train_bin):
         raise FileNotFoundError(
-            f"Data preparation not completed - dataset not found at {mega_dataset_path}\n"
-            f"  Missing: {idx_file if not os.path.exists(idx_file) else ''} "
-            f"{bin_file if not os.path.exists(bin_file) else ''}\n"
-            f"  Run data preparation first: python prepare/fetch_deps.py && "
-            f"python prepare/clean_data.py && python prepare/encode_data.py"
+            f"Training dataset not found at {train_dataset_path}\n"
+            f"  Missing: {train_idx if not os.path.exists(train_idx) else ''} "
+            f"{train_bin if not os.path.exists(train_bin) else ''}\n"
+            f"  Run data preparation: python prepare/encode_data.py"
         )
     
-    logger.info(f"Data validation passed: {mega_dataset_path}")
-    logger.info("Using NeMo PreTrainingDataModule with BookCorpus dataset")
+    # Validate test dataset exists
+    test_idx = test_dataset_path + ".idx"
+    test_bin = test_dataset_path + ".bin"
+    if not os.path.exists(test_idx) or not os.path.exists(test_bin):
+        raise FileNotFoundError(
+            f"Test dataset not found at {test_dataset_path}\n"
+            f"  Missing: {test_idx if not os.path.exists(test_idx) else ''} "
+            f"{test_bin if not os.path.exists(test_bin) else ''}\n"
+            f"  Run data preparation: python prepare/encode_data.py"
+        )
+    
+    logger.info(f"Train dataset: {train_dataset_path}")
+    logger.info(f"Test dataset:  {test_dataset_path}")
+    logger.info("Using separate train/test files (validation uses test dataset)")
 
     if VERIFY_DATA:
         try:
             from prepare.verify_data import verify_dataset
             logger.info(
-                "Verifying dataset tokens (samples=%d, full_scan=%s)",
+                "Verifying train dataset tokens (samples=%d, full_scan=%s)",
                 VERIFY_SAMPLES,
                 VERIFY_FULL_SCAN,
             )
             ok = verify_dataset(
-                mega_dataset_path,
+                train_dataset_path,
                 config["tokenizer_path"],
                 VERIFY_SAMPLES,
                 VERIFY_FULL_SCAN,
@@ -277,9 +292,16 @@ def train_model(model_name: str):
             logger.error("Dataset verification errored: %s", e)
             sys.exit(1)
     
+    # Use explicit paths dict: train for training, test for both validation and test
+    data_paths = {
+        "train": [train_dataset_path],
+        "validation": [test_dataset_path],
+        "test": [test_dataset_path],
+    }
+    
     from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
     recipe.data = PreTrainingDataModule(
-        paths=[mega_dataset_path],
+        paths=data_paths,
         seq_length=SEQ_LEN,
         micro_batch_size=MBS,
         global_batch_size=GBS,

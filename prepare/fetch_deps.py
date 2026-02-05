@@ -124,8 +124,8 @@ def main():
     parser.add_argument(
         "--samples",
         type=int,
-        default=int(os.environ.get("DATA_SAMPLES", 100000)),
-        help="Number of samples to fetch (default: DATA_SAMPLES env or 100K)",
+        default=int(os.environ.get("DATA_SAMPLES", 500000)),
+        help="Number of samples to fetch (default: DATA_SAMPLES env or 500K)",
     )
     parser.add_argument(
         "--output",

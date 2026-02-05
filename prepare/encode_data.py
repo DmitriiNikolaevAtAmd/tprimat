@@ -8,49 +8,21 @@ from pathlib import Path
 from transformers import AutoTokenizer
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data/tprimat-full")
+DATA_SAMPLES = int(os.environ.get("DATA_SAMPLES", 500000))
+TRAIN_SPLIT = float(os.environ.get("TRAIN_SPLIT", 0.9))  # 90% train, 10% test
 
 DTYPE = np.dtype(np.int32)
 DTYPE_CODE = 4
 
 
-def encode_dataset(input_file: str, output_prefix: str, tokenizer_name: str, seq_length: int):
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
-    vocab_size = len(tokenizer)
-    eos_token_id = tokenizer.eos_token_id
-    if eos_token_id is None:
-        raise ValueError(f"{tokenizer_name} has no eos_token_id configured")
-    
-    all_tokens = []
-    
-    with open(input_file, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            
-            doc = json.loads(line)
-            text = doc.get("text", "")
-            
-            tokens = tokenizer.encode(text, add_special_tokens=False)
-            if tokens:
-                max_token = max(tokens)
-                min_token = min(tokens)
-                if min_token < 0 or max_token >= vocab_size:
-                    raise ValueError(
-                        "Token id out of range for tokenizer "
-                        f"{tokenizer_name}: min={min_token} max={max_token} "
-                        f"vocab={vocab_size}"
-                    )
-            all_tokens.extend(tokens)
-            all_tokens.append(eos_token_id)
-    
-    num_sequences = len(all_tokens) // seq_length
-    
+def write_megatron_dataset(output_prefix: str, tokens_array: np.ndarray, seq_length: int):
+    """Write tokens to Megatron indexed dataset format (.bin and .idx files)."""
+    num_sequences = len(tokens_array) // seq_length
     if num_sequences == 0:
-        raise ValueError(f"Not enough tokens ({len(all_tokens)}) for seq_length {seq_length}")
+        raise ValueError(f"Not enough tokens ({len(tokens_array)}) for seq_length {seq_length}")
     
     tokens_used = num_sequences * seq_length
-    tokens_array = np.array(all_tokens[:tokens_used], dtype=DTYPE)
+    tokens_array = tokens_array[:tokens_used]
     
     output_path = Path(output_prefix)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -63,60 +35,69 @@ def encode_dataset(input_file: str, output_prefix: str, tokenizer_name: str, seq
     
     bytes_per_seq = seq_length * DTYPE.itemsize
     
-    # Megatron IndexedDataset format expects:
+    # Megatron IndexedDataset format:
     # 1. sequence_lengths (int32 array of length num_sequences)
     # 2. sequence_pointers (int64 array of length num_sequences)  
     # 3. document_indices (int64 array of length num_documents + 1)
-    # The assertion requires: sequence_lengths.shape[0] == document_indices[-1]
-    
     num_documents = num_sequences
     sequence_lengths = np.full(num_sequences, seq_length, dtype=np.int32)
     sequence_pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
     document_indices = np.arange(num_documents + 1, dtype=np.int64)
     
-    # Verify the invariant that Megatron checks
     assert sequence_lengths.shape[0] == document_indices[-1], \
         f"Format error: {sequence_lengths.shape[0]} != {document_indices[-1]}"
     
     with open(idx_path, "wb") as f:
-        # Megatron _INDEX_HEADER is exactly 9 bytes: b"MMIDIDX\x00\x00"
-        f.write(b'MMIDIDX\x00\x00')
+        f.write(b'MMIDIDX\x00\x00')  # 9-byte header
         f.write(struct.pack('<Q', 1))  # version
         f.write(struct.pack('<B', DTYPE_CODE))  # dtype code
         f.write(struct.pack('<Q', len(sequence_lengths)))  # sequence_count
-        f.write(struct.pack('<Q', len(document_indices)))  # document_count (N+1 for N docs)
+        f.write(struct.pack('<Q', len(document_indices)))  # document_count
         f.write(sequence_lengths.tobytes())
         f.write(sequence_pointers.tobytes())
         f.write(document_indices.tobytes())
     
-    return tokens_array, num_sequences
+    return num_sequences
 
 
-def write_nemo_index(output_prefix: str, tokens_array: np.ndarray, seq_length: int, num_sequences: int):
-    bin_path = Path(f"{output_prefix}.bin")
-    idx_path = Path(f"{output_prefix}.idx")
-    bytes_per_seq = seq_length * DTYPE.itemsize
+def tokenize_documents(input_file: str, tokenizer_name: str, max_samples: int = None):
+    """Tokenize documents from JSONL file and return all tokens."""
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
+    vocab_size = len(tokenizer)
+    eos_token_id = tokenizer.eos_token_id
+    if eos_token_id is None:
+        raise ValueError(f"{tokenizer_name} has no eos_token_id configured")
     
-    with open(bin_path, "wb") as f:
-        tokens_array.tofile(f)
+    all_tokens = []
+    doc_count = 0
     
-    num_documents = num_sequences
-    sequence_lengths = np.full(num_sequences, seq_length, dtype=np.int32)
-    sequence_pointers = np.arange(num_sequences, dtype=np.int64) * bytes_per_seq
-    document_indices = np.arange(num_documents + 1, dtype=np.int64)
+    with open(input_file, "r", encoding="utf-8") as f:
+        for line in f:
+            if max_samples and doc_count >= max_samples:
+                break
+            
+            line = line.strip()
+            if not line:
+                continue
+            
+            doc = json.loads(line)
+            text = doc.get("text", "")
+            doc_count += 1
+            
+            tokens = tokenizer.encode(text, add_special_tokens=False)
+            if tokens:
+                max_token = max(tokens)
+                min_token = min(tokens)
+                if min_token < 0 or max_token >= vocab_size:
+                    raise ValueError(
+                        f"Token id out of range for tokenizer {tokenizer_name}: "
+                        f"min={min_token} max={max_token} vocab={vocab_size}"
+                    )
+            all_tokens.extend(tokens)
+            all_tokens.append(eos_token_id)
     
-    assert sequence_lengths.shape[0] == document_indices[-1]
-    
-    with open(idx_path, "wb") as f:
-        # Megatron _INDEX_HEADER is exactly 9 bytes: b"MMIDIDX\x00\x00"
-        f.write(b'MMIDIDX\x00\x00')
-        f.write(struct.pack('<Q', 1))  # version
-        f.write(struct.pack('<B', DTYPE_CODE))  # dtype code
-        f.write(struct.pack('<Q', len(sequence_lengths)))  # sequence_count
-        f.write(struct.pack('<Q', len(document_indices)))  # document_count (N+1 for N docs)
-        f.write(sequence_lengths.tobytes())
-        f.write(sequence_pointers.tobytes())
-        f.write(document_indices.tobytes())
+    print(f"Tokenized {doc_count} documents -> {len(all_tokens)} tokens")
+    return np.array(all_tokens, dtype=DTYPE)
 
 
 TOKENIZERS = {
@@ -126,7 +107,7 @@ TOKENIZERS = {
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Encode JSONL to Megatron format")
+    parser = argparse.ArgumentParser(description="Encode JSONL to Megatron format with train/test split")
     parser.add_argument(
         "--input",
         type=str,
@@ -140,22 +121,64 @@ def main():
         help="Output directory for encoded datasets",
     )
     parser.add_argument(
+        "--output-name",
+        type=str,
+        default="bookcorpus_text_sentence",
+        help="Base name for output files (default: bookcorpus_text_sentence)",
+    )
+    parser.add_argument(
         "--seq-length",
         type=int,
         default=2048,
         help="Sequence length (default: 2048)",
     )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=DATA_SAMPLES,
+        help=f"Maximum number of documents to process (default: {DATA_SAMPLES})",
+    )
+    parser.add_argument(
+        "--train-split",
+        type=float,
+        default=TRAIN_SPLIT,
+        help=f"Fraction for training data (default: {TRAIN_SPLIT})",
+    )
     
     args = parser.parse_args()
     
-    # Single shared dataset for all models (tokenizer-agnostic for now)
-    # Using the first tokenizer to encode
+    print(f"Processing up to {args.max_samples} documents from {args.input}")
+    print(f"Train/test split: {args.train_split:.0%} / {1-args.train_split:.0%}")
+    
+    # Tokenize all documents
     tokenizer_name = TOKENIZERS["llama"]
-    output_prefix = f"{args.output_dir}/bookcorpus_text_sentence"
-    tokens_array, num_sequences = encode_dataset(
-        args.input, output_prefix, tokenizer_name, args.seq_length
-    )
-    print(f"Encoded {num_sequences} sequences to {output_prefix}")
+    all_tokens = tokenize_documents(args.input, tokenizer_name, args.max_samples)
+    
+    # Calculate split point (align to sequence boundary)
+    total_sequences = len(all_tokens) // args.seq_length
+    train_sequences = int(total_sequences * args.train_split)
+    test_sequences = total_sequences - train_sequences
+    
+    train_tokens = train_sequences * args.seq_length
+    test_tokens = test_sequences * args.seq_length
+    
+    print(f"Total sequences: {total_sequences}")
+    print(f"  Train: {train_sequences} sequences ({train_tokens} tokens)")
+    print(f"  Test:  {test_sequences} sequences ({test_tokens} tokens)")
+    
+    # Split tokens
+    train_array = all_tokens[:train_tokens]
+    test_array = all_tokens[train_tokens:train_tokens + test_tokens]
+    
+    # Write train dataset
+    train_prefix = f"{args.output_dir}/{args.output_name}-train"
+    train_seqs = write_megatron_dataset(train_prefix, train_array, args.seq_length)
+    print(f"Written train: {train_prefix}.{{bin,idx}} ({train_seqs} sequences)")
+    
+    # Write test dataset (used for both validation and test)
+    test_prefix = f"{args.output_dir}/{args.output_name}-test"
+    test_seqs = write_megatron_dataset(test_prefix, test_array, args.seq_length)
+    print(f"Written test:  {test_prefix}.{{bin,idx}} ({test_seqs} sequences)")
 
 
 if __name__ == "__main__":
