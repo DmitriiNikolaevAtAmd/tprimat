@@ -7,7 +7,7 @@ import sys
 import numpy as np
 from pathlib import Path
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
+DATA_DIR = os.environ.get("DATA_DIR", "/data/tprimat")
 
 DTYPE = np.dtype(np.int32)
 DTYPE_CODE = 4
@@ -204,10 +204,8 @@ def verify_dataset(
 
 
 DATASETS = {
-    "llama-mega": ("allenai-c4-llama-mega", "meta-llama/Llama-3.1-8B"),
-    "qwen-mega": ("allenai-c4-qwen-mega", "Qwen/Qwen2.5-7B"),
-    "llama-nemo": ("allenai-c4-llama-nemo", "meta-llama/Llama-3.1-8B"),
-    "qwen-nemo": ("allenai-c4-qwen-nemo", "Qwen/Qwen2.5-7B"),
+    "train": ("bookcorpus_text_sentence-train", "meta-llama/Llama-3.1-8B"),
+    "test": ("bookcorpus_text_sentence-test", "meta-llama/Llama-3.1-8B"),
 }
 
 
@@ -216,7 +214,7 @@ def main():
     parser.add_argument(
         "--input-dir",
         type=str,
-        default=DATA_DIR,
+        default=f"{DATA_DIR}/megatron",
         help="Directory containing encoded datasets",
     )
     parser.add_argument(
@@ -225,16 +223,29 @@ def main():
         default=100,
         help="Number of random sequences to validate (default: 100)",
     )
+    parser.add_argument(
+        "--tokenizer",
+        type=str,
+        default="meta-llama/Llama-3.1-8B",
+        help="Tokenizer to use for validation",
+    )
     
     args = parser.parse_args()
     
     all_success = True
-    for model_name, (dataset_name, tokenizer_name) in DATASETS.items():
+    for split_name, (dataset_name, default_tokenizer) in DATASETS.items():
         input_prefix = f"{args.input_dir}/{dataset_name}"
+        
+        # Check if dataset exists
+        if not Path(f"{input_prefix}.idx").exists():
+            print(f"\nSkipping {split_name}: {input_prefix}.idx not found")
+            continue
+        
+        tokenizer = args.tokenizer or default_tokenizer
         print(f"\n{'='*60}")
-        print(f"Verifying {model_name.upper()} dataset: {input_prefix}")
+        print(f"Verifying {split_name.upper()} dataset: {input_prefix}")
         print(f"{'='*60}")
-        success = verify_dataset(input_prefix, tokenizer_name, args.samples, full_scan=True)
+        success = verify_dataset(input_prefix, tokenizer, args.samples, full_scan=True)
         if not success:
             all_success = False
     

@@ -6,6 +6,8 @@ source "${SCRIPT_DIR}/../config.env"
 
 export DATA_DIR
 export DATA_SAMPLES
+export TRAIN_SPLIT
+export SEQ_LEN
 
 python3 "${SCRIPT_DIR}/fetch_deps.py" \
     --samples "${DATA_SAMPLES}" \
@@ -22,8 +24,10 @@ python3 "${SCRIPT_DIR}/clean_data.py" \
 
 python3 "${SCRIPT_DIR}/encode_data.py" \
     --input "${DATA_DIR}/allenai-c4.jsonl" \
-    --output-dir "${DATA_DIR}" \
-    --seq-length "${SEQ_LEN}"
+    --output-dir "${DATA_DIR}/megatron" \
+    --seq-length "${SEQ_LEN}" \
+    --max-samples "${DATA_SAMPLES}" \
+    --train-split "${TRAIN_SPLIT}"
 
 python3 "${SCRIPT_DIR}/verify_data.py" \
-    --input-dir "${DATA_DIR}"
+    --input-dir "${DATA_DIR}/megatron"
