@@ -12,14 +12,14 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 
 # Parallel config - qwen NVIDIA (identical_config 01)
-export TP=4
-export PP=2
-export DP=1
-export GA=128
+export TP=1
+export PP=1
+export DP=8
+export GA=8
 
 # Batch config
 export MBS=1
-export GBS=1024  # MBS * NUM_GPUS * GA = 1 * 8 * 128
+export GBS=64  # MBS * NUM_GPUS * GA = 1 * 8 * 8
 
 # Training schedule
 export SEQ_LEN=2048

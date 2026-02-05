@@ -12,14 +12,14 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 
 # Parallel config - llama NVIDIA (identical_config 01)
-export TP=4
+export TP=1
 export PP=1
-export DP=2
-export GA=64
+export DP=8
+export GA=8
 
 # Batch config
 export MBS=1
-export GBS=512  # MBS * NUM_GPUS * GA = 1 * 8 * 64
+export GBS=64  # MBS * NUM_GPUS * GA = 1 * 8 * 8
 
 # Training schedule
 export SEQ_LEN=2048
