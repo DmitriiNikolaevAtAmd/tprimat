@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 from transformers import AutoTokenizer
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
+DATA_DIR = os.environ.get("DATA_DIR", "/data/tprimat-full")
 
 DTYPE = np.dtype(np.int32)
 DTYPE_CODE = 4
@@ -120,8 +120,8 @@ def write_nemo_index(output_prefix: str, tokens_array: np.ndarray, seq_length: i
 
 
 TOKENIZERS = {
-    "llama": "meta-llama/Llama-3.1-8B",
-    "qwen": "Qwen/Qwen2.5-7B",
+    "llama": f"{DATA_DIR}/tokenizers/llama",
+    "qwen": f"{DATA_DIR}/tokenizers/qwen",
 }
 
 
@@ -130,13 +130,13 @@ def main():
     parser.add_argument(
         "--input",
         type=str,
-        default=f"{DATA_DIR}/allenai-c4.jsonl",
+        default=f"{DATA_DIR}/bookcorpus/bookcorpus_megatron.json",
         help="Input clean JSONL file",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=DATA_DIR,
+        default=f"{DATA_DIR}/megatron",
         help="Output directory for encoded datasets",
     )
     parser.add_argument(
@@ -148,13 +148,14 @@ def main():
     
     args = parser.parse_args()
     
-    for model_name, tokenizer_name in TOKENIZERS.items():
-        output_prefix = f"{args.output_dir}/allenai-c4-{model_name}-mega"
-        tokens_array, num_sequences = encode_dataset(
-            args.input, output_prefix, tokenizer_name, args.seq_length
-        )
-        nemo_prefix = f"{args.output_dir}/allenai-c4-{model_name}-nemo"
-        write_nemo_index(nemo_prefix, tokens_array, args.seq_length, num_sequences)
+    # Single shared dataset for all models (tokenizer-agnostic for now)
+    # Using the first tokenizer to encode
+    tokenizer_name = TOKENIZERS["llama"]
+    output_prefix = f"{args.output_dir}/bookcorpus_text_sentence"
+    tokens_array, num_sequences = encode_dataset(
+        args.input, output_prefix, tokenizer_name, args.seq_length
+    )
+    print(f"Encoded {num_sequences} sequences to {output_prefix}")
 
 
 if __name__ == "__main__":
