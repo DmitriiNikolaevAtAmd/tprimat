@@ -100,10 +100,29 @@ def tokenize_documents(input_file: str, tokenizer_name: str, max_samples: int = 
     return np.array(all_tokens, dtype=DTYPE)
 
 
-TOKENIZERS = {
+# Tokenizer paths: prefer local, fall back to HuggingFace
+LOCAL_TOKENIZERS = {
     "llama": f"{DATA_DIR}/tokenizers/llama",
     "qwen": f"{DATA_DIR}/tokenizers/qwen",
 }
+
+HF_TOKENIZERS = {
+    "llama": "meta-llama/Llama-3.1-8B",
+    "qwen": "Qwen/Qwen2.5-7B",
+}
+
+
+def get_tokenizer_path(model_name: str) -> str:
+    """Get tokenizer path, preferring local if it exists."""
+    local_path = LOCAL_TOKENIZERS.get(model_name)
+    if local_path and os.path.isdir(local_path):
+        print(f"Using local tokenizer: {local_path}")
+        return local_path
+    hf_path = HF_TOKENIZERS.get(model_name)
+    if hf_path:
+        print(f"Using HuggingFace tokenizer: {hf_path}")
+        return hf_path
+    raise ValueError(f"Unknown model: {model_name}")
 
 
 def main():
@@ -150,9 +169,9 @@ def main():
     print(f"Processing up to {args.max_samples} documents from {args.input}")
     print(f"Train/test split: {args.train_split:.0%} / {1-args.train_split:.0%}")
     
-    # Tokenize all documents
-    tokenizer_name = TOKENIZERS["llama"]
-    all_tokens = tokenize_documents(args.input, tokenizer_name, args.max_samples)
+    # Tokenize all documents (use llama tokenizer by default)
+    tokenizer_path = get_tokenizer_path("llama")
+    all_tokens = tokenize_documents(args.input, tokenizer_path, args.max_samples)
     
     # Calculate split point (align to sequence boundary)
     total_sequences = len(all_tokens) // args.seq_length

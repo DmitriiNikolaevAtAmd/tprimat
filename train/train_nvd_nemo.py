@@ -160,19 +160,45 @@ def ensure_hf_token_for_gated_repo(repo_id: str) -> None:
         sys.exit(1)
 
 
+def get_tokenizer_path(model_name: str) -> str:
+    """Get tokenizer path, preferring local if it exists, otherwise HuggingFace."""
+    local_paths = {
+        "llama": str(DATA_DIR / "tokenizers" / "llama"),
+        "qwen": str(DATA_DIR / "tokenizers" / "qwen"),
+    }
+    hf_paths = {
+        "llama": "meta-llama/Llama-3.1-8B",
+        "qwen": "Qwen/Qwen2.5-7B",
+    }
+    
+    local_path = local_paths.get(model_name)
+    if local_path and os.path.isdir(local_path):
+        logger.info(f"Using local tokenizer: {local_path}")
+        return local_path
+    
+    hf_path = hf_paths.get(model_name)
+    if hf_path:
+        logger.info(f"Using HuggingFace tokenizer: {hf_path}")
+        return hf_path
+    
+    raise ValueError(f"Unknown model for tokenizer: {model_name}")
+
+
 def get_model_config(model_name: str):
+    tokenizer_path = get_tokenizer_path(model_name)
+    
     configs = {
         "llama": {
             "display_name": "Llama 3.1 8B",
             "recipe_fn": llm.llama31_8b.pretrain_recipe,
             "recipe_name": "llama31_8b_pretrain",
-            "tokenizer_path": str(DATA_DIR / "tokenizers" / "llama"),
+            "tokenizer_path": tokenizer_path,
         },
         "qwen": {
             "display_name": "Qwen 2.5 7B",
             "recipe_fn": llm.qwen25_7b.pretrain_recipe,
             "recipe_name": "qwen25_7b_pretrain",
-            "tokenizer_path": str(DATA_DIR / "tokenizers" / "qwen"),
+            "tokenizer_path": tokenizer_path,
         }
     }
     
