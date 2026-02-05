@@ -180,15 +180,19 @@ kill $MEMORY_PID 2>/dev/null || true
 
 cd "$TPRIMAT_PATH"
 
-# Extract peak memory from rocm-smi/nvidia-smi log
-echo "Extracting peak GPU memory from monitoring log..."
+# Extract memory values from rocm-smi/nvidia-smi log (with per-step data for line charts)
+echo "Extracting GPU memory from monitoring log..."
+MEMORY_VALUES_FILE="$TPRIMAT_PATH/output/memory_values_llama.json"
 MEMORY_ARG=""
 if [ -f "$MEMORY_LOG" ]; then
-    MEMORY_OUTPUT=$(python3 evaluate/probe_gpu_memory.py --parse-log "$MEMORY_LOG" --quiet 2>/dev/null || echo "PEAK_MEMORY_GB=0")
-    PEAK_MEMORY_GB=$(echo "$MEMORY_OUTPUT" | grep "PEAK_MEMORY_GB=" | cut -d= -f2)
-    if [ -n "$PEAK_MEMORY_GB" ] && [ "$PEAK_MEMORY_GB" != "0" ]; then
-        echo "  Peak memory: ${PEAK_MEMORY_GB} GB"
-        MEMORY_ARG="--peak-memory-gb $PEAK_MEMORY_GB"
+    python3 evaluate/probe_gpu_memory.py \
+        --parse-log "$MEMORY_LOG" \
+        --output-values "$MEMORY_VALUES_FILE" \
+        --quiet 2>/dev/null || true
+    
+    if [ -f "$MEMORY_VALUES_FILE" ]; then
+        echo "  Memory values saved to: $MEMORY_VALUES_FILE"
+        MEMORY_ARG="--memory-values-file $MEMORY_VALUES_FILE"
     else
         echo "  Warning: Could not extract GPU memory from log"
     fi

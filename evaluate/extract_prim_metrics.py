@@ -211,6 +211,8 @@ Examples:
                        help='Parallelism strategy name (e.g., balanced, minimal_communication)')
     parser.add_argument('--peak-memory-gb', type=float,
                        help='Peak GPU memory usage in GB (from memory probe)')
+    parser.add_argument('--memory-values-file',
+                       help='JSON file with memory_values array (from probe_gpu_memory.py --output-values)')
     parser.add_argument('--verbose', action='store_true',
                        help='Print verbose output')
     
@@ -252,7 +254,24 @@ Examples:
     )
     
     # Add memory metrics from CLI if provided (overrides log-parsed values)
-    if results and args.peak_memory_gb:
+    if results and args.memory_values_file:
+        # Load memory values from JSON file (includes per-step data for line charts)
+        try:
+            with open(args.memory_values_file, 'r') as f:
+                mem_data = json.load(f)
+            results["memory_metrics"] = {
+                "peak_memory_allocated_gb": mem_data.get('peak_memory_gb', 0),
+                "avg_memory_allocated_gb": mem_data.get('avg_memory_gb', 0),
+                "min_memory_allocated_gb": mem_data.get('min_memory_gb', 0),
+            }
+            if 'memory_values' in mem_data:
+                results["memory_values"] = mem_data['memory_values']
+                print(f"  + Loaded {len(mem_data['memory_values'])} memory samples from: {args.memory_values_file}")
+            else:
+                print(f"  + Using memory from file: {mem_data.get('peak_memory_gb', 0):.2f} GB")
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"  ! Warning: Could not load memory values file: {e}")
+    elif results and args.peak_memory_gb:
         results["memory_metrics"] = {
             "peak_memory_allocated_gb": args.peak_memory_gb,
             "avg_memory_allocated_gb": args.peak_memory_gb,  # Use peak as proxy
