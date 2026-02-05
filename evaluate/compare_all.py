@@ -211,23 +211,21 @@ def create_comparison_plot(
             if key:
                 data = benchmarks[key]
                 mem_metrics = data.get('memory_metrics', {})
-                avg_mem = mem_metrics.get('avg_memory_allocated_gb')
-                if avg_mem is None:
-                    avg_mem = mem_metrics.get('peak_memory_allocated_gb')
-                if avg_mem is None:
-                    gpu_mem = data.get('gpu_info', {}).get('total_memory_gb', 0)
-                    if gpu_mem and gpu_mem != 'N/A':
-                        avg_mem = gpu_mem * 0.7
+                # Use peak memory (most relevant for comparison)
+                peak_mem = mem_metrics.get('peak_memory_allocated_gb')
+                if peak_mem is None:
+                    peak_mem = mem_metrics.get('avg_memory_allocated_gb')
+                # NOTE: Don't estimate from total GPU memory - that's misleading
                 
-                if avg_mem and avg_mem != 'N/A':
+                if peak_mem and peak_mem != 'N/A':
                     labels.append(style_map[suffix]['label'])
-                    values.append(float(avg_mem))
+                    values.append(float(peak_mem))
                     colors_list.append(style_map[suffix]['color'])
     
     if values:
         bars = ax2.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
         ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
-        ax2.set_title('Average Memory Usage', fontweight='bold', fontsize=12)
+        ax2.set_title('Peak GPU Memory Usage', fontweight='bold', fontsize=12)
         ax2.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
         
         for bar, value in zip(bars, values):
@@ -236,9 +234,9 @@ def create_comparison_plot(
                     f'{value:.1f}',
                     ha='center', va='bottom', fontweight='bold', fontsize=9)
     else:
-        ax2.text(0.5, 0.5, 'Memory data not available', 
-                ha='center', va='center', transform=ax2.transAxes)
-        ax2.set_title('Average Memory Usage', fontweight='bold', fontsize=12)
+        ax2.text(0.5, 0.5, 'Memory data not available\n(run with memory tracking enabled)', 
+                ha='center', va='center', transform=ax2.transAxes, fontsize=10)
+        ax2.set_title('Peak GPU Memory Usage', fontweight='bold', fontsize=12)
     
     ax3 = axes[2]
     has_data = False

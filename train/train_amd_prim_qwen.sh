@@ -98,15 +98,20 @@ config['lr_warmup_iters'] = warmup_steps
 # config['tokenizer_model'] = tokenizer_path
 # config['split'] = '100,0,0'
 
+# Logging: enable per-step memory tracking
+config['log_interval'] = 1  # Log every step for memory tracking
+config['log_memory_to_tensorboard'] = True  # Enables memory logging in output
+config['log_throughput'] = True  # Log throughput metrics
+
+# Disable external logging services
 config['disable_tensorboard'] = True
 config['disable_wandb'] = True
 config['disable_mlflow'] = True
-config['log_interval'] = 0
 config['log_timers_to_tensorboard'] = False
-config['log_throughput'] = False
-config['log_memory_to_tensorboard'] = False
 config['log_learning_rate_to_tensorboard'] = False
 config['log_loss_scale_to_tensorboard'] = False
+
+# Profiling (disabled for benchmarking)
 config['profile'] = False
 config['use_pytorch_profiler'] = False
 config['torch_profiler_with_stack'] = False

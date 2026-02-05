@@ -152,13 +152,15 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
         "learning_rates": learning_rates if learning_rates else [],
     }
     
-    # Add memory metrics if available
+    # Add memory metrics if available (per-step tracking)
     if memory_values:
         results["memory_metrics"] = {
             "peak_memory_allocated_gb": max(memory_values),
             "avg_memory_allocated_gb": sum(memory_values) / len(memory_values),
             "min_memory_allocated_gb": min(memory_values),
         }
+        # Include per-step memory values for detailed analysis
+        results["memory_values"] = memory_values
     
     return results
 

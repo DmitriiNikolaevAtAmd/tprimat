@@ -179,39 +179,45 @@ def extract_step_times_from_log(log_file: str) -> Tuple[List[float], List[float]
 
 
 def extract_memory_from_log(log_file: str) -> List[float]:
+    """Extract memory values from training log.
+    
+    Supports multiple formats:
+    - Megatron: "mem-alloc-GB: 72.5", "memory (GB) | allocated: 72.5"
+    - ROCm/HIP: "hip mem allocated: 72.5 GB"
+    - Generic: "memory: 72.5 GB", "allocated: 72.5 GB"
+    """
     memory_values = []
+    
+    # Patterns to match various memory log formats (order matters - more specific first)
+    patterns = [
+        # Megatron format: "mem-alloc-GB: 72.5" or "mem-reserved-GB: 72.5"
+        r'mem-alloc-GB[:\s]+([0-9.]+)',
+        # Megatron format: "memory (GB) | allocated: 72.5"
+        r'memory\s*\(GB\)\s*\|\s*allocated[:\s]+([0-9.]+)',
+        # Megatron format: "gpu_memory_allocated: 72.5"
+        r'gpu_memory_allocated[:\s]+([0-9.]+)',
+        # HIP/ROCm format: "hip mem allocated: 72.5 GB"
+        r'hip mem (?:usage|allocated)[^:]*:\s*([0-9.]+)\s*GB',
+        # Generic: "allocated: 72.5 GB" or "max allocated: 72.5 GB"
+        r'(?:max\s+)?allocated[:\s]+([0-9.]+)\s*GB',
+        # Generic: "memory: 72.5 GB" or "memory usage: 72.5 GB"
+        r'memory\s*(?:usage)?[:\s]+([0-9.]+)\s*GB',
+        # Megatron throughput line with memory: "| mem-alloc-GB: 72.5 |"
+        r'\|\s*mem-alloc-GB[:\s]+([0-9.]+)\s*\|',
+    ]
     
     with open(log_file, 'r') as f:
         for line in f:
-            match = re.search(r'hip mem (?:usage|allocated)[^:]*:\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
-            if match:
-                try:
-                    memory_gb = float(match.group(1))
-                    if 0 < memory_gb < 1000:
-                        memory_values.append(memory_gb)
-                        continue
-                except (ValueError, IndexError):
-                    pass
-            
-            match = re.search(r'(?:max )?allocated:\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
-            if match:
-                try:
-                    memory_gb = float(match.group(1))
-                    if 0 < memory_gb < 1000:
-                        memory_values.append(memory_gb)
-                        continue
-                except (ValueError, IndexError):
-                    pass
-            
-            match = re.search(r'memory\s+(?:usage)?:?\s*([0-9.]+)\s*GB', line, re.IGNORECASE)
-            if match:
-                try:
-                    memory_gb = float(match.group(1))
-                    if 0 < memory_gb < 1000:
-                        memory_values.append(memory_gb)
-                        continue
-                except (ValueError, IndexError):
-                    pass
+            for pattern in patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    try:
+                        memory_gb = float(match.group(1))
+                        if 0 < memory_gb < 500:  # Reasonable GPU memory range
+                            memory_values.append(memory_gb)
+                            break  # Found a match, move to next line
+                    except (ValueError, IndexError):
+                        pass
     
     return memory_values
 
