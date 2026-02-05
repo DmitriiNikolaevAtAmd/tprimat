@@ -78,7 +78,7 @@ with open(patched_config, 'r') as f:
 
 config['tensor_model_parallel_size'] = tp
 config['pipeline_model_parallel_size'] = pp
-config['sequence_parallel'] = False
+config['sequence_parallel'] = (tp > 1)  # Enable with tensor parallelism for memory efficiency
 config['global_batch_size'] = gbs
 config['micro_batch_size'] = mbs
 config['seq_length'] = seq_len
