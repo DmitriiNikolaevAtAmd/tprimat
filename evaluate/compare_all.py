@@ -148,7 +148,7 @@ def create_comparison_plot(
     else:
         title = 'GPU Benchmark Results'
     
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10), facecolor='white')
+    fig, axes = plt.subplots(2, 4, figsize=(22, 10), facecolor='white')
     fig.suptitle(title, fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
     axes = axes.flatten()
     
@@ -341,9 +341,47 @@ def create_comparison_plot(
                 ha='center', va='center', transform=ax5.transAxes)
         ax5.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
     
+    # Memory line chart (per-step memory if available)
     ax6 = axes[5]
-    ax6.axis('off')
-    ax6.set_title('Experiment Configuration', fontweight='bold', fontsize=12)
+    has_data = False
+    
+    for platform in ("nvidia", "amd"):
+        for model_name in ("llama", "qwen"):
+            suffix = f"{platform}-{model_name}"
+            key = find_key(platform, model_name)
+            if key and 'memory_values' in benchmarks[key]:
+                memory_values = benchmarks[key]['memory_values']
+                if memory_values:
+                    steps = range(len(memory_values))
+                    style = style_map[suffix]
+                    ax6.plot(steps, memory_values, 
+                            marker=style['marker'], 
+                            linestyle=style['linestyle'],
+                            color=style['color'], 
+                            label=style['label'], 
+                            linewidth=1.5, 
+                            markersize=2, 
+                            alpha=0.85)
+                    has_data = True
+    
+    if has_data:
+        ax6.set_xlabel('Step', fontweight='bold', fontsize=10)
+        ax6.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
+        ax6.set_title('GPU Memory over Time', fontweight='bold', fontsize=12)
+        ax6.legend(fontsize=8, loc='best')
+        ax6.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+    else:
+        ax6.text(0.5, 0.5, 'Per-step memory data not available\n(requires log_interval=1)', 
+                ha='center', va='center', transform=ax6.transAxes, fontsize=9)
+        ax6.set_title('GPU Memory over Time', fontweight='bold', fontsize=12)
+    
+    # Empty panel (reserved for future use)
+    ax7 = axes[6]
+    ax7.axis('off')
+    
+    ax8 = axes[7]
+    ax8.axis('off')
+    ax8.set_title('Experiment Configuration', fontweight='bold', fontsize=12)
     
     table_data = []
     
@@ -355,6 +393,7 @@ def create_comparison_plot(
                 config = data.get('training_config', {})
                 parallel = data.get('parallelism_config', data.get('parallelism', {}))
                 gpu_info = data.get('gpu_info', {})
+                mem_metrics = data.get('memory_metrics', {})
                 
                 platform_label = "NVIDIA" if platform == "nvidia" else "AMD"
                 model_label = model_name.capitalize()
@@ -367,7 +406,9 @@ def create_comparison_plot(
                 gbs = config.get('global_batch_size', 'N/A')
                 mbs = config.get('micro_batch_size', 1)
                 seq = config.get('sequence_length', 'N/A')
-                gpus = num_gpus
+                peak_mem = mem_metrics.get('peak_memory_allocated_gb', 'N/A')
+                if isinstance(peak_mem, (int, float)):
+                    peak_mem = f"{peak_mem:.1f}"
                 
                 table_data.append([
                     f"{platform_label} {model_label}",
@@ -375,13 +416,13 @@ def create_comparison_plot(
                     f"{gbs}",
                     f"{mbs}",
                     f"{seq}",
-                    f"{gpus}"
+                    f"{peak_mem}"
                 ])
     
     if table_data:
-        col_labels = ['Config', 'Parallelism', 'GBS', 'MBS', 'SeqLen', 'GPUs']
+        col_labels = ['Config', 'Parallelism', 'GBS', 'MBS', 'SeqLen', 'Mem(GB)']
         
-        table = ax6.table(
+        table = ax8.table(
             cellText=table_data,
             colLabels=col_labels,
             loc='center',
@@ -400,8 +441,8 @@ def create_comparison_plot(
         for j in range(len(col_labels)):
             table[(0, j)].set_text_props(fontweight='bold')
     else:
-        ax6.text(0.5, 0.5, 'No experiment data available', 
-                ha='center', va='center', transform=ax6.transAxes)
+        ax8.text(0.5, 0.5, 'No experiment data available', 
+                ha='center', va='center', transform=ax8.transAxes)
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
