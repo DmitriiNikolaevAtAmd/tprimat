@@ -227,7 +227,10 @@ def train_model(model_name: str, model_config: dict):
         except Exception as compile_err:
             logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
 
-        # ── DDP with static graph for gradient communication overlap ──
+        # ── DDP ───────────────────────────────────────────────────────
+        # NOTE: static_graph=True is incompatible with model.no_sync()
+        # used for gradient accumulation — it triggers
+        # expect_autograd_hooks_ assertion in reducer.cpp.
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -237,9 +240,8 @@ def train_model(model_name: str, model_config: dict):
                 output_device=local_rank,
                 find_unused_parameters=False,
                 gradient_as_bucket_view=True,
-                static_graph=True,           # enables comm/compute overlap
             )
-            logger.info(f"Wrapped model with DDP (bucket_view, static_graph)")
+            logger.info(f"Wrapped model with DDP (bucket_view)")
             is_ddp = True
 
         # ── Data ──────────────────────────────────────────────────────
@@ -328,14 +330,30 @@ def train_model(model_name: str, model_config: dict):
         if FP8_HYBRID:
             try:
                 import transformer_engine.pytorch as te
-                fp8_recipe = te.recipe.DelayedScaling(
-                    fp8_format=te.recipe.Format.HYBRID,
-                    amax_history_len=4,
-                    amax_compute_algo="most_recent",
-                )
+                # Build recipe — handle different TE API versions
+                try:
+                    # TE >= 1.0 (NeMo 25.x): recipe lives in te.common.recipe
+                    from transformer_engine.common.recipe import DelayedScaling, Format
+                    fp8_recipe = DelayedScaling(
+                        fp8_format=Format.HYBRID,
+                        amax_history_len=4,
+                        amax_compute_algo="most_recent",
+                    )
+                except (ImportError, AttributeError):
+                    try:
+                        # Older TE: recipe lives in te.recipe
+                        fp8_recipe = te.recipe.DelayedScaling(
+                            fp8_format=te.recipe.Format.HYBRID,
+                            amax_history_len=4,
+                            amax_compute_algo="most_recent",
+                        )
+                    except (AttributeError, ImportError):
+                        # Fallback: use fp8_autocast without explicit recipe (uses TE defaults)
+                        fp8_recipe = None
                 fp8_ctx_fn = lambda: te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe)
                 fp8_enabled = True
-                logger.info("FP8 hybrid enabled via TransformerEngine")
+                logger.info("FP8 hybrid enabled via TransformerEngine (recipe=%s)",
+                            type(fp8_recipe).__name__ if fp8_recipe else "default")
             except ImportError:
                 logger.warning("FP8 requested but transformer_engine not installed — running in BF16")
             except Exception as fp8_err:
@@ -350,24 +368,25 @@ def train_model(model_name: str, model_config: dict):
         # in the first ~5 timed steps.
         _WARMUP_ITERS = 3
         logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
-        for _w in range(_WARMUP_ITERS):
-            optimizer.zero_grad(set_to_none=True)
-            for micro_step in range(grad_accum):
-                input_ids = next(data_iter).to(_device, non_blocking=True)
-                labels = input_ids
-                sync_ctx = nullcontext()
-                if is_ddp and micro_step < (grad_accum - 1):
-                    sync_ctx = model.no_sync()
-                with sync_ctx, fp8_ctx_fn():
-                    with torch.amp.autocast('cuda', dtype=torch_dtype):
-                        outputs = model(input_ids=input_ids, labels=labels)
-                        loss = outputs.loss / grad_accum
-                    loss.backward()
-                del outputs, loss, input_ids, labels
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
-            optimizer.step()
-            # NOTE: scheduler.step() intentionally NOT called during warmup
-            # so the LR schedule starts cleanly at the first timed step.
+        # Use no_sync() for ALL warmup micro-steps — we don't need
+        # meaningful gradient reduction here, just kernel compilation.
+        _warmup_sync = model.no_sync() if is_ddp else nullcontext()
+        with _warmup_sync:
+            for _w in range(_WARMUP_ITERS):
+                optimizer.zero_grad(set_to_none=True)
+                for micro_step in range(grad_accum):
+                    input_ids = next(data_iter).to(_device, non_blocking=True)
+                    labels = input_ids
+                    with fp8_ctx_fn():
+                        with torch.amp.autocast('cuda', dtype=torch_dtype):
+                            outputs = model(input_ids=input_ids, labels=labels)
+                            loss = outputs.loss / grad_accum
+                        loss.backward()
+                    del outputs, loss, input_ids, labels
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
+                optimizer.step()
+                # NOTE: scheduler.step() intentionally NOT called during warmup
+                # so the LR schedule starts cleanly at the first timed step.
         optimizer.zero_grad(set_to_none=True)
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
