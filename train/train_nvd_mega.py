@@ -151,8 +151,8 @@ def train_model(model_name: str, model_config: dict):
     logger.info(f"GBS={GBS} → grad_accum={grad_accum}, effective GBS={global_batch_size}")
 
     if torch.cuda.is_available():
-        device_props = torch.cuda.get_device_properties(0)
-        device_name = torch.cuda.get_device_name(0)
+        device_props = torch.cuda.get_device_properties(local_rank)
+        device_name = torch.cuda.get_device_name(local_rank)
         platform = "nvd"
         software_stack = "megatron"
         software_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
@@ -219,9 +219,9 @@ def train_model(model_name: str, model_config: dict):
                 logger.info("Using default attention implementation")
         model.config.use_cache = False
 
-        if hasattr(model, 'gradient_checkpointing_enable'):
-            model.gradient_checkpointing_enable()
-            logger.info("Enabled gradient checkpointing")
+        # NOTE: gradient checkpointing intentionally disabled — with ZeRO-1
+        # sharding, Llama-8B fits in H100 80 GB without recomputation.
+        # Checkpointing halves activation memory but costs ~30-40 % throughput.
 
         # ── torch.compile: use reduce-overhead mode for lower kernel launch
         #    latency without the full graph capture of max-autotune.

@@ -106,12 +106,12 @@ def set_seed(seed: int):
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
-def get_gpu_info(world_size: int) -> dict:
+def get_gpu_info(world_size: int, local_rank: int = 0) -> dict:
     if not torch.cuda.is_available():
         return {}
 
-    device_props = torch.cuda.get_device_properties(0)
-    device_name = torch.cuda.get_device_name(0)
+    device_props = torch.cuda.get_device_properties(local_rank)
+    device_name = torch.cuda.get_device_name(local_rank)
 
     gpu_cores = 14592 if "mi300" in device_name.lower() else 6912
 
@@ -151,7 +151,7 @@ def train_model(model_name: str):
     global_batch_size = MBS * grad_accum * world_size
     logger.info(f"GBS={GBS} → grad_accum={grad_accum}, effective GBS={global_batch_size}")
 
-    gpu_info = get_gpu_info(world_size)
+    gpu_info = get_gpu_info(world_size, local_rank)
     torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
 
     try:
@@ -164,34 +164,57 @@ def train_model(model_name: str):
 
         config = AutoConfig.from_pretrained(hf_model, trust_remote_code=True)
 
-        # ── Attention: force sdpa on both platforms for fair comparison
-        attn_impl_used = "sdpa"
+        _device = torch.device(f"cuda:{local_rank}" if world_size > 1 else "cuda")
+
+        # ── Attention: prefer flash_attention_2 (faster fused kernels),
+        #    fall back to sdpa, then default.
+        attn_impl_used = "flash_attention_2"
         try:
             model = AutoModelForCausalLM.from_config(
                 config, torch_dtype=torch_dtype,
-                attn_implementation="sdpa",
+                attn_implementation="flash_attention_2",
             )
-            logger.info("Using attention implementation: sdpa")
-        except Exception as attn_err:
-            logger.warning(f"SDPA not available ({attn_err}), falling back to default")
-            model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
-            attn_impl_used = "default"
-            logger.info("Using default attention implementation")
+            logger.info("Using attention implementation: flash_attention_2")
+        except Exception:
+            try:
+                model = AutoModelForCausalLM.from_config(
+                    config, torch_dtype=torch_dtype,
+                    attn_implementation="sdpa",
+                )
+                attn_impl_used = "sdpa"
+                logger.info("flash_attention_2 not available, using sdpa")
+            except Exception as attn_err:
+                logger.warning(f"SDPA not available ({attn_err}), falling back to default")
+                model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+                attn_impl_used = "default"
+                logger.info("Using default attention implementation")
         model.config.use_cache = False
 
-        _device = torch.device(f"cuda:{local_rank}" if world_size > 1 else "cuda")
+        # Free stale GPU memory before moving the model to device
+        gc.collect()
+        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            mem_free, mem_total = torch.cuda.mem_get_info(local_rank)
+            logger.info(
+                f"GPU {local_rank} before model load: "
+                f"{mem_free / 1e9:.2f} GiB free / {mem_total / 1e9:.2f} GiB total"
+            )
+
         model = model.to(_device)
 
-        if hasattr(model, "gradient_checkpointing_enable"):
-            model.gradient_checkpointing_enable()
-            logger.info("Enabled gradient checkpointing")
+        # NOTE: gradient checkpointing intentionally disabled — MI300X has
+        # 192 GB HBM3, plenty of room for Llama-8B activations.  Checkpointing
+        # halves activation memory but recomputes forward during backward,
+        # costing ~30-40 % throughput (the main gap vs Primus).
 
-        # NOTE: torch.compile disabled — incompatible with gradient
-        # checkpointing + DDP static_graph on this PyTorch/transformers
-        # version (graph too large for Dynamo to trace all 32 layers).
-        # model = torch.compile(model, mode="default")
+        # ── torch.compile for kernel fusion ──────────────────────────
+        try:
+            model = torch.compile(model, mode="reduce-overhead")
+            logger.info("Enabled torch.compile (reduce-overhead)")
+        except Exception as compile_err:
+            logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
 
-        # ── DDP ───────────────────────────────────────────────────────
+        # ── DDP with static graph for gradient communication overlap ──
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -201,8 +224,9 @@ def train_model(model_name: str):
                 output_device=local_rank,
                 find_unused_parameters=False,
                 gradient_as_bucket_view=True,
+                static_graph=True,           # enables comm/compute overlap
             )
-            logger.info("Wrapped model with DDP (bucket_view)")
+            logger.info("Wrapped model with DDP (bucket_view, static_graph)")
             is_ddp = True
 
         # ── Data ──────────────────────────────────────────────────────
@@ -270,6 +294,32 @@ def train_model(model_name: str):
         model.train()
         step_times = []
         loss_values = []
+        learning_rates = []
+
+        # ── CUDA warmup (un-timed iterations to pre-compile kernels) ────
+        _WARMUP_ITERS = 3
+        logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
+        for _w in range(_WARMUP_ITERS):
+            optimizer.zero_grad(set_to_none=True)
+            for micro_step in range(grad_accum):
+                input_ids = next(data_iter).to(_device, non_blocking=True)
+                labels = input_ids
+                sync_ctx = nullcontext()
+                if is_ddp and micro_step < (grad_accum - 1):
+                    sync_ctx = model.no_sync()
+                with sync_ctx:
+                    with torch.amp.autocast("cuda", dtype=torch_dtype):
+                        outputs = model(input_ids=input_ids, labels=labels)
+                        loss = outputs.loss / grad_accum
+                    loss.backward()
+                del outputs, loss, input_ids, labels
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
+            optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        logger.info("CUDA warmup complete, starting timed training...")
+
         training_start = time.time()
 
         # Disable GC during training to avoid random pauses
@@ -309,6 +359,8 @@ def train_model(model_name: str):
 
                 step_times.append(step_time)
                 loss_values.append(avg_loss)
+                current_lr = scheduler.get_last_lr()[0]
+                learning_rates.append(current_lr)
 
                 if rank == 0:
                     logger.info(f"Step {step + 1}/{TRAIN_ITERS} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
@@ -352,6 +404,7 @@ def train_model(model_name: str):
                 },
                 "step_times": step_times,
                 "loss_values": loss_values,
+                "learning_rates": learning_rates,
             }
 
             # Merge memory log into results
