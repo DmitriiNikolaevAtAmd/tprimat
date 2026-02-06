@@ -237,6 +237,29 @@ def train_model(model_name: str):
                 "loss_values": loss_values,
             }
             
+            # Merge memory log into results (same as amd_prim: rocm-smi/nvidia-smi sampled by shell)
+            mem_log = os.environ.get("MEMORY_LOG")
+            if mem_log and os.path.exists(mem_log):
+                try:
+                    from evaluate.extract_prim_metrics import parse_memory_log
+                    num_steps = len(step_times)
+                    mem_data = parse_memory_log(mem_log, num_steps=num_steps)
+                    if mem_data:
+                        results["memory_metrics"] = {
+                            "peak_memory_allocated_gb": mem_data["peak_memory_gb"],
+                            "avg_memory_allocated_gb": mem_data["avg_memory_gb"],
+                            "min_memory_allocated_gb": mem_data["min_memory_gb"],
+                        }
+                        results["memory_values"] = mem_data["memory_values"]
+                        logger.info(
+                            "Memory: peak %.2f GB, avg %.2f GB (%d samples)",
+                            mem_data["peak_memory_gb"],
+                            mem_data["avg_memory_gb"],
+                            mem_data.get("raw_samples", len(mem_data["memory_values"])),
+                        )
+                except Exception as e:
+                    logger.warning("Could not merge memory log: %s", e)
+            
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             output_file = OUTPUT_DIR / f"train_amd_mega_{model_name}.json"
             

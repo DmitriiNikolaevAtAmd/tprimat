@@ -104,6 +104,20 @@ config['train_iters'] = train_iters
 config['lr_decay_iters'] = train_iters
 config['lr_warmup_iters'] = warmup_steps
 
+# Match NeMo weight initialization (default is 0.02)
+config['init_method_std'] = 0.02
+
+# Also update nested overrides to ensure consistency
+if 'modules' in config and 'pre_trainer' in config['modules']:
+    overrides = config['modules']['pre_trainer'].get('overrides', {})
+    overrides['init_method_std'] = 0.02
+    overrides['global_batch_size'] = gbs
+    overrides['micro_batch_size'] = mbs
+    overrides['seq_length'] = seq_len
+    overrides['lr_warmup_iters'] = warmup_steps
+    overrides['train_iters'] = train_iters
+    config['modules']['pre_trainer']['overrides'] = overrides
+
 # External data configuration
 data_prefix = os.environ['DATA_PREFIX']
 tokenizer_model = os.environ['TOKENIZER_MODEL']

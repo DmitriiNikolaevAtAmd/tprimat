@@ -344,6 +344,7 @@ def train_model(model_name: str):
     recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS
+    recipe.optim.lr_scheduler.min_lr = 0.0  # Ensure LR decays to zero like Primus
     
     # FP8 not typically available on AMD, disable
     recipe.model.config.fp8 = None

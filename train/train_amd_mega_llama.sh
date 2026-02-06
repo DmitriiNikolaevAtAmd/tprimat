@@ -50,6 +50,22 @@ sleep 1
 MASTER_PORT=${MASTER_PORT:-$((30000 + RANDOM % 5000))}
 echo "Using MASTER_PORT: $MASTER_PORT"
 
+# Start memory monitoring in background (samples every 2 seconds, same as amd_prim)
+MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_llama.log"
+: > "$MEMORY_LOG"
+(
+    while true; do
+        if command -v rocm-smi &>/dev/null; then
+            rocm-smi --showmeminfo vram 2>/dev/null | grep -E "GPU|Used" >> "$MEMORY_LOG"
+        elif command -v nvidia-smi &>/dev/null; then
+            nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits >> "$MEMORY_LOG"
+        fi
+        sleep 2
+    done
+) &
+MEMORY_PID=$!
+export MEMORY_LOG
+
 if [ "$NUM_GPUS" -gt 1 ]; then
     torchrun --nproc_per_node="$NUM_GPUS" \
              --nnodes=1 \
@@ -60,3 +76,7 @@ if [ "$NUM_GPUS" -gt 1 ]; then
 else
     python3 -u train_amd_mega.py llama
 fi
+
+# Stop memory monitoring
+kill $MEMORY_PID 2>/dev/null || true
+rm -f "$MEMORY_LOG"
