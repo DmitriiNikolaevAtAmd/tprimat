@@ -151,8 +151,8 @@ def train_model(model_name: str, model_config: dict):
     logger.info(f"GBS={GBS} → grad_accum={grad_accum}, effective GBS={global_batch_size}")
 
     if torch.cuda.is_available():
-        device_props = torch.cuda.get_device_properties(0)
-        device_name = torch.cuda.get_device_name(0)
+        device_props = torch.cuda.get_device_properties(local_rank)
+        device_name = torch.cuda.get_device_name(local_rank)
         platform = "nvd"
         software_stack = "megatron"
         software_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
@@ -213,6 +213,17 @@ def train_model(model_name: str, model_config: dict):
         model.config.use_cache = False
 
         _device = torch.device(f'cuda:{local_rank}') if world_size > 1 else torch.device('cuda')
+
+        # Free any stale GPU memory before moving the model to device
+        gc.collect()
+        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            mem_free, mem_total = torch.cuda.mem_get_info(local_rank)
+            logger.info(
+                f"GPU {local_rank} before model load: "
+                f"{mem_free / 1e9:.2f} GiB free / {mem_total / 1e9:.2f} GiB total"
+            )
+
         model = model.to(_device)
 
         if hasattr(model, 'gradient_checkpointing_enable'):

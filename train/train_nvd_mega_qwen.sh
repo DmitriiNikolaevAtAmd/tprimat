@@ -35,7 +35,9 @@ export HF_HUB_DISABLE_PROGRESS_BARS=1
 
 # CUDA / NCCL performance tuning
 export CUDA_DEVICE_MAX_CONNECTIONS=1   # enables compute/communication overlap
-export CUDA_MODULE_LOADING=EAGER       # pre-load all CUDA modules at startup
+# NOTE: CUDA_MODULE_LOADING=EAGER removed — with 8 processes × 8 visible GPUs
+# it caused each process to pre-load ALL CUDA modules on ALL GPUs, consuming
+# ~72 GiB per GPU before model loading even started.
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1  # reduces NCCL memory fragmentation
 
