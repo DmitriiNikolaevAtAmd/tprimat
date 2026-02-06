@@ -9,14 +9,14 @@ Automatically discovers and compares any available benchmark results with:
 - Visual plots and analysis
 
 Usage:
-    python3 compare.py [--results-dir ./output] [--dataset bc]
+    python3 compare.py [--results-dir ./output]
 """
 
 import argparse
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -41,12 +41,11 @@ MARKERS = ['o', 's', '^', 'D', 'v', 'p', 'h', '*']
 LINESTYLES = ['-', '--', '-.', ':']
 
 
-def load_benchmarks(results_dir: str, dataset_filter: str = None) -> Dict[str, Dict]:
+def load_benchmarks(results_dir: str) -> Dict[str, Dict]:
     """Load all benchmark JSON files from the results directory.
     
     Args:
         results_dir: Directory containing benchmark JSON files
-        dataset_filter: Optional filter by dataset (e.g., 'bc', 'c4')
     
     Returns:
         Dict mapping unique keys to benchmark data
@@ -84,11 +83,6 @@ def load_benchmarks(results_dir: str, dataset_filter: str = None) -> Dict[str, D
                 if platform == 'nvd':
                     platform = 'nvidia'
             
-            # Apply dataset filter (strict: only include exact matches)
-            if dataset_filter:
-                if dataset != dataset_filter:
-                    continue
-            
             # Build unique key
             key = f"{platform}-{framework}-{model}"
             if dataset:
@@ -113,28 +107,6 @@ def load_benchmarks(results_dir: str, dataset_filter: str = None) -> Dict[str, D
     return benchmarks
 
 
-def discover_datasets(results_dir: str) -> List[str]:
-    """Discover all unique dataset labels from output files."""
-    results_path = Path(results_dir)
-    datasets = set()
-    
-    for json_file in results_path.glob("train_*.json"):
-        parts = json_file.stem.split('_')
-        if len(parts) >= 5:
-            datasets.add(parts[4])
-        else:
-            try:
-                with open(json_file, 'r') as f:
-                    data = json.load(f)
-                ds = data.get('dataset')
-                if ds:
-                    datasets.add(ds)
-            except Exception:
-                pass
-    
-    return sorted(datasets) if datasets else []
-
-
 def generate_styles(benchmarks: Dict[str, Dict]) -> Dict[str, Dict]:
     """Generate unique styles for each benchmark."""
     styles = {}
@@ -152,13 +124,10 @@ def generate_styles(benchmarks: Dict[str, Dict]) -> Dict[str, Dict]:
             data = benchmarks[key]
             framework = data.get('_framework', 'unknown')
             model = data.get('_model', 'unknown')
-            dataset = data.get('_dataset', '')
-            
             fw_display = FRAMEWORK_DISPLAY.get(framework, framework.upper())
             platform_display = platform.upper()
-            ds_suffix = f" ({dataset.upper()})" if dataset else ""
             
-            label = f"{platform_display} {fw_display} {model.capitalize()}{ds_suffix}"
+            label = f"{platform_display} {fw_display} {model.capitalize()}"
             
             styles[key] = {
                 'color': colors[i % len(colors)],
@@ -173,7 +142,6 @@ def generate_styles(benchmarks: Dict[str, Dict]) -> Dict[str, Dict]:
 def create_comparison_plot(
     benchmarks: Dict[str, Dict],
     output_file: str,
-    dataset_label: str = None
 ):
     """Create visual comparison plot for all benchmarks."""
     
@@ -186,16 +154,15 @@ def create_comparison_plot(
     
     # Determine title
     platforms = set(d.get('_platform', 'unknown') for d in benchmarks.values())
-    ds_suffix = f' ({dataset_label.upper()})' if dataset_label else ''
     
     if 'nvidia' in platforms and 'amd' in platforms:
-        title = f'NVIDIA vs AMD Benchmark Comparison{ds_suffix}'
+        title = 'NVIDIA vs AMD Benchmark Comparison'
     elif 'nvidia' in platforms:
-        title = f'NVIDIA Benchmark Results{ds_suffix}'
+        title = 'NVIDIA Benchmark Results'
     elif 'amd' in platforms:
-        title = f'AMD Benchmark Results{ds_suffix}'
+        title = 'AMD Benchmark Results'
     else:
-        title = f'Benchmark Results{ds_suffix}'
+        title = 'Benchmark Results'
     
     fig, axes = plt.subplots(2, 3, figsize=(18, 10), facecolor='white')
     fig.suptitle(title, fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
@@ -371,13 +338,11 @@ def create_comparison_plot(
     return fig
 
 
-def print_summary(benchmarks: Dict[str, Dict], dataset_label: str = None):
+def print_summary(benchmarks: Dict[str, Dict]):
     """Print performance summary for all benchmarks."""
     
-    ds_tag = f" [{dataset_label}]" if dataset_label else ""
-    
     print("\n" + "=" * 100)
-    print(f"PERFORMANCE SUMMARY{ds_tag}")
+    print("PERFORMANCE SUMMARY")
     print("=" * 100)
     
     print(f"\n{'Configuration':<40} {'Tokens/s/GPU':>14} {'Step Time':>12} {'Final Loss':>12}")
@@ -394,10 +359,8 @@ def print_summary(benchmarks: Dict[str, Dict], dataset_label: str = None):
         platform = data.get('_platform', 'unknown').upper()
         framework = FRAMEWORK_DISPLAY.get(data.get('_framework', ''), data.get('_framework', 'unknown'))
         model = data.get('_model', 'unknown').capitalize()
-        dataset = data.get('_dataset', '')
-        ds_suffix = f" ({dataset})" if dataset else ""
         
-        label = f"{platform} {framework} {model}{ds_suffix}"
+        label = f"{platform} {framework} {model}"
         print(f"{label:<40} {tps:>14,.0f} {step_time:>12.3f}s {final_loss:>12.4f}")
     
     # Best performers
@@ -462,10 +425,6 @@ def main():
                        help='Directory containing benchmark JSON files (default: OUTPUT_DIR or ./output)')
     parser.add_argument('--output', default='compare.png',
                        help='Output filename for the plot (default: compare.png)')
-    parser.add_argument('--dataset', default=None,
-                       help='Filter by dataset (e.g., bc, c4). If omitted, generates per-dataset plots.')
-    parser.add_argument('--combined', action='store_true',
-                       help='Also generate a combined plot with all datasets (when multiple exist)')
     
     args = parser.parse_args()
     
@@ -474,93 +433,40 @@ def main():
     print("=" * 100)
     print(f"\nScanning: {args.results_dir}")
     
-    # Discover datasets
-    datasets = discover_datasets(args.results_dir)
-    print(f"Datasets found: {datasets if datasets else '(none)'}")
-    
-    # Determine which datasets to process
-    if args.dataset:
-        datasets_to_run = [args.dataset]
-    elif datasets:
-        datasets_to_run = datasets
-    else:
-        datasets_to_run = [None]
-    
     results_path = Path(args.results_dir)
-    generated_plots = []
     
-    for dataset in datasets_to_run:
-        ds_label = f" [{dataset}]" if dataset else ""
-        print(f"\n{'#' * 100}")
-        print(f"Loading benchmarks{ds_label}...")
-        
-        benchmarks = load_benchmarks(args.results_dir, dataset_filter=dataset)
-        
-        if not benchmarks:
-            print(f"\n  x No benchmarks found{ds_label}")
-            print(f"\nExpected files in {args.results_dir}/:")
-            print("  Format: train_{platform}_{framework}_{model}[_{dataset}].json")
-            print("  Examples:")
-            print("    train_nvd_nemo_llama_bc.json")
-            print("    train_amd_prim_qwen_c4.json")
-            continue
-        
-        print(f"\n  Found {len(benchmarks)} benchmark(s)")
-        
-        # Determine output filename
-        if dataset and args.output == 'compare.png':
-            output_file = str(results_path / f"compare_{dataset}.png")
-        elif dataset:
-            base, ext = os.path.splitext(os.path.basename(args.output))
-            output_file = str(results_path / f"{base}_{dataset}{ext}")
-        else:
-            output_file = str(results_path / os.path.basename(args.output))
-        
-        print(f"\nGenerating plot: {output_file}")
-        try:
-            fig = create_comparison_plot(benchmarks, output_file, dataset_label=dataset)
-            if fig:
-                plt.close(fig)  # Free memory
-            generated_plots.append(output_file)
-        except Exception as e:
-            print(f"[!] Plot generation failed: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        print_summary(benchmarks, dataset_label=dataset)
+    benchmarks = load_benchmarks(args.results_dir)
     
-    # Generate combined plot if multiple datasets and requested (or by default)
-    if len(datasets) > 1 and (args.combined or not args.dataset):
-        print(f"\n{'#' * 100}")
-        print("Loading ALL benchmarks (combined)...")
-        
-        all_benchmarks = load_benchmarks(args.results_dir, dataset_filter=None)
-        
-        if all_benchmarks:
-            print(f"\n  Found {len(all_benchmarks)} total benchmark(s)")
-            
-            output_file = str(results_path / "compare_all.png")
-            print(f"\nGenerating combined plot: {output_file}")
-            try:
-                fig = create_comparison_plot(all_benchmarks, output_file, dataset_label="all")
-                if fig:
-                    plt.close(fig)
-                generated_plots.append(output_file)
-            except Exception as e:
-                print(f"[!] Combined plot generation failed: {e}")
-                import traceback
-                traceback.print_exc()
-            
-            print_summary(all_benchmarks, dataset_label="all")
+    if not benchmarks:
+        print("\n  x No benchmarks found")
+        print(f"\nExpected files in {args.results_dir}/:")
+        print("  Format: train_{platform}_{framework}_{model}[_{dataset}].json")
+        print("  Examples:")
+        print("    train_nvd_nemo_llama_bc.json")
+        print("    train_amd_prim_qwen_c4.json")
+        return 1
     
-    # Summary of generated files
-    if generated_plots:
-        print("\n" + "=" * 100)
-        print("GENERATED PLOTS")
-        print("=" * 100)
-        for plot in generated_plots:
-            print(f"  + {plot}")
-        print()
+    print(f"\n  Found {len(benchmarks)} benchmark(s)")
+    
+    output_file = str(results_path / os.path.basename(args.output))
+    
+    print(f"\nGenerating plot: {output_file}")
+    try:
+        fig = create_comparison_plot(benchmarks, output_file)
+        if fig:
+            plt.close(fig)
+    except Exception as e:
+        print(f"[!] Plot generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print_summary(benchmarks)
+    
+    print("\n" + "=" * 100)
+    print("GENERATED PLOT")
+    print("=" * 100)
+    print(f"  + {output_file}")
+    print()
     
     return 0
 

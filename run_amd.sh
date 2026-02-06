@@ -21,3 +21,6 @@ docker run --rm \
     --env-file config.env \
     --env-file secrets.env \
     primat:amd bash train_amd.sh
+
+echo "=== Compare ==="
+"$SCRIPT_DIR/evaluate/compare.sh"

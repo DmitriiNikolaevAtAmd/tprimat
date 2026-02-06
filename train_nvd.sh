@@ -20,7 +20,3 @@ echo "=== NVIDIA Megatron ==="
 echo "=== NVIDIA NeMo ==="
 "$SCRIPT_DIR/train/train_nvd_nemo_llama.sh"
 "$SCRIPT_DIR/train/train_nvd_nemo_qwen.sh"
-
-echo "=== Validate & Compare ==="
-"$SCRIPT_DIR/evaluate/validate_outputs.sh" --platform nvd
-"$SCRIPT_DIR/evaluate/compare.sh"

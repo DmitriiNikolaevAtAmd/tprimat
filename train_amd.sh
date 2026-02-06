@@ -17,10 +17,3 @@ echo "=== AMD Megatron ==="
 "$SCRIPT_DIR/train/train_amd_mega_llama.sh"
 "$SCRIPT_DIR/train/train_amd_mega_qwen.sh"
 
-echo "=== AMD NeMo ==="
-"$SCRIPT_DIR/train/train_amd_nemo_llama.sh"
-"$SCRIPT_DIR/train/train_amd_nemo_qwen.sh"
-
-echo "=== Validate & Compare ==="
-"$SCRIPT_DIR/evaluate/validate_outputs.sh" --platform amd
-"$SCRIPT_DIR/evaluate/compare.sh"

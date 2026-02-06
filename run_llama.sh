@@ -20,7 +20,7 @@ export PLATFORM="${PLATFORM:-}"
 
 mkdir -p "$OUTPUT_DIR"
 
-export PYTORCH_ALLOC_CONF=expandable_segments:True
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 
 set -x
@@ -43,7 +43,7 @@ export OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/output}"
 export DATA_DIR="${DATA_DIR:-/data/tprimat}"
 mkdir -p "$OUTPUT_DIR"
 
-export PYTORCH_ALLOC_CONF=expandable_segments:True
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=INFO
 
 MODEL="${MODEL:-llama}"

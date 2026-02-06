@@ -43,63 +43,56 @@ cd "$SCRIPT_DIR"
 pkill -9 -f "torchrun.*train_amd_mega" 2>/dev/null || true
 sleep 1
 
-# Train on all datasets
-for DATASET in bc c4; do
-    export DATASET
-    DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
+# Data paths - uses DATASET from config.env (bc or c4)
+DATASET="${DATASET:-bc}"
+export DATASET
+DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
 
-    # Verify data files exist
-    if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
-        echo "WARNING: Data files not found for dataset '${DATASET}', skipping:"
-        echo "  ${DATA_PREFIX}.bin"
-        echo "  ${DATA_PREFIX}.idx"
-        continue
-    fi
-
-    echo ""
-    echo "=========================================="
-    echo "Training qwen on dataset: ${DATASET}"
-    echo "=========================================="
-    echo "Config: NUM_GPUS=${NUM_GPUS}"
-    echo "Dataset: ${DATA_PREFIX} (${DATASET})"
-
-    # Use random port to avoid conflicts with stale processes
-    MASTER_PORT=$((30000 + RANDOM % 5000))
-    echo "Using MASTER_PORT: $MASTER_PORT"
-
-    # Start memory monitoring in background (samples every 2 seconds)
-    MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_qwen_${DATASET}.log"
-    : > "$MEMORY_LOG"
-    (
-        while true; do
-            if command -v rocm-smi &>/dev/null; then
-                rocm-smi --showmeminfo vram 2>/dev/null | grep -E "GPU|Used" >> "$MEMORY_LOG"
-            elif command -v nvidia-smi &>/dev/null; then
-                nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits >> "$MEMORY_LOG"
-            fi
-            sleep 2
-        done
-    ) &
-    MEMORY_PID=$!
-    export MEMORY_LOG
-
-    if [ "$NUM_GPUS" -gt 1 ]; then
-        torchrun --nproc_per_node="$NUM_GPUS" \
-                 --nnodes=1 \
-                 --node_rank=0 \
-                 --master_addr=localhost \
-                 --master_port="$MASTER_PORT" \
-                 train_amd_mega.py qwen
-    else
-        python3 -u train_amd_mega.py qwen
-    fi
-
-    # Stop memory monitoring
-    kill $MEMORY_PID 2>/dev/null || true
-    rm -f "$MEMORY_LOG"
-
-    echo "Completed dataset: ${DATASET}"
-done
+# Verify data files exist
+if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
+    echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
+    echo "       Run prepare/data.sh first to generate the dataset"
+    exit 1
+fi
 
 echo ""
-echo "All datasets completed for qwen (mega)."
+echo "=========================================="
+echo "Training qwen on dataset: ${DATASET}"
+echo "=========================================="
+echo "Config: NUM_GPUS=${NUM_GPUS}"
+echo "Dataset: ${DATA_PREFIX} (${DATASET})"
+
+# Use random port to avoid conflicts with stale processes
+MASTER_PORT=$((30000 + RANDOM % 5000))
+echo "Using MASTER_PORT: $MASTER_PORT"
+
+# Start memory monitoring in background (samples every 2 seconds)
+MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_qwen_${DATASET}.log"
+: > "$MEMORY_LOG"
+(
+    while true; do
+        if command -v rocm-smi &>/dev/null; then
+            rocm-smi --showmeminfo vram 2>/dev/null | grep -E "GPU|Used" >> "$MEMORY_LOG"
+        elif command -v nvidia-smi &>/dev/null; then
+            nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits >> "$MEMORY_LOG"
+        fi
+        sleep 2
+    done
+) &
+MEMORY_PID=$!
+export MEMORY_LOG
+
+if [ "$NUM_GPUS" -gt 1 ]; then
+    torchrun --nproc_per_node="$NUM_GPUS" \
+             --nnodes=1 \
+             --node_rank=0 \
+             --master_addr=localhost \
+             --master_port="$MASTER_PORT" \
+             train_amd_mega.py qwen
+else
+    python3 -u train_amd_mega.py qwen
+fi
+
+# Stop memory monitoring
+kill $MEMORY_PID 2>/dev/null || true
+rm -f "$MEMORY_LOG"

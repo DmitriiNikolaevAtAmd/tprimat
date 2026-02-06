@@ -25,12 +25,21 @@ echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 
 # Performance settings
-export PYTORCH_ALLOC_CONF=expandable_segments:True
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=ERROR
 export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
 export HF_HUB_DISABLE_PROGRESS_BARS=1
+
+# CUDA / NCCL performance tuning
+export CUDA_DEVICE_MAX_CONNECTIONS=1   # enables compute/communication overlap
+export NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_NCCL_AVOID_RECORD_STREAMS=1  # reduces NCCL memory fragmentation
+
+# TransformerEngine: enable fused attention kernels
+export NVTE_FUSED_ATTN=1
+export NVTE_FLASH_ATTN=1
 
 # Profiling (from config.env)
 export PROFILING=${PROFILING:-false}
@@ -39,28 +48,22 @@ export PROFILE_WARMUP=${PROFILE_WARMUP:-1}
 export PROFILE_ACTIVE=${PROFILE_ACTIVE:-2}
 export PROFILE_REPEAT=${PROFILE_REPEAT:-1}
 
-# Train on all datasets
-for DATASET in bc c4; do
-    export DATASET
-    DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
+# Data paths - uses DATASET from config.env (bc or c4)
+DATASET="${DATASET:-bc}"
+export DATASET
+DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
 
-    # Verify data files exist
-    if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
-        echo "WARNING: Data files not found for dataset '${DATASET}', skipping:"
-        echo "  ${DATA_PREFIX}.bin/.idx"
-        continue
-    fi
-
-    echo ""
-    echo "=========================================="
-    echo "Training qwen (nemo) on dataset: ${DATASET}"
-    echo "=========================================="
-    echo "Dataset: ${DATA_PREFIX} (${DATASET})"
-
-    python3 -u "$SCRIPT_DIR/train_nvd_nemo.py" qwen
-
-    echo "Completed dataset: ${DATASET}"
-done
+# Verify data files exist
+if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
+    echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
+    echo "       Run prepare/data.sh first to generate the dataset"
+    exit 1
+fi
 
 echo ""
-echo "All datasets completed for qwen (nemo)."
+echo "=========================================="
+echo "Training qwen (nemo) on dataset: ${DATASET}"
+echo "=========================================="
+echo "Dataset: ${DATA_PREFIX} (${DATASET})"
+
+python3 -u "$SCRIPT_DIR/train_nvd_nemo.py" qwen

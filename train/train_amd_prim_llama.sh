@@ -36,7 +36,6 @@ export RCCL_MSCCL_ENABLE=0
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
-export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
@@ -64,31 +63,31 @@ if [ ! -f "$PRIMUS_PATH/$TRAIN_SCRIPT" ]; then
     exit 1
 fi
 
-# Train on all datasets
-for DATASET in bc c4; do
-    DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
+# Data paths - uses DATASET from config.env (bc or c4)
+DATASET="${DATASET:-bc}"
+DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
 
-    # Verify data files exist
-    if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
-        echo "WARNING: Data files not found for dataset '${DATASET}', skipping:"
-        echo "  ${DATA_PREFIX}.bin/.idx"
-        continue
-    fi
+# Verify data files exist
+if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
+    echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
+    echo "       Run prepare/data.sh first to generate the dataset"
+    exit 1
+fi
 
-    echo ""
-    echo "=========================================="
-    echo "Training llama (prim) on dataset: ${DATASET}"
-    echo "=========================================="
-    echo "Dataset: ${DATA_PREFIX} (${DATASET})"
+echo ""
+echo "=========================================="
+echo "Training llama (prim) on dataset: ${DATASET}"
+echo "=========================================="
+echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
-    cd "$PRIMUS_PATH"
+cd "$PRIMUS_PATH"
 
-    PATCHED_CONFIG="$TPRIMAT_PATH/output/llama3.1_8B-BF16-pretrain.yaml"
-    cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
+PATCHED_CONFIG="$TPRIMAT_PATH/output/llama3.1_8B-BF16-pretrain.yaml"
+cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-    export PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY DATA_PREFIX TOKENIZER_MODEL
-    if python3 -c "import yaml" 2>/dev/null; then
-        python3 << 'PYTHON_EOF'
+export PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY DATA_PREFIX TOKENIZER_MODEL
+if python3 -c "import yaml" 2>/dev/null; then
+    python3 << 'PYTHON_EOF'
 import os
 import yaml
 
@@ -166,76 +165,70 @@ config['torch_profiler_use_gzip'] = False
 with open(patched_config, 'w') as f:
     yaml.dump(config, f)
 PYTHON_EOF
-        echo "Patched config written to: $PATCHED_CONFIG"
-    else
-        echo "WARNING: pyyaml not available, using unpatched config"
-    fi
+    echo "Patched config written to: $PATCHED_CONFIG"
+else
+    echo "WARNING: pyyaml not available, using unpatched config"
+fi
 
-    export EXP="$PATCHED_CONFIG"
+export EXP="$PATCHED_CONFIG"
 
-    # Start memory monitoring in background (samples every 2 seconds)
-    MEMORY_LOG="$TPRIMAT_PATH/output/memory_llama_${DATASET}.log"
-    (
-        while true; do
-            if command -v rocm-smi &>/dev/null; then
-                rocm-smi --showmeminfo vram 2>/dev/null | grep -E "GPU|Used" >> "$MEMORY_LOG"
-            elif command -v nvidia-smi &>/dev/null; then
-                nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits >> "$MEMORY_LOG"
-            fi
-            sleep 2
-        done
-    ) &
-    MEMORY_PID=$!
+# Start memory monitoring in background (samples every 2 seconds)
+MEMORY_LOG="$TPRIMAT_PATH/output/memory_llama_${DATASET}.log"
+(
+    while true; do
+        if command -v rocm-smi &>/dev/null; then
+            rocm-smi --showmeminfo vram 2>/dev/null | grep -E "GPU|Used" >> "$MEMORY_LOG"
+        elif command -v nvidia-smi &>/dev/null; then
+            nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits >> "$MEMORY_LOG"
+        fi
+        sleep 2
+    done
+) &
+MEMORY_PID=$!
 
-    bash "$TRAIN_SCRIPT" \
-        --train_iters "$TRAIN_ITERS" \
-        --global_batch_size "$GBS" \
-        --micro_batch_size "$MBS" \
-        --seq_length "$SEQ_LEN" \
-        --tensor_model_parallel_size "$TP" \
-        --pipeline_model_parallel_size "$PP" \
-        --lr "$LR" \
-        --min_lr 0.0 \
-        --lr_warmup_iters "$WARMUP_STEPS" \
-        --lr_decay_style cosine \
-        --lr_decay_iters "$TRAIN_ITERS" \
-        --weight_decay "$WEIGHT_DECAY" \
-        --data_path "$DATA_PREFIX" \
-        --tokenizer_type HuggingFaceTokenizer \
-        --tokenizer_model "$TOKENIZER_MODEL" \
-        --split 100,0,0 \
-        2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama_${DATASET}.log"
+bash "$TRAIN_SCRIPT" \
+    --train_iters "$TRAIN_ITERS" \
+    --global_batch_size "$GBS" \
+    --micro_batch_size "$MBS" \
+    --seq_length "$SEQ_LEN" \
+    --tensor_model_parallel_size "$TP" \
+    --pipeline_model_parallel_size "$PP" \
+    --lr "$LR" \
+    --min_lr 0.0 \
+    --lr_warmup_iters "$WARMUP_STEPS" \
+    --lr_decay_style cosine \
+    --lr_decay_iters "$TRAIN_ITERS" \
+    --weight_decay "$WEIGHT_DECAY" \
+    --data_path "$DATA_PREFIX" \
+    --tokenizer_type HuggingFaceTokenizer \
+    --tokenizer_model "$TOKENIZER_MODEL" \
+    --split 100,0,0 \
+    2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama_${DATASET}.log"
 
-    # Stop memory monitoring
-    kill $MEMORY_PID 2>/dev/null || true
+# Stop memory monitoring
+kill $MEMORY_PID 2>/dev/null || true
 
-    cd "$TPRIMAT_PATH"
+cd "$TPRIMAT_PATH"
 
-    # Extract metrics and include memory values directly in JSON output
-    MEMORY_ARG=""
-    if [ -f "$MEMORY_LOG" ]; then
-        MEMORY_ARG="--memory-log $MEMORY_LOG"
-    fi
+# Extract metrics and include memory values directly in JSON output
+MEMORY_ARG=""
+if [ -f "$MEMORY_LOG" ]; then
+    MEMORY_ARG="--memory-log $MEMORY_LOG"
+fi
 
-    python3 evaluate/extract_prim_metrics.py \
-        --log-file "$TPRIMAT_PATH/output/training_main_llama_${DATASET}.log" \
-        --model-name "llama" \
-        --dataset "$DATASET" \
-        --output "$TPRIMAT_PATH/output/train_amd_prim_llama_${DATASET}.json" \
-        --num-gpus "$NUM_GPUS" \
-        --global-batch-size "$GBS" \
-        --micro-batch-size "$MBS" \
-        --tensor-parallel-size "$TP" \
-        --pipeline-parallel-size "$PP" \
-        --sequence-length "$SEQ_LEN" \
-        --parallel-strategy "TP${TP}_PP${PP}_DP${DP}" \
-        $MEMORY_ARG
+python3 evaluate/extract_prim_metrics.py \
+    --log-file "$TPRIMAT_PATH/output/training_main_llama_${DATASET}.log" \
+    --model-name "llama" \
+    --dataset "$DATASET" \
+    --output "$TPRIMAT_PATH/output/train_amd_prim_llama_${DATASET}.json" \
+    --num-gpus "$NUM_GPUS" \
+    --global-batch-size "$GBS" \
+    --micro-batch-size "$MBS" \
+    --tensor-parallel-size "$TP" \
+    --pipeline-parallel-size "$PP" \
+    --sequence-length "$SEQ_LEN" \
+    --parallel-strategy "TP${TP}_PP${PP}_DP${DP}" \
+    $MEMORY_ARG
 
-    # Clean up temporary memory log
-    rm -f "$MEMORY_LOG"
-
-    echo "Completed dataset: ${DATASET}"
-done
-
-echo ""
-echo "All datasets completed for llama (prim)."
+# Clean up temporary memory log
+rm -f "$MEMORY_LOG"

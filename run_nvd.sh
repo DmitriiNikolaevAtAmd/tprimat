@@ -16,3 +16,6 @@ docker run --gpus all --rm \
     --env-file config.env \
     --env-file secrets.env \
     primat:nvd bash train_nvd.sh
+
+echo "=== Compare ==="
+"$SCRIPT_DIR/evaluate/compare.sh"

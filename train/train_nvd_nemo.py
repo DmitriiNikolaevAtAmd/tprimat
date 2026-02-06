@@ -234,6 +234,12 @@ def train_model(model_name: str):
     random.seed(SEED)
     os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
+    # ── Performance knobs ──────────────────────────────────────────────
+    torch.set_float32_matmul_precision('high')          # TF32 matmuls
+    torch.backends.cudnn.benchmark = True               # cuDNN autotuner
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
     
     logger.info(f"Loading tokenizer for {config['display_name']}...")
     tokenizer = AutoTokenizer.from_pretrained(
@@ -260,12 +266,30 @@ def train_model(model_name: str):
     # Ensure model vocab matches tokenizer to avoid out-of-bounds embedding ids.
     recipe.model.config.vocab_size = tokenizer_vocab_size
     
+    # ── Strategy with communication overlap ───────────────────────────
+    # overlap_grad_reduce: overlaps gradient allreduce with backward pass
+    # use_distributed_optimizer: shards optimizer states across DP ranks (ZeRO-1)
+    # overlap_param_gather: overlaps param allgather with forward (requires dist opt)
+    try:
+        from megatron.core.distributed import DistributedDataParallelConfig
+        ddp_config = DistributedDataParallelConfig(
+            grad_reduce_in_fp32=False,
+            overlap_grad_reduce=True,
+            overlap_param_gather=True,
+            use_distributed_optimizer=True,
+        )
+        logger.info("Using optimized DDP config (overlap_grad_reduce, distributed_optimizer)")
+    except ImportError:
+        ddp_config = "megatron"
+        logger.info("Megatron DDP config not available, using default")
+
     recipe.trainer.strategy = MegatronStrategy(
         tensor_model_parallel_size=TP,
         pipeline_model_parallel_size=PP,
         context_parallel_size=1,
         virtual_pipeline_model_parallel_size=None,
-        sequence_parallel=False,
+        sequence_parallel=(TP > 1),  # activates when tensor parallel > 1
+        ddp=ddp_config,
     )
     
     # Dataset paths: separate train and test files
