@@ -151,8 +151,8 @@ def train_model(model_name: str, model_config: dict):
     logger.info(f"GBS={GBS} → grad_accum={grad_accum}, effective GBS={global_batch_size}")
 
     if torch.cuda.is_available():
-        device_props = torch.cuda.get_device_properties(local_rank)
-        device_name = torch.cuda.get_device_name(local_rank)
+        device_props = torch.cuda.get_device_properties(0)
+        device_name = torch.cuda.get_device_name(0)
         platform = "nvd"
         software_stack = "megatron"
         software_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
@@ -186,45 +186,38 @@ def train_model(model_name: str, model_config: dict):
         torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
         config = AutoConfig.from_pretrained(model_config['hf_model'], trust_remote_code=True)
 
+        _device = torch.device(f'cuda:{local_rank}') if world_size > 1 else torch.device('cuda')
+
         # ── Attention: prefer flash_attention_2 (faster fused kernels),
-        #    fall back to sdpa, then default
+        #    fall back to sdpa, then default.
+        # Initialise directly on the target GPU via init_device to avoid
+        # allocating a full CPU copy per rank that then races to .to(device).
         attn_impl_used = "flash_attention_2"
         try:
-            model = AutoModelForCausalLM.from_config(
-                config,
-                torch_dtype=torch_dtype,
-                attn_implementation="flash_attention_2",
-            )
-            logger.info("Using attention implementation: flash_attention_2")
-        except Exception:
-            try:
+            with torch.device(_device):
                 model = AutoModelForCausalLM.from_config(
                     config,
                     torch_dtype=torch_dtype,
-                    attn_implementation="sdpa",
+                    attn_implementation="flash_attention_2",
                 )
+            logger.info("Using attention implementation: flash_attention_2")
+        except Exception:
+            try:
+                with torch.device(_device):
+                    model = AutoModelForCausalLM.from_config(
+                        config,
+                        torch_dtype=torch_dtype,
+                        attn_implementation="sdpa",
+                    )
                 attn_impl_used = "sdpa"
                 logger.info("flash_attention_2 not available, using sdpa")
             except Exception as attn_err:
                 logger.warning(f"SDPA not available ({attn_err}), falling back to default")
-                model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+                with torch.device(_device):
+                    model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
                 attn_impl_used = "default"
                 logger.info("Using default attention implementation")
         model.config.use_cache = False
-
-        _device = torch.device(f'cuda:{local_rank}') if world_size > 1 else torch.device('cuda')
-
-        # Free any stale GPU memory before moving the model to device
-        gc.collect()
-        torch.cuda.empty_cache()
-        if torch.cuda.is_available():
-            mem_free, mem_total = torch.cuda.mem_get_info(local_rank)
-            logger.info(
-                f"GPU {local_rank} before model load: "
-                f"{mem_free / 1e9:.2f} GiB free / {mem_total / 1e9:.2f} GiB total"
-            )
-
-        model = model.to(_device)
 
         if hasattr(model, 'gradient_checkpointing_enable'):
             model.gradient_checkpointing_enable()
