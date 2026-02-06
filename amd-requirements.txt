@@ -1,17 +1,33 @@
-# Core requirements
-torch>=2.0.0
+# AMD ROCm Container Requirements
+# PyTorch with ROCm support comes from base image (rocm/primus:v25.11)
+
+# Core training frameworks
 lightning>=2.0.0
+transformers>=4.36.0
+accelerate>=0.30.0
+datasets>=2.14.0
+
+# DeepSpeed (ROCm compatible)
+deepspeed>=0.12.0
+
+# NeMo and Megatron support (for train_amd_nemo scripts)
+# Note: Some NVIDIA features (FP8, TransformerEngine) won't work on AMD
+megatron-core>=0.5.0
+nemo-toolkit[nlp]>=2.0.0
+nemo_run
 
 # Benchmarking and visualization
 matplotlib>=3.5.0
 numpy>=1.21.0
 pyyaml>=6.0
 
-# Data Preparation
-datasets>=2.10.0
-huggingface_hub>=0.13.0
-transformers>=4.30.0
+# Utilities
+scipy
+sentencepiece
+protobuf
+pydantic
+packaging
 
-# Optional for advanced profiling
+# Monitoring
 tensorboard>=2.10.0
-
+wandb
