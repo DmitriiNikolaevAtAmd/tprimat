@@ -34,7 +34,7 @@ ENV RCCL_MSCCL_ENABLE=0
 RUN mkdir -p /workspace/code
 WORKDIR /workspace/code
 
-COPY amd-prim-requirements.txt /workspace/code/
+COPY amd-requirements.txt /workspace/code/
 RUN pip install --no-cache-dir -r amd-requirements.txt
 
 COPY . /workspace/code/
