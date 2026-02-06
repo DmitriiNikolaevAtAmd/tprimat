@@ -242,16 +242,19 @@ def train_model(model_name: str, model_config: dict):
             logger.info(f"Wrapped model with DDP (bucket_view)")
             is_ddp = True
 
-        # ── torch.compile: applied AFTER DDP wrapping.
-        #    Use "default" mode with DDP because "reduce-overhead"
-        #    relies on CUDA graphs which conflict with DDP's dynamic
-        #    gradient synchronization hooks.
-        _compile_mode = "default" if is_ddp else "reduce-overhead"
-        try:
-            model = torch.compile(model, mode=_compile_mode)
-            logger.info(f"Enabled torch.compile ({_compile_mode})")
-        except Exception as compile_err:
-            logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
+        # ── torch.compile ─────────────────────────────────────────────
+        # Disabled under DDP: HuggingFace flash-attention uses .item()
+        # which forces graph breaks, and the resulting recompilation
+        # storms add overhead instead of saving it.  Single-GPU still
+        # benefits from reduce-overhead (CUDA-graph) mode.
+        if not is_ddp:
+            try:
+                model = torch.compile(model, mode="reduce-overhead")
+                logger.info("Enabled torch.compile (reduce-overhead)")
+            except Exception as compile_err:
+                logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
+        else:
+            logger.info("Skipping torch.compile (incompatible with DDP + HF flash-attn graph breaks)")
 
         # ── Data ──────────────────────────────────────────────────────
         dataset_path = str(DATA_DIR / f"{DATASET}-train")
