@@ -368,7 +368,11 @@ def train_model(model_name: str):
     recipe.optim.config.weight_decay = WEIGHT_DECAY
     recipe.optim.config.adam_beta1 = BETA1
     recipe.optim.config.adam_beta2 = BETA2
-    recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS
+    # Compensate for _WARMUP_ITERS: NeMo's Lightning trainer advances the
+    # LR scheduler during the un-timed CUDA warmup iterations, so we add
+    # _WARMUP_ITERS to warmup_steps so the *recorded* warmup (after the
+    # un-timed phase) aligns with the Megatron script's schedule.
+    recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS + _WARMUP_ITERS
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS + _WARMUP_ITERS
     recipe.optim.lr_scheduler.min_lr = 0.0  # Ensure LR decays to zero like Primus
@@ -378,8 +382,11 @@ def train_model(model_name: str):
     else:
         recipe.model.config.fp8 = None
     recipe.model.config.fp8_param = FP8_PARAM
-    recipe.model.config.recompute_granularity = "selective"
-    recipe.model.config.recompute_method = "uniform"
+    # NOTE: activation recompute disabled — Llama-8B / Qwen-7B fit in
+    # H100 80 GB with ZeRO-1 without it, and selective recompute costs
+    # ~30-40 % throughput by re-running forward ops during backward.
+    recipe.model.config.recompute_granularity = None
+    recipe.model.config.recompute_method = None
     
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None

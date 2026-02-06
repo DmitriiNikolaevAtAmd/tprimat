@@ -384,7 +384,9 @@ def train_model(model_name: str, model_config: dict):
             # so the LR schedule starts cleanly at the first timed step.
         optimizer.zero_grad(set_to_none=True)
         torch.cuda.synchronize()
-        torch.cuda.empty_cache()
+        # NOTE: do NOT call empty_cache() here — it flushes the CUDA memory
+        # pool that warmup just primed, forcing re-allocation on the first
+        # timed steps and producing a large initial spike.
         logger.info("CUDA warmup complete, starting timed training...")
 
         logger.info("Starting training...")

@@ -186,6 +186,11 @@ MEMORY_LOG="$TPRIMAT_PATH/output/memory_llama_${DATASET}.log"
 ) &
 MEMORY_PID=$!
 
+LOG_FILE="$TPRIMAT_PATH/output/training_main_llama_${DATASET}.log"
+: > "$LOG_FILE"
+tail -f "$LOG_FILE" &
+TAIL_PID=$!
+
 bash "$TRAIN_SCRIPT" \
     --train_iters "$TRAIN_ITERS" \
     --global_batch_size "$GBS" \
@@ -203,7 +208,10 @@ bash "$TRAIN_SCRIPT" \
     --tokenizer_type HuggingFaceTokenizer \
     --tokenizer_model "$TOKENIZER_MODEL" \
     --split 100,0,0 \
-    2>&1 | tee "$TPRIMAT_PATH/output/training_main_llama_${DATASET}.log"
+    >> "$LOG_FILE" 2>&1
+
+kill $TAIL_PID 2>/dev/null || true
+wait $TAIL_PID 2>/dev/null || true
 
 # Stop memory monitoring
 kill $MEMORY_PID 2>/dev/null || true

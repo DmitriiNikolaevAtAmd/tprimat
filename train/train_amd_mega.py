@@ -23,8 +23,7 @@ for env_var in ("HF_HOME", "HF_DATASETS_CACHE"):
         os.environ[env_var] = str(WORKSPACE_ROOT / val)
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
-_output_dir = os.environ.get("OUTPUT_DIR", "output")
-OUTPUT_DIR = Path(_output_dir) if os.path.isabs(_output_dir) else WORKSPACE_ROOT / _output_dir
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(WORKSPACE_ROOT / "output")))
 
 SEED = int(os.environ.get("SEED", 42))
 MBS = int(os.environ.get("MBS", 1))
@@ -66,7 +65,7 @@ class _TokenDataset(torch.utils.data.Dataset):
     """Map-style dataset wrapping IndexedDataset for use with DataLoader."""
 
     def __init__(self, data_path: str, seq_length: int, pad_id: int = 0):
-        from lib.dataset import IndexedDataset
+        from lib.amd_mega_dataset import IndexedDataset
         self._ds = IndexedDataset(data_path)
         self._seq = seq_length
         self._pad = pad_id
@@ -106,12 +105,12 @@ def set_seed(seed: int):
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
-def get_gpu_info(world_size: int, local_rank: int = 0) -> dict:
+def get_gpu_info(world_size: int) -> dict:
     if not torch.cuda.is_available():
         return {}
 
-    device_props = torch.cuda.get_device_properties(local_rank)
-    device_name = torch.cuda.get_device_name(local_rank)
+    device_props = torch.cuda.get_device_properties(0)
+    device_name = torch.cuda.get_device_name(0)
 
     gpu_cores = 14592 if "mi300" in device_name.lower() else 6912
 
@@ -133,10 +132,7 @@ def train_model(model_name: str):
 
     if world_size > 1:
         torch.cuda.set_device(local_rank)
-        torch.distributed.init_process_group(
-            backend="nccl",
-            device_id=torch.device(f"cuda:{local_rank}"),
-        )
+        torch.distributed.init_process_group(backend="nccl")
 
     set_seed(SEED)
 
@@ -151,7 +147,7 @@ def train_model(model_name: str):
     global_batch_size = MBS * grad_accum * world_size
     logger.info(f"GBS={GBS} → grad_accum={grad_accum}, effective GBS={global_batch_size}")
 
-    gpu_info = get_gpu_info(world_size, local_rank)
+    gpu_info = get_gpu_info(world_size)
     torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
 
     try:
@@ -164,55 +160,36 @@ def train_model(model_name: str):
 
         config = AutoConfig.from_pretrained(hf_model, trust_remote_code=True)
 
-        _device = torch.device(f"cuda:{local_rank}" if world_size > 1 else "cuda")
-
-        # ── Attention: prefer flash_attention_2 (faster fused kernels),
-        #    fall back to sdpa, then default.
-        attn_impl_used = "flash_attention_2"
-        try:
-            model = AutoModelForCausalLM.from_config(
-                config, torch_dtype=torch_dtype,
-                attn_implementation="flash_attention_2",
-            )
-            logger.info("Using attention implementation: flash_attention_2")
-        except Exception:
+        # ── Attention: try sdpa first (compile-friendly), then default
+        model = None
+        for attn_impl in ("sdpa", "eager"):
             try:
                 model = AutoModelForCausalLM.from_config(
                     config, torch_dtype=torch_dtype,
-                    attn_implementation="sdpa",
+                    attn_implementation=attn_impl,
                 )
-                attn_impl_used = "sdpa"
-                logger.info("flash_attention_2 not available, using sdpa")
-            except Exception as attn_err:
-                logger.warning(f"SDPA not available ({attn_err}), falling back to default")
-                model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
-                attn_impl_used = "default"
-                logger.info("Using default attention implementation")
+                logger.info(f"Using attention implementation: {attn_impl}")
+                break
+            except Exception:
+                continue
+        if model is None:
+            model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+            logger.info("Using default attention implementation")
         model.config.use_cache = False
 
-        # Free stale GPU memory before moving the model to device
-        gc.collect()
-        torch.cuda.empty_cache()
-        if torch.cuda.is_available():
-            mem_free, mem_total = torch.cuda.mem_get_info(local_rank)
-            logger.info(
-                f"GPU {local_rank} before model load: "
-                f"{mem_free / 1e9:.2f} GiB free / {mem_total / 1e9:.2f} GiB total"
-            )
-
+        _device = torch.device(f"cuda:{local_rank}" if world_size > 1 else "cuda")
         model = model.to(_device)
 
-        # NOTE: gradient checkpointing intentionally disabled — MI300X has
-        # 192 GB HBM3, plenty of room for Llama-8B activations.  Checkpointing
-        # halves activation memory but recomputes forward during backward,
-        # costing ~30-40 % throughput (the main gap vs Primus).
+        if hasattr(model, "gradient_checkpointing_enable"):
+            model.gradient_checkpointing_enable()
+            logger.info("Enabled gradient checkpointing")
+
+        # NOTE: torch.compile disabled — incompatible with gradient
+        # checkpointing + DDP static_graph on this PyTorch/transformers
+        # version (graph too large for Dynamo to trace all 32 layers).
+        # model = torch.compile(model, mode="default")
 
         # ── DDP ───────────────────────────────────────────────────────
-        # NOTE: DDP must wrap the model BEFORE torch.compile so that
-        # the autograd hooks for gradient all-reduce are part of the
-        # compiled graph.  static_graph=True is also incompatible with
-        # torch.compile — compile rewrites the autograd graph which
-        # trips DDP's expect_autograd_hooks_ assertion in reducer.cpp.
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -225,20 +202,6 @@ def train_model(model_name: str):
             )
             logger.info("Wrapped model with DDP (bucket_view)")
             is_ddp = True
-
-        # ── torch.compile ─────────────────────────────────────────────
-        # Disabled under DDP: HuggingFace flash-attention uses .item()
-        # which forces graph breaks, and the resulting recompilation
-        # storms add overhead instead of saving it.  Single-GPU still
-        # benefits from reduce-overhead (CUDA-graph) mode.
-        if not is_ddp:
-            try:
-                model = torch.compile(model, mode="reduce-overhead")
-                logger.info("Enabled torch.compile (reduce-overhead)")
-            except Exception as compile_err:
-                logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
-        else:
-            logger.info("Skipping torch.compile (incompatible with DDP + HF flash-attn graph breaks)")
 
         # ── Data ──────────────────────────────────────────────────────
         dataset_name = os.environ.get("DATASET", "bc")
@@ -273,64 +236,24 @@ def train_model(model_name: str):
         data_iter = iter(_cycle(loader))
 
         # ── Optimizer ─────────────────────────────────────────────────
-        # Llama-8B + full AdamW FP32 states ≈ 86 GB (params 14 + opt 57 + grads 14),
-        # exceeding 80 GB per GPU. Use ZeroRedundancyOptimizer (ZeRO-1) to shard
-        # optimizer states across the data-parallel group, reducing per-GPU opt
-        # memory from ~57 GB to ~7 GB.
-        if world_size > 1:
-            from torch.distributed.optim import ZeroRedundancyOptimizer
-            optimizer = ZeroRedundancyOptimizer(
-                model.parameters(),
-                optimizer_class=torch.optim.AdamW,
-                lr=LR, betas=(BETA1, BETA2),
+        try:
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
+            )
+            logger.info("Using fused AdamW optimizer")
+        except Exception:
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=LR, betas=(BETA1, BETA2),
                 eps=1e-8, weight_decay=WEIGHT_DECAY,
             )
-            logger.info("Using ZeroRedundancyOptimizer (sharded AdamW, ZeRO-1)")
-        else:
-            try:
-                optimizer = torch.optim.AdamW(
-                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
-                    eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
-                )
-                logger.info("Using fused AdamW optimizer")
-            except Exception:
-                optimizer = torch.optim.AdamW(
-                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
-                    eps=1e-8, weight_decay=WEIGHT_DECAY,
-                )
-                logger.info("Using standard AdamW optimizer")
+            logger.info("Using standard AdamW optimizer")
 
         scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=TRAIN_ITERS)
 
         model.train()
         step_times = []
         loss_values = []
-        learning_rates = []
-
-        # ── CUDA warmup (un-timed iterations to pre-compile kernels) ────
-        _WARMUP_ITERS = 3
-        logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
-        for _w in range(_WARMUP_ITERS):
-            optimizer.zero_grad(set_to_none=True)
-            for micro_step in range(grad_accum):
-                input_ids = next(data_iter).to(_device, non_blocking=True)
-                labels = input_ids
-                sync_ctx = nullcontext()
-                if is_ddp and micro_step < (grad_accum - 1):
-                    sync_ctx = model.no_sync()
-                with sync_ctx:
-                    with torch.amp.autocast("cuda", dtype=torch_dtype):
-                        outputs = model(input_ids=input_ids, labels=labels)
-                        loss = outputs.loss / grad_accum
-                    loss.backward()
-                del outputs, loss, input_ids, labels
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
-            optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
-        logger.info("CUDA warmup complete, starting timed training...")
-
         training_start = time.time()
 
         # Disable GC during training to avoid random pauses
@@ -362,6 +285,8 @@ def train_model(model_name: str):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
                 optimizer.step()
                 scheduler.step()
+                # Reclaim fragmented GPU memory between optimizer steps
+                torch.cuda.empty_cache()
 
                 step_time = time.time() - step_start
                 avg_loss = sum(step_losses) / len(step_losses)
@@ -370,8 +295,6 @@ def train_model(model_name: str):
 
                 step_times.append(step_time)
                 loss_values.append(avg_loss)
-                current_lr = scheduler.get_last_lr()[0]
-                learning_rates.append(current_lr)
 
                 if rank == 0:
                     logger.info(f"Step {step + 1}/{TRAIN_ITERS} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
@@ -404,7 +327,6 @@ def train_model(model_name: str):
                     "pipeline_parallel_size": PP,
                     "data_parallel_size": DP,
                     "gradient_accumulation_steps": grad_accum,
-                    "attn_implementation": attn_impl_used,
                 },
                 "performance_metrics": {
                     "total_steps": len(step_times),
@@ -415,14 +337,13 @@ def train_model(model_name: str):
                 },
                 "step_times": step_times,
                 "loss_values": loss_values,
-                "learning_rates": learning_rates,
             }
 
             # Merge memory log into results
             mem_log = os.environ.get("MEMORY_LOG")
             if mem_log and os.path.exists(mem_log):
                 try:
-                    from evaluate.extract_metrics import parse_memory_log
+                    from evaluate.extract_prim_metrics import parse_memory_log
                     num_steps = len(step_times)
                     mem_data = parse_memory_log(mem_log, num_steps=num_steps)
                     if mem_data:
