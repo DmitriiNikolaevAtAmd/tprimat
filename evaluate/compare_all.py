@@ -19,8 +19,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def load_all_benchmark_results(results_dir: str) -> Dict[str, Dict]:
-    """Load all benchmark results with model and platform information."""
+def load_all_benchmark_results(results_dir: str, dataset_filter: str = None) -> Dict[str, Dict]:
+    """Load all benchmark results with model, platform, and dataset information.
+    
+    Args:
+        results_dir: Directory containing benchmark JSON files.
+        dataset_filter: If provided, only load results for this dataset (e.g. "bc", "c4").
+    
+    Returns:
+        Dict mapping "platform-framework-model" keys to benchmark data.
+        When multiple datasets exist and no filter is given, returns all results
+        with dataset info stored in each entry.
+    """
     results_path = Path(results_dir)
     
     benchmarks = {}
@@ -35,13 +45,21 @@ def load_all_benchmark_results(results_dir: str) -> Dict[str, Dict]:
             platform = "unknown"
             framework = "unknown"
             model_name = "unknown"
+            dataset = None
+            
+            # Expected format: train_{platform}_{framework}_{model}_{dataset}
+            # or legacy:       train_{platform}_{framework}_{model}
             if len(parts) >= 4 and parts[1] in ("nvd", "amd"):
                 platform = "nvidia" if parts[1] == "nvd" else "amd"
                 framework = parts[2]
                 model_name = parts[3]
+                if len(parts) >= 5:
+                    dataset = parts[4]
             elif len(parts) >= 3:
                 framework = parts[1]
                 model_name = parts[2]
+                if len(parts) >= 4:
+                    dataset = parts[3]
                 if framework in ['mega', 'tran', 'deep', 'nemo', 'fsdp']:
                     platform = "nvidia"
                 elif framework in ['prim', 'amd']:
@@ -49,21 +67,56 @@ def load_all_benchmark_results(results_dir: str) -> Dict[str, Dict]:
                 else:
                     platform = data.get('platform', 'unknown')
             
+            # Fallback: read dataset from JSON contents
+            if dataset is None:
+                dataset = data.get('dataset')
+            
             if model_name == "unknown" or platform == "unknown":
                 print(f"[!] Skipping unrecognized file name: {json_file.name}")
+                continue
+            
+            # Apply dataset filter
+            if dataset_filter and dataset and dataset != dataset_filter:
                 continue
             
             key = f"{platform}-{framework}-{model_name}"
             data['model_name'] = model_name
             data['platform_key'] = platform
             data['framework'] = framework
+            if dataset:
+                data['dataset'] = dataset
             benchmarks[key] = data
             
-            print(f"[+] Loaded: {key} from {json_file.name}")
+            ds_label = f" [{dataset}]" if dataset else ""
+            print(f"[+] Loaded: {key}{ds_label} from {json_file.name}")
         except Exception as e:
             print(f"[!] Error loading {json_file}: {e}")
     
     return benchmarks
+
+
+def discover_datasets(results_dir: str) -> List[str]:
+    """Discover all unique dataset labels from output JSON filenames."""
+    results_path = Path(results_dir)
+    datasets = set()
+    
+    for json_file in sorted(results_path.glob("train_*.json")):
+        parts = json_file.stem.split('_')
+        # train_{platform}_{framework}_{model}_{dataset}
+        if len(parts) >= 5 and parts[1] in ("nvd", "amd"):
+            datasets.add(parts[4])
+        elif len(parts) >= 4:
+            # Could be dataset or could be a 3-part legacy name; check JSON
+            try:
+                with open(json_file, 'r') as f:
+                    data = json.load(f)
+                ds = data.get('dataset')
+                if ds:
+                    datasets.add(ds)
+            except Exception:
+                pass
+    
+    return sorted(datasets) if datasets else []
 
 
 def pick_default_framework(benchmarks: Dict[str, Dict]) -> str | None:
@@ -472,42 +525,18 @@ def print_comparison(nvidia_data: Dict, amd_data: Dict):
     print("\n" + "="*80 + "\n")
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description='GPU benchmark comparison - all models and platforms'
-    )
-    default_dir = os.environ.get('OUTPUT_DIR', './output')
-    parser.add_argument('--results-dir', default=default_dir,
-                       help='Directory containing benchmark JSON files (default: OUTPUT_DIR env var or ./output)')
-    parser.add_argument('--output', default='compare.png',
-                       help='Output filename for the comparison plot (default: compare.png)')
-    parser.add_argument('--framework', default=None,
-                       help='Framework filter (e.g., nemo, deep, fsdp). Auto-detects if omitted.')
+def run_comparison(benchmarks: Dict[str, Dict], output_file: str, framework_filter: str = None, dataset_label: str = None):
+    """Run comparison for a single set of benchmarks and generate plot + summary."""
     
-    args = parser.parse_args()
-    
-    print("Loading benchmark results...")
-    benchmarks = load_all_benchmark_results(args.results_dir)
-    
-    if not benchmarks:
-        print("  x No benchmark results found!")
-        print(f"Expected files in {args.results_dir}/:")
-        print("  NVIDIA frameworks:")
-        print("    - train_nvd_mega_llama.json, train_nvd_mega_qwen.json (Megatron)")
-        print("    - train_nvd_tran_llama.json, train_nvd_tran_qwen.json (Transformers)")
-        print("    - train_nvd_deep_llama.json, train_nvd_deep_qwen.json (DeepSpeed)")
-        print("    - train_nvd_nemo_llama.json, train_nvd_nemo_qwen.json (NeMo)")
-        print("  AMD frameworks:")
-        print("    - train_amd_nemo_llama.json, train_amd_nemo_qwen.json (NeMo)")
-        print("    - train_amd_prim_llama.json, train_amd_prim_qwen.json (Primus)")
-        return 1
-    
-    # Detect which platforms are available
     has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
     has_amd = any(key.startswith('amd-') for key in benchmarks.keys())
-    framework_filter = args.framework or pick_default_framework(benchmarks)
     
-    print(f"\n  * Found {len(benchmarks)} benchmark(s):")
+    if not framework_filter:
+        framework_filter = pick_default_framework(benchmarks)
+    
+    ds_tag = f" [dataset={dataset_label}]" if dataset_label else ""
+    
+    print(f"\n  * Found {len(benchmarks)} benchmark(s){ds_tag}:")
     for key in sorted(benchmarks.keys()):
         data = benchmarks[key]
         print(f"  {key}: {data['gpu_info']['device_name']} ({data['timestamp']})")
@@ -528,16 +557,16 @@ def main():
     else:
         print("\n  * No framework filter selected; using first matching per model/platform")
     
-    print(f"\nGenerating comparison plot: {args.output}")
+    print(f"\nGenerating comparison plot: {output_file}")
     try:
-        create_comparison_plot(benchmarks, args.output, framework_filter=framework_filter)
+        create_comparison_plot(benchmarks, output_file, framework_filter=framework_filter)
     except Exception as e:
         print(f"[!] Could not generate plot: {e}")
         import traceback
         traceback.print_exc()
     
     print("\n" + "="*100)
-    print("PERFORMANCE SUMMARY")
+    print(f"PERFORMANCE SUMMARY{ds_tag}")
     print("="*100)
     print(f"\n{'Configuration':<25} {'Tokens/sec/GPU':>15} {'Avg Step Time':>15} {'Avg Loss':>12}")
     print("-" * 100)
@@ -605,6 +634,66 @@ def main():
                     print(f"    -> {winner} is {ratio:.2f}x faster")
     
     print("\n" + "="*100 + "\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='GPU benchmark comparison - all models and platforms'
+    )
+    default_dir = os.environ.get('OUTPUT_DIR', './output')
+    parser.add_argument('--results-dir', default=default_dir,
+                       help='Directory containing benchmark JSON files (default: OUTPUT_DIR env var or ./output)')
+    parser.add_argument('--output', default='compare.png',
+                       help='Output filename for the comparison plot, saved inside results dir (default: compare.png)')
+    parser.add_argument('--framework', default=None,
+                       help='Framework filter (e.g., nemo, deep, fsdp). Auto-detects if omitted.')
+    parser.add_argument('--dataset', default=None,
+                       help='Dataset filter (e.g., bc, c4). If omitted, generates separate comparisons per dataset.')
+    
+    args = parser.parse_args()
+    
+    # Discover available datasets
+    datasets = discover_datasets(args.results_dir)
+    
+    # Apply explicit dataset filter
+    if args.dataset:
+        datasets_to_run = [args.dataset]
+    elif datasets:
+        datasets_to_run = datasets
+    else:
+        # No dataset labels found (legacy files) -- run once without filter
+        datasets_to_run = [None]
+    
+    print(f"Datasets found: {datasets if datasets else '(none / legacy format)'}")
+    
+    for dataset in datasets_to_run:
+        ds_label = f" [{dataset}]" if dataset else ""
+        print(f"\n{'#'*100}")
+        print(f"Loading benchmark results{ds_label}...")
+        
+        benchmarks = load_all_benchmark_results(args.results_dir, dataset_filter=dataset)
+        
+        if not benchmarks:
+            print(f"  x No benchmark results found{ds_label}!")
+            print(f"Expected files in {args.results_dir}/:")
+            print("  Format: train_{{platform}}_{{framework}}_{{model}}_{{dataset}}.json")
+            print("  NVIDIA: train_nvd_nemo_llama_bc.json, train_nvd_mega_qwen_c4.json, ...")
+            print("  AMD:    train_amd_prim_llama_bc.json, train_amd_mega_qwen_c4.json, ...")
+            continue
+        
+        # Determine output filename (always save inside results dir)
+        results_path = Path(args.results_dir)
+        if dataset and args.output == 'compare.png':
+            # Auto-name per dataset
+            output_file = str(results_path / f"compare_{dataset}.png")
+        elif dataset:
+            # User specified output; inject dataset before extension
+            base, ext = os.path.splitext(os.path.basename(args.output))
+            output_file = str(results_path / f"{base}_{dataset}{ext}")
+        else:
+            output_file = str(results_path / os.path.basename(args.output))
+        
+        run_comparison(benchmarks, output_file, framework_filter=args.framework, dataset_label=dataset)
     
     return 0
 

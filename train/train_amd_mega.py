@@ -161,7 +161,7 @@ def train_model(model_name: str):
         
         dataset = PretrainingDataset(tokenizer=tokenizer, seq_length=SEQ_LEN, data_path=dataset_path)
         
-        optimizer = torch.optim.Adam(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8, weight_decay=WEIGHT_DECAY)
         scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=TRAIN_ITERS)
         
         model.train()

@@ -15,6 +15,19 @@ CONFIGS["04"]="balanced"
 OUTPUT_DIRS=($(find . -maxdepth 2 -type d -name "output-*" | sort))
 
 if [ ${#OUTPUT_DIRS[@]} -eq 0 ]; then
+    # No output-* directories; try the default output dir
+    if [ -d "../output" ]; then
+        echo "  No output-* directories found; using default ../output"
+        json_count=$(find "../output" -name "train_*.json" 2>/dev/null | wc -l)
+        if [ "$json_count" -eq 0 ]; then
+            echo "  No train_*.json files found in ../output"
+            exit 1
+        fi
+        echo "  Comparing results from ../output ($json_count JSON file(s))"
+        # compare_all.py handles per-dataset iteration and saves inside results dir
+        python3 compare_all.py --results-dir "../output"
+        exit 0
+    fi
     exit 1
 fi
 
@@ -22,17 +35,17 @@ for DIR in "${OUTPUT_DIRS[@]}"; do
     if [ -d "$DIR" ]; then
         DIR_NAME=$(basename "$DIR")
         INDEX="${DIR_NAME#output-}"
-        OUTPUT_FILE="${OUTPUT_BASE}/compare-${INDEX}.png"
-        
+
         json_count=$(find "$DIR" -name "train_*.json" 2>/dev/null | wc -l)
-        
+
         if [ "$json_count" -eq 0 ]; then
-            echo "  ⚠ Skipping $DIR (no train_*.json files found)"
+            echo "  Skipping $DIR (no train_*.json files found)"
             continue
         fi
-        
-        echo "  📊 Comparing results from $DIR ($json_count JSON file(s))"
-        python3 compare.py --results-dir "$DIR" --output "$OUTPUT_FILE"
+
+        echo "  Comparing results from $DIR ($json_count JSON file(s))"
+        # compare_all.py handles per-dataset iteration and saves inside results dir
+        python3 compare_all.py --results-dir "$DIR" --output "compare-${INDEX}.png"
     fi
 done
 

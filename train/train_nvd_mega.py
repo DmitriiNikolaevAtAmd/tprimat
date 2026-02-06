@@ -233,7 +233,7 @@ def train_model(model_name: str, model_config: dict):
             optimizer = bnb.optim.Adam8bit(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8)
             logger.info("Using 8-bit Adam optimizer (saves ~75% optimizer memory)")
         else:
-            optimizer = torch.optim.Adam(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8)
+            optimizer = torch.optim.AdamW(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8, weight_decay=WEIGHT_DECAY)
             logger.warning("bitsandbytes not available, using standard Adam (higher memory)")
         
         from transformers import get_cosine_schedule_with_warmup
