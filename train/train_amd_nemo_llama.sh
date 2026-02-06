@@ -19,33 +19,43 @@ if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
     exit 1
 fi
 
-NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
 export OUTPUT_DIR="${OUTPUT_DIR:-$TPRIMAT_PATH/output}"
 export DATA_DIR
 export DATASET
 
-echo "Config: NUM_GPUS=${NUM_GPUS} GA=${GA}"
-echo "Batch: MBS=${MBS} SEQ_LEN=${SEQ_LEN}"
+# Parallel config
+export TP=${TP:-1}
+export PP=${PP:-1}
+export DP=${DP:-8}
+export GA=${GA:-8}
+
+# Batch config
+export MBS=${MBS:-1}
+export GBS=$((MBS * DP * GA))
+
+echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
+echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
-# Performance settings
+# AMD ROCm performance settings
 export PYTORCH_ALLOC_CONF=expandable_segments:True
+export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
+export GLOO_LOG_LEVEL=ERROR
+export RCCL_MSCCL_ENABLE=0
+export HSA_NO_SCRATCH_RECLAIM=1
+export HSA_ENABLE_SDMA=1
+export HSA_FORCE_FINE_GRAIN_PCIE=1
 export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
 export HF_HUB_DISABLE_PROGRESS_BARS=1
-export USE_TF=NO
-export USE_APEX=NO
-export TRANSFORMERS_NO_APEX=1
 
-if [ "$NUM_GPUS" -gt 1 ]; then
-    torchrun --nproc_per_node="$NUM_GPUS" \
-             --nnodes=1 \
-             --node_rank=0 \
-             --master_addr=localhost \
-             --master_port=29500 \
-             "$SCRIPT_DIR/train_nvd_tran.py" llama
-else
-    python3 -u "$SCRIPT_DIR/train_nvd_tran.py" llama
-fi
+# Profiling (from config.env)
+export PROFILING=${PROFILING:-false}
+export PROFILE_WAIT=${PROFILE_WAIT:-5}
+export PROFILE_WARMUP=${PROFILE_WARMUP:-1}
+export PROFILE_ACTIVE=${PROFILE_ACTIVE:-2}
+export PROFILE_REPEAT=${PROFILE_REPEAT:-1}
+
+python3 -u "$SCRIPT_DIR/train_amd_nemo.py" llama

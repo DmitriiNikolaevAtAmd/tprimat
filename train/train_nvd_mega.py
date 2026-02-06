@@ -25,7 +25,7 @@ from pathlib import Path
 from datetime import datetime
 from contextlib import nullcontext
 
-DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+DATA_DIR = Path(os.environ.get("DATA_DIR", "/data/tprimat"))
 WORKSPACE_ROOT = Path(__file__).parent.parent
 _output_dir = os.environ.get("OUTPUT_DIR", "output")
 OUTPUT_DIR = Path(_output_dir) if os.path.isabs(_output_dir) else WORKSPACE_ROOT / _output_dir

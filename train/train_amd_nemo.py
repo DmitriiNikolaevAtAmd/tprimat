@@ -60,8 +60,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class KinetoProfilerCallback(Callback):
-    """Lightning callback for Kineto GPU profiling integrated with training loop."""
+class ROCmProfilerCallback(Callback):
+    """Lightning callback for ROCm GPU profiling integrated with training loop."""
     
     def __init__(self, output_dir: Path, model_name: str):
         self.output_dir = output_dir
@@ -75,19 +75,19 @@ class KinetoProfilerCallback(Callback):
             
         self.profile_dir.mkdir(parents=True, exist_ok=True)
         
-        logger.info(f"Kineto GPU profiling enabled")
+        logger.info(f"ROCm GPU profiling enabled")
         logger.info(f"  Profile output: {self.profile_dir}")
         logger.info(f"  Schedule: wait={PROFILE_WAIT}, warmup={PROFILE_WARMUP}, "
                     f"active={PROFILE_ACTIVE}, repeat={PROFILE_REPEAT}")
         
         def trace_handler(prof):
             rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
-            trace_file = self.profile_dir / f"nvd_nemo_{self.model_name}_rank{rank}.json"
+            trace_file = self.profile_dir / f"amd_nemo_{self.model_name}_rank{rank}.json"
             logger.info(f"Exporting trace to {trace_file}")
             prof.export_chrome_trace(str(trace_file))
             
             # Also export stacks for flame graph generation
-            stacks_file = self.profile_dir / f"nvd_nemo_{self.model_name}_rank{rank}_stacks.txt"
+            stacks_file = self.profile_dir / f"amd_nemo_{self.model_name}_rank{rank}_stacks.txt"
             try:
                 prof.export_stacks(str(stacks_file), "self_cuda_time_total")
                 logger.info(f"Exported CUDA stacks to {stacks_file}")
@@ -128,7 +128,7 @@ class KinetoProfilerCallback(Callback):
         if self.profiler is not None:
             self.profiler.__exit__(None, None, None)
             self.profiler = None
-            logger.info(f"Kineto profiling completed. Traces saved to {self.profile_dir}")
+            logger.info(f"ROCm profiling completed. Traces saved to {self.profile_dir}")
 
 
 def load_env_file(env_path: str) -> None:
@@ -215,18 +215,18 @@ def train_model(model_name: str):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     if not torch.cuda.is_available():
-        logger.error("CUDA is not available!")
+        logger.error("CUDA/ROCm is not available!")
         sys.exit(1)
     
-    platform_prefix = "nvd"
+    platform_prefix = "amd"
     num_gpus = torch.cuda.device_count()
     
-    logger.info(f"CUDA devices available: {num_gpus}")
+    logger.info(f"ROCm devices available: {num_gpus}")
     
     config = get_model_config(model_name)
     ensure_hf_token_for_gated_repo(config["tokenizer_path"])
     
-    logger.info(f"Setting up {config['display_name']} training...")
+    logger.info(f"Setting up {config['display_name']} training on AMD...")
     
     torch.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
@@ -281,7 +281,7 @@ def train_model(model_name: str):
             f"Training dataset not found at {train_dataset_path}\n"
             f"  Missing: {train_idx if not os.path.exists(train_idx) else ''} "
             f"{train_bin if not os.path.exists(train_bin) else ''}\n"
-            f"  Run data preparation: python prepare/encode_data.py"
+            f"  Run data preparation: bash prepare/data.sh"
         )
     
     # Validate test dataset exists
@@ -292,7 +292,7 @@ def train_model(model_name: str):
             f"Test dataset not found at {test_dataset_path}\n"
             f"  Missing: {test_idx if not os.path.exists(test_idx) else ''} "
             f"{test_bin if not os.path.exists(test_bin) else ''}\n"
-            f"  Run data preparation: python prepare/encode_data.py"
+            f"  Run data preparation: bash prepare/data.sh"
         )
     
     logger.info(f"Train dataset: {train_dataset_path}")
@@ -345,11 +345,9 @@ def train_model(model_name: str):
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS
     
-    if FP8_HYBRID:
-        recipe.model.config.fp8 = "hybrid"
-    else:
-        recipe.model.config.fp8 = None
-    recipe.model.config.fp8_param = FP8_PARAM
+    # FP8 not typically available on AMD, disable
+    recipe.model.config.fp8 = None
+    recipe.model.config.fp8_param = False
     recipe.model.config.recompute_granularity = "selective"
     recipe.model.config.recompute_method = "uniform"
     
@@ -364,7 +362,7 @@ def train_model(model_name: str):
     
     benchmark_callback = BenchmarkCallback(
         output_dir=str(OUTPUT_DIR),
-        platform="nvd",
+        platform="amd",
         model_name=model_name,
         parallel_strategy="minimal_communication",
         framework=f"{platform_prefix}_nemo"
@@ -373,9 +371,9 @@ def train_model(model_name: str):
         recipe.trainer.callbacks = []
     recipe.trainer.callbacks.append(benchmark_callback)
     
-    # Add Kineto profiler callback if profiling is enabled
+    # Add ROCm profiler callback if profiling is enabled
     if PROFILING:
-        profiler_callback = KinetoProfilerCallback(OUTPUT_DIR, model_name)
+        profiler_callback = ROCmProfilerCallback(OUTPUT_DIR, model_name)
         recipe.trainer.callbacks.append(profiler_callback)
     
     logger.info(f"Configuration:")
@@ -386,13 +384,11 @@ def train_model(model_name: str):
     logger.info(f"  Learning rate: {LR}")
     logger.info(f"  Warmup steps: {WARMUP_STEPS}")
     logger.info(f"  Precision: {PRECISION}")
-    logger.info(f"  FP8 Hybrid: {FP8_HYBRID}")
-    logger.info(f"  FP8 Param: {FP8_PARAM}")
     logger.info(f"  TP: {TP}, PP: {PP}, DP: {DP}")
     logger.info(f"  Profiling: {PROFILING}")
     logger.info(f"  Verify data: {VERIFY_DATA} (samples={VERIFY_SAMPLES}, full_scan={VERIFY_FULL_SCAN})")
     
-    logger.info(f"Starting {config['display_name']} training...")
+    logger.info(f"Starting {config['display_name']} training on AMD...")
     
     run.run(recipe, direct=True)
     

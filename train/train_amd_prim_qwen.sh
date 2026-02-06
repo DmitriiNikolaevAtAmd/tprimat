@@ -8,20 +8,27 @@ source "$TPRIMAT_PATH/config.env"
 
 mkdir -p "$TPRIMAT_PATH/output"
 
-# Data paths (disabled - using default Primus data source)
-# DATA_PREFIX="${DATA_DIR}/allenai-c4-qwen-mega"
-# TOKENIZER_PATH="${DATA_DIR}/qwen-qwen25-7b"
+# Data paths - uses DATASET from config.env (bc or c4)
+DATASET="${DATASET:-bc}"
+DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
+TOKENIZER_PATH="${DATA_DIR}/tokenizers/qwen"
+TOKENIZER_HF="Qwen/Qwen2.5-7B"
 
-# Verify data files exist (disabled)
-# if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
-#     echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
-#     echo "       Run prepare/prepare.sh first to generate the dataset"
-#     exit 1
-# fi
-# if [ ! -d "${TOKENIZER_PATH}" ]; then
-#     echo "ERROR: Tokenizer not found at ${TOKENIZER_PATH}"
-#     exit 1
-# fi
+# Verify data files exist
+if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
+    echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
+    echo "       Run prepare/data.sh first to generate the dataset"
+    exit 1
+fi
+
+# Use local tokenizer if available, otherwise fall back to HuggingFace
+if [ -d "${TOKENIZER_PATH}" ]; then
+    TOKENIZER_MODEL="${TOKENIZER_PATH}"
+    echo "Using local tokenizer: ${TOKENIZER_MODEL}"
+else
+    TOKENIZER_MODEL="${TOKENIZER_HF}"
+    echo "Using HuggingFace tokenizer: ${TOKENIZER_MODEL}"
+fi
 
 # Training batch config (from config.env: TP, PP, DP, GA, MBS, SEQ_LEN, etc.)
 NUM_GPUS=$((TP * PP * DP))
@@ -30,6 +37,7 @@ LR_DECAY_ITERS=$TRAIN_ITERS
 
 echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
+echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
 # Critical AMD performance settings
 export RCCL_DEBUG=ERROR
@@ -57,7 +65,7 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$TPRIMAT_PATH/output/qwen2.5_7B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-export PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY
+export PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY DATA_PREFIX TOKENIZER_MODEL
 if python3 -c "import yaml" 2>/dev/null; then
     python3 << 'PYTHON_EOF'
 import os
@@ -92,11 +100,13 @@ config['train_iters'] = train_iters
 config['lr_decay_iters'] = train_iters
 config['lr_warmup_iters'] = warmup_steps
 
-# External data configuration (disabled - using default Primus data source)
-# config['data_path'] = data_prefix
-# config['tokenizer_type'] = 'HuggingFaceTokenizer'
-# config['tokenizer_model'] = tokenizer_path
-# config['split'] = '100,0,0'
+# External data configuration
+data_prefix = os.environ['DATA_PREFIX']
+tokenizer_model = os.environ['TOKENIZER_MODEL']
+config['data_path'] = data_prefix
+config['tokenizer_type'] = 'HuggingFaceTokenizer'
+config['tokenizer_model'] = tokenizer_model
+config['split'] = '100,0,0'
 
 # Logging: enable per-step memory tracking
 config['log_interval'] = 1  # Log every step for memory tracking
@@ -167,16 +177,14 @@ bash "$TRAIN_SCRIPT" \
     --lr_decay_style cosine \
     --lr_decay_iters "$TRAIN_ITERS" \
     --weight_decay "$WEIGHT_DECAY" \
+    --data_path "$DATA_PREFIX" \
+    --tokenizer_type HuggingFaceTokenizer \
+    --tokenizer_model "$TOKENIZER_MODEL" \
+    --split 100,0,0 \
     2>&1 | tee "$TPRIMAT_PATH/output/training_main_qwen.log"
 
 # Stop memory monitoring
 kill $MEMORY_PID 2>/dev/null || true
-
-# External data CLI args (disabled)
-#     --data_path "$DATA_PREFIX" \
-#     --tokenizer_type HuggingFaceTokenizer \
-#     --tokenizer_model "$TOKENIZER_PATH" \
-#     --split 100,0,0 \
 
 cd "$TPRIMAT_PATH"
 

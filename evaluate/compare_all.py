@@ -148,7 +148,7 @@ def create_comparison_plot(
     else:
         title = 'GPU Benchmark Results'
     
-    fig, axes = plt.subplots(2, 4, figsize=(22, 10), facecolor='white')
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10), facecolor='white')
     fig.suptitle(title, fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
     axes = axes.flatten()
     
@@ -211,21 +211,20 @@ def create_comparison_plot(
             if key:
                 data = benchmarks[key]
                 mem_metrics = data.get('memory_metrics', {})
-                # Use peak memory (most relevant for comparison)
-                peak_mem = mem_metrics.get('peak_memory_allocated_gb')
-                if peak_mem is None:
-                    peak_mem = mem_metrics.get('avg_memory_allocated_gb')
-                # NOTE: Don't estimate from total GPU memory - that's misleading
+                # Use average memory
+                avg_mem = mem_metrics.get('avg_memory_allocated_gb')
+                if avg_mem is None:
+                    avg_mem = mem_metrics.get('peak_memory_allocated_gb')
                 
-                if peak_mem and peak_mem != 'N/A':
+                if avg_mem and avg_mem != 'N/A':
                     labels.append(style_map[suffix]['label'])
-                    values.append(float(peak_mem))
+                    values.append(float(avg_mem))
                     colors_list.append(style_map[suffix]['color'])
     
     if values:
         bars = ax2.bar(labels, values, color=colors_list, alpha=0.75, edgecolor='#333333', linewidth=1.2)
         ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
-        ax2.set_title('Peak GPU Memory Usage', fontweight='bold', fontsize=12)
+        ax2.set_title('Average GPU Memory Usage', fontweight='bold', fontsize=12)
         ax2.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
         
         for bar, value in zip(bars, values):
@@ -236,7 +235,7 @@ def create_comparison_plot(
     else:
         ax2.text(0.5, 0.5, 'Memory data not available\n(run with memory tracking enabled)', 
                 ha='center', va='center', transform=ax2.transAxes, fontsize=10)
-        ax2.set_title('Peak GPU Memory Usage', fontweight='bold', fontsize=12)
+        ax2.set_title('Average GPU Memory Usage', fontweight='bold', fontsize=12)
     
     ax3 = axes[2]
     has_data = False
@@ -341,47 +340,9 @@ def create_comparison_plot(
                 ha='center', va='center', transform=ax5.transAxes)
         ax5.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
     
-    # Memory line chart (per-step memory if available)
     ax6 = axes[5]
-    has_data = False
-    
-    for platform in ("nvidia", "amd"):
-        for model_name in ("llama", "qwen"):
-            suffix = f"{platform}-{model_name}"
-            key = find_key(platform, model_name)
-            if key and 'memory_values' in benchmarks[key]:
-                memory_values = benchmarks[key]['memory_values']
-                if memory_values:
-                    steps = range(len(memory_values))
-                    style = style_map[suffix]
-                    ax6.plot(steps, memory_values, 
-                            marker=style['marker'], 
-                            linestyle=style['linestyle'],
-                            color=style['color'], 
-                            label=style['label'], 
-                            linewidth=1.5, 
-                            markersize=2, 
-                            alpha=0.85)
-                    has_data = True
-    
-    if has_data:
-        ax6.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax6.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
-        ax6.set_title('GPU Memory over Time', fontweight='bold', fontsize=12)
-        ax6.legend(fontsize=8, loc='best')
-        ax6.grid(alpha=0.2, linestyle='--', linewidth=0.5)
-    else:
-        ax6.text(0.5, 0.5, 'Per-step memory data not available\n(requires log_interval=1)', 
-                ha='center', va='center', transform=ax6.transAxes, fontsize=9)
-        ax6.set_title('GPU Memory over Time', fontweight='bold', fontsize=12)
-    
-    # Empty panel (reserved for future use)
-    ax7 = axes[6]
-    ax7.axis('off')
-    
-    ax8 = axes[7]
-    ax8.axis('off')
-    ax8.set_title('Experiment Configuration', fontweight='bold', fontsize=12)
+    ax6.axis('off')
+    ax6.set_title('Experiment Configuration', fontweight='bold', fontsize=12)
     
     table_data = []
     
@@ -422,7 +383,7 @@ def create_comparison_plot(
     if table_data:
         col_labels = ['Config', 'Parallelism', 'GBS', 'MBS', 'SeqLen', 'Mem(GB)']
         
-        table = ax8.table(
+        table = ax6.table(
             cellText=table_data,
             colLabels=col_labels,
             loc='center',
@@ -441,8 +402,8 @@ def create_comparison_plot(
         for j in range(len(col_labels)):
             table[(0, j)].set_text_props(fontweight='bold')
     else:
-        ax8.text(0.5, 0.5, 'No experiment data available', 
-                ha='center', va='center', transform=ax8.transAxes)
+        ax6.text(0.5, 0.5, 'No experiment data available', 
+                ha='center', va='center', transform=ax6.transAxes)
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
