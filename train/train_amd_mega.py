@@ -65,7 +65,7 @@ class _TokenDataset(torch.utils.data.Dataset):
     """Map-style dataset wrapping IndexedDataset for use with DataLoader."""
 
     def __init__(self, data_path: str, seq_length: int, pad_id: int = 0):
-        from lib.amd_mega_dataset import IndexedDataset
+        from lib.dataset import IndexedDataset
         self._ds = IndexedDataset(data_path)
         self._seq = seq_length
         self._pad = pad_id
