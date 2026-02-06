@@ -359,10 +359,7 @@ def train_model(model_name: str):
         global_batch_size=GBS,
     )
     
-    # Extra un-timed warmup iterations so CUDA kernels are pre-compiled
-    # before the BenchmarkCallback starts recording step times.
-    _WARMUP_ITERS = 3
-    recipe.trainer.max_steps = TRAIN_ITERS + _WARMUP_ITERS
+    recipe.trainer.max_steps = TRAIN_ITERS
     recipe.optim.config.lr = LR
     recipe.optim.config.min_lr = 0.0
     recipe.optim.config.weight_decay = WEIGHT_DECAY
@@ -370,7 +367,7 @@ def train_model(model_name: str):
     recipe.optim.config.adam_beta2 = BETA2
     recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS
     recipe.optim.lr_scheduler.constant_steps = 0
-    recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS + _WARMUP_ITERS
+    recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS
     recipe.optim.lr_scheduler.min_lr = 0.0  # Ensure LR decays to zero like Primus
     
     if FP8_HYBRID:
@@ -396,8 +393,7 @@ def train_model(model_name: str):
         model_name=model_name,
         parallel_strategy="minimal_communication",
         framework=f"{platform_prefix}_nemo",
-        dataset=DATASET,
-        warmup_steps=_WARMUP_ITERS,
+        dataset=DATASET
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []

@@ -35,17 +35,8 @@ export HF_HUB_DISABLE_PROGRESS_BARS=1
 
 # CUDA / NCCL performance tuning
 export CUDA_DEVICE_MAX_CONNECTIONS=1   # enables compute/communication overlap
-export CUDA_MODULE_LOADING=EAGER       # pre-load all CUDA modules at startup
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1  # reduces NCCL memory fragmentation
-
-# TransformerEngine: enable fused attention kernels
-export NVTE_FUSED_ATTN=1
-export NVTE_FLASH_ATTN=1
-
-# FP8 hybrid (NVIDIA H100+)
-export FP8_HYBRID=${FP8_HYBRID:-true}
-export FP8_PARAM=${FP8_PARAM:-true}
 
 # Data paths - uses DATASET from config.env (bc or c4)
 DATASET="${DATASET:-bc}"
