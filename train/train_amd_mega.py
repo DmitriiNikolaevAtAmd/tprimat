@@ -279,10 +279,14 @@ def train_model(model_name: str):
                             loss = outputs.loss / grad_accum
                         loss.backward()
                     step_losses.append(loss.item() * grad_accum)
+                    # Free activation memory immediately to avoid OOM on next micro-step
+                    del outputs, loss, input_ids, labels
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
                 optimizer.step()
                 scheduler.step()
+                # Reclaim fragmented GPU memory between optimizer steps
+                torch.cuda.empty_cache()
 
                 step_time = time.time() - step_start
                 avg_loss = sum(step_losses) / len(step_losses)
