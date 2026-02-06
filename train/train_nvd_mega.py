@@ -223,15 +223,12 @@ def train_model(model_name: str, model_config: dict):
         # sharding, Llama-8B fits in H100 80 GB without recomputation.
         # Checkpointing halves activation memory but costs ~30-40 % throughput.
 
-        # ── torch.compile: use reduce-overhead mode for lower kernel launch
-        #    latency without the full graph capture of max-autotune.
-        try:
-            model = torch.compile(model, mode="reduce-overhead")
-            logger.info("Enabled torch.compile (reduce-overhead)")
-        except Exception as compile_err:
-            logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
-
-        # ── DDP with static graph for gradient communication overlap ──
+        # ── DDP ───────────────────────────────────────────────────────
+        # NOTE: DDP must wrap the model BEFORE torch.compile so that
+        # the autograd hooks for gradient all-reduce are part of the
+        # compiled graph.  static_graph=True is also incompatible with
+        # torch.compile — compile rewrites the autograd graph which
+        # trips DDP's expect_autograd_hooks_ assertion in reducer.cpp.
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -241,10 +238,20 @@ def train_model(model_name: str, model_config: dict):
                 output_device=local_rank,
                 find_unused_parameters=False,
                 gradient_as_bucket_view=True,
-                static_graph=True,           # enables comm/compute overlap
             )
-            logger.info(f"Wrapped model with DDP (bucket_view, static_graph)")
+            logger.info(f"Wrapped model with DDP (bucket_view)")
             is_ddp = True
+
+        # ── torch.compile: applied AFTER DDP wrapping.
+        #    Use "default" mode with DDP because "reduce-overhead"
+        #    relies on CUDA graphs which conflict with DDP's dynamic
+        #    gradient synchronization hooks.
+        _compile_mode = "default" if is_ddp else "reduce-overhead"
+        try:
+            model = torch.compile(model, mode=_compile_mode)
+            logger.info(f"Enabled torch.compile ({_compile_mode})")
+        except Exception as compile_err:
+            logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
 
         # ── Data ──────────────────────────────────────────────────────
         dataset_path = str(DATA_DIR / f"{DATASET}-train")
