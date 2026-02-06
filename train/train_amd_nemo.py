@@ -366,7 +366,8 @@ def train_model(model_name: str):
         platform="amd",
         model_name=model_name,
         parallel_strategy="minimal_communication",
-        framework=f"{platform_prefix}_nemo"
+        framework=f"{platform_prefix}_nemo",
+        dataset=DATASET
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []

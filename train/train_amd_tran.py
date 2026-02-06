@@ -47,6 +47,7 @@ PRECISION = os.environ.get("PRECISION", "bf16")
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
 GA = int(os.environ.get("GA", 32))
+DATASET = os.environ.get("DATASET", "bc")  # bc or c4
 
 try:
     import bitsandbytes as bnb
@@ -206,7 +207,8 @@ def train_model(model_name, model_short_name):
             platform="amd",
             model_name=model_short_name,
             parallel_strategy="ddp",
-            framework=f"{platform_prefix}_tran"
+            framework=f"{platform_prefix}_tran",
+            dataset=DATASET
         )
         trainer.add_callback(benchmark_callback)
     except Exception as e:

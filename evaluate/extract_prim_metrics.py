@@ -263,6 +263,8 @@ Examples:
                        help='Output JSON file path (if not specified, uses output/train_<framework>_<model>.json)')
     parser.add_argument('--model-name', 
                        help='Model name (e.g., llama, qwen) - used in auto-generated filename')
+    parser.add_argument('--dataset',
+                       help='Dataset name (e.g., bc, c4) - included in output filename and JSON')
     parser.add_argument('--num-gpus', type=int, required=True,
                        help='Number of GPUs used in training')
     parser.add_argument('--global-batch-size', type=int, required=True,
@@ -363,14 +365,18 @@ Examples:
         }
     
     if results:
+        # Add dataset to results when provided
+        if args.dataset:
+            results["dataset"] = args.dataset
         # Determine output path
         if args.output:
             output_path = Path(args.output).resolve()
         else:
-            # Auto-generate filename with model name
+            # Auto-generate filename with model name and optional dataset
             software_stack = results['gpu_info'].get('software_stack', 'unknown')
             model_suffix = f"_{args.model_name}" if args.model_name else ""
-            output_path = Path(f"./output/train_{software_stack}{model_suffix}.json").resolve()
+            dataset_suffix = f"_{args.dataset}" if args.dataset else ""
+            output_path = Path(f"./output/train_{software_stack}{model_suffix}{dataset_suffix}.json").resolve()
         
         # Save results (round all floats to 5 decimal places)
         output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -316,6 +316,7 @@ def train_model(model_name: str, model_config: dict):
             
             results = {
                 "platform": platform,
+                "dataset": DATASET,
                 "gpu_info": gpu_info,
                 "timestamp": datetime.now().isoformat(),
                 "training_config": {
@@ -352,7 +353,7 @@ def train_model(model_name: str, model_config: dict):
             logger.info(f"=" * 80)
             
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            output_file = OUTPUT_DIR / f"train_{platform}_mega_{model_name}.json"
+            output_file = OUTPUT_DIR / f"train_{platform}_mega_{model_name}_{DATASET}.json"
             from lib.utils import round_floats
             results_rounded = round_floats(results, precision=5)
             
@@ -376,7 +377,7 @@ def train_model(model_name: str, model_config: dict):
                 },
             }
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            output_file = OUTPUT_DIR / f"train_nvd_mega_{model_name}.json"
+            output_file = OUTPUT_DIR / f"train_nvd_mega_{model_name}_{DATASET}.json"
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2)
         raise

@@ -215,7 +215,8 @@ fi
 python3 evaluate/extract_prim_metrics.py \
     --log-file "$TPRIMAT_PATH/output/training_main_qwen.log" \
     --model-name "qwen" \
-    --output "$TPRIMAT_PATH/output/train_amd_prim_qwen.json" \
+    --dataset "$DATASET" \
+    --output "$TPRIMAT_PATH/output/train_amd_prim_qwen_${DATASET}.json" \
     --num-gpus "$NUM_GPUS" \
     --global-batch-size "$GBS" \
     --micro-batch-size "$MBS" \

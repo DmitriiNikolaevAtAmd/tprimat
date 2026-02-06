@@ -42,6 +42,7 @@ PRECISION = os.environ.get("PRECISION", "bf16")
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
 GA = int(os.environ.get("GA", 32))
+DATASET = os.environ.get("DATASET", "bc")  # bc or c4
 
 
 class PretrainingDataset(Dataset):
@@ -324,6 +325,7 @@ def train_model(model_name, model_short_name):
             
             results = {
                 "platform": platform,
+                "dataset": DATASET,
                 "gpu_info": gpu_info,
                 "timestamp": datetime.now().isoformat(),
                 "training_config": {
@@ -356,7 +358,7 @@ def train_model(model_name, model_short_name):
             print(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
             
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            output_file = OUTPUT_DIR / f"train_amd_deep_{model_short_name}.json"
+            output_file = OUTPUT_DIR / f"train_amd_deep_{model_short_name}_{DATASET}.json"
             results_rounded = round_floats(results, precision=5)
             
             with open(output_file, 'w') as f:

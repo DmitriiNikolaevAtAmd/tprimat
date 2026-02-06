@@ -251,7 +251,7 @@ def print_summary(results: Dict[str, Any]) -> None:
 
 class BenchmarkCallback(Callback):
     def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, 
-                 parallel_strategy: str = "unknown", framework: str = None):
+                 parallel_strategy: str = "unknown", framework: str = None, dataset: str = None):
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -279,6 +279,7 @@ class BenchmarkCallback(Callback):
         self.model_name = model_name
         self.parallel_strategy = parallel_strategy
         self.framework = framework
+        self.dataset = dataset or os.environ.get("DATASET", "bc")
         
     def on_train_start(self, trainer, pl_module):
         self.train_start_time = time.time()
@@ -426,6 +427,7 @@ class BenchmarkCallback(Callback):
             
             results = {
                 "platform": self.platform,
+                "dataset": self.dataset,
                 "gpu_info": self.gpu_info,
                 "timestamp": datetime.now().isoformat(),
                 "parallelism_config": parallelism_info,
@@ -460,15 +462,16 @@ class BenchmarkCallback(Callback):
                     "min_memory_allocated_gb": min(self.memory_allocated),
                 }
             
+            dataset_suffix = f"_{self.dataset}" if self.dataset else ""
             if self.framework and self.model_name:
-                filename = f"train_{self.framework}_{self.model_name}.json"
+                filename = f"train_{self.framework}_{self.model_name}{dataset_suffix}.json"
             elif self.model_name:
                 software_stack = self.gpu_info.get("software_stack", self.platform)
-                filename = f"train_{software_stack}_{self.model_name}.json"
+                filename = f"train_{software_stack}_{self.model_name}{dataset_suffix}.json"
             else:
                 software_stack = self.gpu_info.get("software_stack", self.platform)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"train_{software_stack}_{timestamp}.json"
+                filename = f"train_{software_stack}_{timestamp}{dataset_suffix}.json"
             
             filepath = self.output_dir / filename
             results_rounded = round_floats(results, precision=5)
@@ -499,7 +502,7 @@ class BenchmarkCallback(Callback):
 
 class BenchmarkCallbackTran(TrainerCallback):
     def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, 
-                 parallel_strategy: str = "unknown", framework: str = None):
+                 parallel_strategy: str = "unknown", framework: str = None, dataset: str = None):
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -526,6 +529,7 @@ class BenchmarkCallbackTran(TrainerCallback):
         self.model_name = model_name
         self.parallel_strategy = parallel_strategy
         self.framework = framework
+        self.dataset = dataset or os.environ.get("DATASET", "bc")
     
     def on_train_begin(self, args: "TrainingArguments", state: "TrainerState", control: "TrainerControl", **kwargs):
         self.train_start_time = time.time()
@@ -624,6 +628,7 @@ class BenchmarkCallbackTran(TrainerCallback):
             
             results = {
                 "platform": self.platform,
+                "dataset": self.dataset,
                 "gpu_info": self.gpu_info,
                 "timestamp": datetime.now().isoformat(),
                 "training_config": {
@@ -658,15 +663,16 @@ class BenchmarkCallbackTran(TrainerCallback):
                     "min_memory_allocated_gb": min(self.memory_allocated),
                 }
             
+            dataset_suffix = f"_{self.dataset}" if self.dataset else ""
             if self.framework and self.model_name:
-                filename = f"train_{self.framework}_{self.model_name}.json"
+                filename = f"train_{self.framework}_{self.model_name}{dataset_suffix}.json"
             elif self.model_name:
                 software_stack = self.gpu_info.get("software_stack", self.platform)
-                filename = f"train_{software_stack}_{self.model_name}.json"
+                filename = f"train_{software_stack}_{self.model_name}{dataset_suffix}.json"
             else:
                 software_stack = self.gpu_info.get("software_stack", self.platform)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"train_{software_stack}_{timestamp}.json"
+                filename = f"train_{software_stack}_{timestamp}{dataset_suffix}.json"
             
             filepath = self.output_dir / filename
             results_rounded = round_floats(results, precision=5)

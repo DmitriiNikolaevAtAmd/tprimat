@@ -212,6 +212,7 @@ def train_model(model_name: str):
             
             results = {
                 "platform": "amd",
+                "dataset": dataset_name,
                 "gpu_info": gpu_info,
                 "timestamp": datetime.now().isoformat(),
                 "training_config": {
@@ -261,7 +262,7 @@ def train_model(model_name: str):
                     logger.warning("Could not merge memory log: %s", e)
             
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            output_file = OUTPUT_DIR / f"train_amd_mega_{model_name}.json"
+            output_file = OUTPUT_DIR / f"train_amd_mega_{model_name}_{dataset_name}.json"
             
             with open(output_file, "w") as f:
                 json.dump(results, f, indent=2)

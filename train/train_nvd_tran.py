@@ -206,7 +206,8 @@ def train_model(model_name, model_short_name):
             platform="nvd",
             model_name=model_short_name,
             parallel_strategy="ddp",
-            framework=f"{platform_prefix}_tran"
+            framework=f"{platform_prefix}_tran",
+            dataset=DATASET
         )
         trainer.add_callback(benchmark_callback)
     except Exception as e:
