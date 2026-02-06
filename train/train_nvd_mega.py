@@ -220,10 +220,9 @@ def train_model(model_name: str, model_config: dict):
                 device_ids=[local_rank],
                 output_device=local_rank,
                 find_unused_parameters=False,
-                static_graph=True,
                 gradient_as_bucket_view=True,
             )
-            logger.info(f"Wrapped model with DDP (static_graph, bucket_view)")
+            logger.info(f"Wrapped model with DDP (bucket_view)")
             is_ddp = True
 
         # ── Data ──────────────────────────────────────────────────────
