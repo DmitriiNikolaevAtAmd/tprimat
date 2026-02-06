@@ -27,7 +27,7 @@ export DATASET
 export TP=${TP:-1}
 export PP=${PP:-1}
 export DP=${DP:-8}
-export GA=${GA:-8}
+export GA=${GA:-64}
 
 # Batch config
 export MBS=${MBS:-1}
