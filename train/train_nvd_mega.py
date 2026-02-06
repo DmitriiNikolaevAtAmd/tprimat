@@ -222,8 +222,9 @@ def train_model(model_name: str, model_config: dict):
         # Checkpointing halves activation memory but costs ~30-40 % throughput.
 
         # ── DDP ───────────────────────────────────────────────────────
-        # static_graph=True lets DDP pre-compute the reduction schedule
-        # after the first iteration, avoiding per-step bucket rebuilds.
+        # NOTE: static_graph=True is incompatible with model.no_sync()
+        # used during gradient accumulation (the autograd graph differs
+        # between synced and no-sync micro-steps).
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -233,15 +234,14 @@ def train_model(model_name: str, model_config: dict):
                 output_device=local_rank,
                 find_unused_parameters=False,
                 gradient_as_bucket_view=True,
-                static_graph=True,
             )
-            logger.info(f"Wrapped model with DDP (bucket_view, static_graph)")
+            logger.info(f"Wrapped model with DDP (bucket_view)")
             is_ddp = True
 
         # ── torch.compile ─────────────────────────────────────────────
         # Single-GPU: use reduce-overhead (CUDA-graph) mode.
-        # DDP + static_graph: torch.compile is incompatible (compile
-        # rewrites the autograd graph, tripping DDP's hook assertions).
+        # DDP: HuggingFace flash-attention uses .item() which forces
+        # graph breaks and recompilation storms under torch.compile.
         if not is_ddp:
             try:
                 model = torch.compile(model, mode="reduce-overhead")
@@ -249,7 +249,7 @@ def train_model(model_name: str, model_config: dict):
             except Exception as compile_err:
                 logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
         else:
-            logger.info("Skipping torch.compile (incompatible with DDP static_graph)")
+            logger.info("Skipping torch.compile (graph breaks with DDP + HF attention)")
 
         # ── Data ──────────────────────────────────────────────────────
         dataset_path = str(DATA_DIR / f"{DATASET}-train")

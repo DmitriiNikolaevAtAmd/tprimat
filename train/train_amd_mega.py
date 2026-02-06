@@ -192,8 +192,9 @@ def train_model(model_name: str):
         # throughput.  Disabled on NVIDIA side as well.
 
         # ── DDP ───────────────────────────────────────────────────────
-        # static_graph=True lets DDP pre-compute the reduction schedule
-        # after the first iteration, avoiding per-step bucket rebuilds.
+        # NOTE: static_graph=True is incompatible with model.no_sync()
+        # used during gradient accumulation (the autograd graph differs
+        # between synced and no-sync micro-steps).
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -203,9 +204,8 @@ def train_model(model_name: str):
                 output_device=local_rank,
                 find_unused_parameters=False,
                 gradient_as_bucket_view=True,
-                static_graph=True,
             )
-            logger.info("Wrapped model with DDP (bucket_view, static_graph)")
+            logger.info("Wrapped model with DDP (bucket_view)")
             is_ddp = True
 
         # ── Data ──────────────────────────────────────────────────────
