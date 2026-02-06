@@ -132,7 +132,10 @@ def train_model(model_name: str):
 
     if world_size > 1:
         torch.cuda.set_device(local_rank)
-        torch.distributed.init_process_group(backend="nccl")
+        torch.distributed.init_process_group(
+            backend="nccl",
+            device_id=torch.device(f"cuda:{local_rank}"),
+        )
 
     set_seed(SEED)
 
@@ -160,20 +163,18 @@ def train_model(model_name: str):
 
         config = AutoConfig.from_pretrained(hf_model, trust_remote_code=True)
 
-        # ── Attention: try sdpa first (compile-friendly), then default
-        model = None
-        for attn_impl in ("sdpa", "eager"):
-            try:
-                model = AutoModelForCausalLM.from_config(
-                    config, torch_dtype=torch_dtype,
-                    attn_implementation=attn_impl,
-                )
-                logger.info(f"Using attention implementation: {attn_impl}")
-                break
-            except Exception:
-                continue
-        if model is None:
+        # ── Attention: force sdpa on both platforms for fair comparison
+        attn_impl_used = "sdpa"
+        try:
+            model = AutoModelForCausalLM.from_config(
+                config, torch_dtype=torch_dtype,
+                attn_implementation="sdpa",
+            )
+            logger.info("Using attention implementation: sdpa")
+        except Exception as attn_err:
+            logger.warning(f"SDPA not available ({attn_err}), falling back to default")
             model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+            attn_impl_used = "default"
             logger.info("Using default attention implementation")
         model.config.use_cache = False
 
@@ -339,6 +340,7 @@ def train_model(model_name: str):
                     "pipeline_parallel_size": PP,
                     "data_parallel_size": DP,
                     "gradient_accumulation_steps": grad_accum,
+                    "attn_implementation": attn_impl_used,
                 },
                 "performance_metrics": {
                     "total_steps": len(step_times),

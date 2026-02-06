@@ -12,8 +12,9 @@ export HF_HOME
 mkdir -p "$OUTPUT_DIR"
 
 "$SCRIPT_DIR/purge.sh" --keep-data
-
-echo "=== AMD Megatron ==="
 "$SCRIPT_DIR/train/train_amd_mega_llama.sh"
 "$SCRIPT_DIR/train/train_amd_mega_qwen.sh"
-
+"$SCRIPT_DIR/train/train_amd_prim_llama.sh"
+"$SCRIPT_DIR/train/train_amd_prim_qwen.sh"
+"$SCRIPT_DIR/evaluate/compare.sh"
+"$SCRIPT_DIR/wrap.sh"

@@ -34,7 +34,7 @@ export HF_HUB_DISABLE_PROGRESS_BARS=1
 
 # CUDA / NCCL performance tuning
 export CUDA_DEVICE_MAX_CONNECTIONS=1   # enables compute/communication overlap
-export NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1  # reduces NCCL memory fragmentation
 
 # TransformerEngine: enable fused attention kernels

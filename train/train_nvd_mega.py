@@ -41,11 +41,11 @@ BETA1 = float(os.environ.get("BETA1", 0.9))
 BETA2 = float(os.environ.get("BETA2", 0.95))
 PRECISION = os.environ.get("PRECISION", "bf16")
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
-TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
-GA = int(os.environ.get("GA", 32))
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 500))
+GA = int(os.environ.get("GA", 8))
 TP = int(os.environ.get("TP", 1))
 PP = int(os.environ.get("PP", 1))
-DP = int(os.environ.get("DP", 4))
+DP = int(os.environ.get("DP", 8))
 DATASET = os.environ.get("DATASET", "bc")  # bc or c4
 
 logging.basicConfig(
@@ -120,7 +120,10 @@ def train_model(model_name: str, model_config: dict):
 
     if world_size > 1:
         torch.cuda.set_device(local_rank)
-        torch.distributed.init_process_group(backend="nccl")
+        torch.distributed.init_process_group(
+            backend="nccl",
+            device_id=torch.device(f"cuda:{local_rank}"),
+        )
         try:
             torch.distributed.barrier()
         except Exception:
@@ -181,21 +184,19 @@ def train_model(model_name: str, model_config: dict):
         torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
         config = AutoConfig.from_pretrained(model_config['hf_model'], trust_remote_code=True)
 
-        # ── Attention: prefer sdpa (torch.compile-friendly), fall back to FA2
-        model = None
-        for attn_impl in ("sdpa", "flash_attention_2"):
-            try:
-                model = AutoModelForCausalLM.from_config(
-                    config,
-                    torch_dtype=torch_dtype,
-                    attn_implementation=attn_impl,
-                )
-                logger.info(f"Using attention implementation: {attn_impl}")
-                break
-            except Exception:
-                continue
-        if model is None:
+        # ── Attention: force sdpa on both platforms for fair comparison
+        attn_impl_used = "sdpa"
+        try:
+            model = AutoModelForCausalLM.from_config(
+                config,
+                torch_dtype=torch_dtype,
+                attn_implementation="sdpa",
+            )
+            logger.info("Using attention implementation: sdpa")
+        except Exception as attn_err:
+            logger.warning(f"SDPA not available ({attn_err}), falling back to default")
             model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+            attn_impl_used = "default"
             logger.info("Using default attention implementation")
         model.config.use_cache = False
 
@@ -385,6 +386,7 @@ def train_model(model_name: str, model_config: dict):
                     "num_gpus": world_size,
                     "parallel_strategy": "ddp",
                     "gradient_accumulation_steps": grad_accum,
+                    "attn_implementation": attn_impl_used,
                 },
                 "performance_metrics": {
                     "total_steps": len(step_times),
