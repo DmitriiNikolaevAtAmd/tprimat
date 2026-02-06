@@ -33,8 +33,7 @@ WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.1))
 BETA1 = float(os.environ.get("BETA1", 0.9))
 BETA2 = float(os.environ.get("BETA2", 0.95))
 PRECISION = os.environ.get("PRECISION", "bf16")
-FP8_HYBRID = os.environ.get("FP8_HYBRID", "false").lower() == "true"
-FP8_PARAM = os.environ.get("FP8_PARAM", "false").lower() == "true"
+
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
 GA = int(os.environ.get("GA", 32))
@@ -370,11 +369,8 @@ def train_model(model_name: str):
     recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS
     recipe.optim.lr_scheduler.min_lr = 0.0  # Ensure LR decays to zero like Primus
     
-    if FP8_HYBRID:
-        recipe.model.config.fp8 = "hybrid"
-    else:
-        recipe.model.config.fp8 = None
-    recipe.model.config.fp8_param = FP8_PARAM
+    recipe.model.config.fp8 = None
+    recipe.model.config.fp8_param = False
     recipe.model.config.recompute_granularity = "selective"
     recipe.model.config.recompute_method = "uniform"
     
@@ -412,8 +408,6 @@ def train_model(model_name: str):
     logger.info(f"  Learning rate: {LR}")
     logger.info(f"  Warmup steps: {WARMUP_STEPS}")
     logger.info(f"  Precision: {PRECISION}")
-    logger.info(f"  FP8 Hybrid: {FP8_HYBRID}")
-    logger.info(f"  FP8 Param: {FP8_PARAM}")
     logger.info(f"  TP: {TP}, PP: {PP}, DP: {DP}")
     logger.info(f"  Profiling: {PROFILING}")
     logger.info(f"  Verify data: {VERIFY_DATA} (samples={VERIFY_SAMPLES}, full_scan={VERIFY_FULL_SCAN})")
