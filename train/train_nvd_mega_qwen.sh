@@ -33,6 +33,11 @@ export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
 export HF_HUB_DISABLE_PROGRESS_BARS=1
 
+# CUDA / NCCL performance tuning
+export CUDA_DEVICE_MAX_CONNECTIONS=1
+export NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_NCCL_AVOID_RECORD_STREAMS=1
+
 # Train on all datasets
 for DATASET in bc c4; do
     export DATASET

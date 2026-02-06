@@ -2,22 +2,22 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-source "$SCRIPT_DIR/config.env"
+docker build -t primat:amd -f amd.Dockerfile .
 
-export DATA_DIR
-export OUTPUT_DIR
-export HF_HOME
-
-if [ "${DATA_DIR:-}" = "/data/tprimat" ] && [ ! -e "/data/tprimat" ] && [ -d "$SCRIPT_DIR/data" ]; then
-    mkdir -p /data
-    ln -s "$SCRIPT_DIR/data" /data/tprimat
-fi
-
-mkdir -p "$OUTPUT_DIR"
-
-"$SCRIPT_DIR/train/train_amd_prim_llama.sh"
-"$SCRIPT_DIR/train/train_amd_prim_qwen.sh"
-
-"$SCRIPT_DIR/evaluate/validate_outputs.sh" --platform amd
-"$SCRIPT_DIR/evaluate/compare_amd.sh"
+docker run --rm \
+    --network=host \
+    --device=/dev/kfd --device=/dev/dri \
+    --group-add video \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --shm-size=64g \
+    --ulimit memlock=-1 \
+    --ulimit stack=67108864 \
+    -v "$(pwd)":/workspace/code \
+    -v /data:/data \
+    -w /workspace/code \
+    --env-file config.env \
+    --env-file secrets.env \
+    primat:amd bash train_amd.sh

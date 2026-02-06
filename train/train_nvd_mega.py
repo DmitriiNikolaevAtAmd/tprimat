@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import gc
 import os
 import sys
 from pathlib import Path
@@ -47,12 +48,6 @@ PP = int(os.environ.get("PP", 1))
 DP = int(os.environ.get("DP", 4))
 DATASET = os.environ.get("DATASET", "bc")  # bc or c4
 
-try:
-    import bitsandbytes as bnb
-    HAS_BITSANDBYTES = True
-except (ImportError, RuntimeError):
-    HAS_BITSANDBYTES = False
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -62,48 +57,49 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class PretrainingDataset:
-    def __init__(self, tokenizer, seq_length, data_path):
-        self.tokenizer = tokenizer
-        self.seq_length = seq_length
-        
-        if not data_path:
-            raise ValueError("data_path is required - synthetic data is not allowed")
-        
+# ──────────────────────────────────────────────────────────────────────
+# Data pipeline
+# ──────────────────────────────────────────────────────────────────────
+
+class _TokenDataset(torch.utils.data.Dataset):
+    """Map-style dataset wrapping IndexedDataset for use with DataLoader.
+
+    The underlying IndexedDataset is opened lazily (per-process) so the
+    class is safe for ``num_workers > 0`` via fork or spawn.
+    """
+
+    def __init__(self, data_path: str, seq_length: int, pad_id: int = 0):
         from lib.dataset import IndexedDataset
-        self.indexed_dataset = IndexedDataset(data_path)
-        logger.info(f"✓ Loaded indexed dataset from {data_path}")
-        logger.info(f"  Dataset contains {len(self.indexed_dataset)} sequences")
-        self.iteration = 0
-    
-    def get_batch(self, batch_size, device):
-        batch_tokens = []
-        for _ in range(batch_size):
-            dataset_idx = self.iteration % len(self.indexed_dataset)
-            tokens = self.indexed_dataset[dataset_idx]
-            self.iteration += 1
-            
-            if len(tokens) < self.seq_length:
-                pad_token = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id else 0
-                padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
-                input_ids = torch.cat([tokens, padding])
-            else:
-                input_ids = tokens[:self.seq_length]
-            
-            batch_tokens.append(input_ids)
+        self._ds = IndexedDataset(data_path)
+        self._seq = seq_length
+        self._pad = pad_id
 
-        # Keep batch on CPU; we'll transfer once with non_blocking=True.
-        batch = torch.stack(batch_tokens)
-        if batch.device.type != "cpu":
-            batch = batch.cpu()
-        # Pin memory helps H2D copies when using non_blocking=True
-        if torch.cuda.is_available():
-            try:
-                batch = batch.pin_memory()
-            except Exception:
-                pass
-        return batch.to(device, non_blocking=True)
+    def __len__(self):
+        return len(self._ds)
 
+    def __getitem__(self, idx):
+        t = self._ds[idx % len(self._ds)]
+        n = len(t)
+        if n >= self._seq:
+            return t[: self._seq]
+        out = torch.full((self._seq,), self._pad, dtype=torch.long)
+        out[:n] = t
+        return out
+
+
+def _cycle(loader):
+    """Yield batches forever, advancing the DistributedSampler epoch."""
+    ep = 0
+    while True:
+        if hasattr(loader, "sampler") and hasattr(loader.sampler, "set_epoch"):
+            loader.sampler.set_epoch(ep)
+        yield from loader
+        ep += 1
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────────────
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -117,15 +113,14 @@ def train_model(model_name: str, model_config: dict):
     logger.info(f"=" * 80)
     logger.info(f"Starting Mega-LM training for {model_name}")
     logger.info(f"=" * 80)
-    
+
     rank = int(os.environ.get("RANK", 0))
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
-    
+
     if world_size > 1:
         torch.cuda.set_device(local_rank)
         torch.distributed.init_process_group(backend="nccl")
-        # Ensure DDP doesn't spend extra time in broadcast bucket views
         try:
             torch.distributed.barrier()
         except Exception:
@@ -133,16 +128,23 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"Initialized distributed training: rank={rank}, world_size={world_size}")
     else:
         logger.info("Running in single-GPU mode")
-    
+
     set_seed(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-    
-    # Normalize grad accumulation across distributed ranks so GBS stays comparable
-    base_grad_accum = int(model_config.get("grad_accum_steps", GA))
-    grad_accum = base_grad_accum // world_size if world_size > 1 else base_grad_accum
-    grad_accum = max(1, grad_accum)
+
+    # ── Performance knobs ──────────────────────────────────────────────
+    torch.set_float32_matmul_precision('high')          # TF32 matmuls
+    torch.backends.cudnn.benchmark = True               # cuDNN autotuner
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+    # ── FIX: derive grad_accum from GBS so it matches NeMo ────────────
+    # Previously GA was divided by world_size which collapsed GBS to
+    # MBS*world_size (e.g. 8), while NeMo used the full GBS (e.g. 64).
+    grad_accum = max(1, GBS // (MBS * world_size))
     global_batch_size = MBS * grad_accum * world_size
-    
+    logger.info(f"GBS={GBS} → grad_accum={grad_accum}, effective GBS={global_batch_size}")
+
     if torch.cuda.is_available():
         device_props = torch.cuda.get_device_properties(0)
         device_name = torch.cuda.get_device_name(0)
@@ -162,56 +164,72 @@ def train_model(model_name: str, model_config: dict):
     else:
         platform = "cpu"
         gpu_info = {}
-    
+
     step_times = []
     loss_values = []
     learning_rates = []
-    
+
     try:
         from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
-        
+
         logger.info(f"Loading tokenizer: {model_config['hf_model']}")
         tokenizer = AutoTokenizer.from_pretrained(model_config['hf_model'], trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        
+
         logger.info(f"Initializing model: {model_config['hf_model']} (random weights)")
         torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
         config = AutoConfig.from_pretrained(model_config['hf_model'], trust_remote_code=True)
-        # Prefer FlashAttention2 when available (major perf win on NVIDIA)
-        try:
-            model = AutoModelForCausalLM.from_config(
-                config,
-                torch_dtype=torch_dtype,
-                attn_implementation="flash_attention_2",
-            )
-            logger.info("Enabled FlashAttention2")
-        except Exception as e:
-            logger.warning(f"FlashAttention2 not available, using default attention: {e}")
+
+        # ── Attention: prefer sdpa (torch.compile-friendly), fall back to FA2
+        model = None
+        for attn_impl in ("sdpa", "flash_attention_2"):
+            try:
+                model = AutoModelForCausalLM.from_config(
+                    config,
+                    torch_dtype=torch_dtype,
+                    attn_implementation=attn_impl,
+                )
+                logger.info(f"Using attention implementation: {attn_impl}")
+                break
+            except Exception:
+                continue
+        if model is None:
             model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+            logger.info("Using default attention implementation")
         model.config.use_cache = False
-        
-        if world_size == 1:
-            logger.info("Single GPU detected - using device_map auto")
-            model = model.to('cuda')
-        else:
-            device = torch.device(f'cuda:{local_rank}')
-            model = model.to(device)
-        
+
+        _device = torch.device(f'cuda:{local_rank}') if world_size > 1 else torch.device('cuda')
+        model = model.to(_device)
+
         if hasattr(model, 'gradient_checkpointing_enable'):
             model.gradient_checkpointing_enable()
             logger.info("Enabled gradient checkpointing")
-        
+
+        # ── torch.compile ─────────────────────────────────────────────
+        try:
+            model = torch.compile(model, mode="default")
+            logger.info("Enabled torch.compile (default)")
+        except Exception as e:
+            logger.warning(f"torch.compile not available: {e}")
+
+        # ── DDP ───────────────────────────────────────────────────────
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
-            device = torch.device(f'cuda:{local_rank}')
-            model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
-            logger.info(f"Wrapped model with DDP on device {local_rank}")
+            model = DDP(
+                model,
+                device_ids=[local_rank],
+                output_device=local_rank,
+                find_unused_parameters=False,
+                static_graph=True,
+                gradient_as_bucket_view=True,
+            )
+            logger.info(f"Wrapped model with DDP (static_graph, bucket_view)")
             is_ddp = True
-        
+
+        # ── Data ──────────────────────────────────────────────────────
         dataset_path = str(DATA_DIR / f"{DATASET}-train")
-        
         idx_file = dataset_path + ".idx"
         bin_file = dataset_path + ".bin"
         if not os.path.exists(idx_file) or not os.path.exists(bin_file):
@@ -221,24 +239,49 @@ def train_model(model_name: str, model_config: dict):
                 f"{bin_file if not os.path.exists(bin_file) else ''}\n"
                 f"  Run data preparation: bash prepare/data.sh"
             )
-        
-        logger.info(f"Dataset: {dataset_path}")
-        
-        dataset = PretrainingDataset(tokenizer=tokenizer, seq_length=SEQ_LEN, data_path=dataset_path)
-        
+
+        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+        ds = _TokenDataset(dataset_path, SEQ_LEN, pad_id)
+        logger.info(f"Dataset: {dataset_path} ({len(ds)} sequences)")
+
+        sampler = None
+        if world_size > 1:
+            sampler = torch.utils.data.distributed.DistributedSampler(
+                ds, num_replicas=world_size, rank=rank, shuffle=True,
+            )
+        loader = torch.utils.data.DataLoader(
+            ds,
+            batch_size=MBS,
+            sampler=sampler,
+            shuffle=(sampler is None),
+            num_workers=2,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2,
+            drop_last=True,
+        )
+        data_iter = iter(_cycle(loader))
+
         batch_size = MBS
         num_steps = TRAIN_ITERS
-        
-        if HAS_BITSANDBYTES:
-            optimizer = bnb.optim.Adam8bit(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8)
-            logger.info("Using 8-bit Adam optimizer (saves ~75% optimizer memory)")
-        else:
-            optimizer = torch.optim.AdamW(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8, weight_decay=WEIGHT_DECAY)
-            logger.warning("bitsandbytes not available, using standard Adam (higher memory)")
-        
+
+        # ── Optimizer: fused AdamW (single multi-tensor CUDA kernel) ──
+        try:
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
+            )
+            logger.info("Using fused AdamW optimizer")
+        except Exception:
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                eps=1e-8, weight_decay=WEIGHT_DECAY,
+            )
+            logger.info("Using standard AdamW optimizer")
+
         from transformers import get_cosine_schedule_with_warmup
         scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=num_steps)
-        
+
         logger.info(f"Configuration:")
         logger.info(f"  Sequence length: {SEQ_LEN}")
         logger.info(f"  Micro batch size: {batch_size}")
@@ -248,72 +291,74 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"  Learning rate: {LR}")
         logger.info(f"  LR scheduler: Cosine with {WARMUP_STEPS} warmup steps")
         logger.info(f"  Precision: {PRECISION}")
-        
+
         model.train()
         logger.info("Starting training...")
         training_start = time.time()
-        
-        for step in range(num_steps):
-            step_start = time.time()
-            optimizer.zero_grad()
-            
-            step_losses = []
-            for micro_step in range(grad_accum):
-                if world_size == 1:
-                    device = next(model.parameters()).device
-                
-                input_ids = dataset.get_batch(batch_size, device)
-                labels = input_ids.clone()
-                
-                # Avoid DDP gradient all-reduce on every micro-step
-                sync_ctx = nullcontext()
-                if is_ddp and micro_step < (grad_accum - 1):
-                    sync_ctx = model.no_sync()
 
-                with sync_ctx:
-                    with torch.amp.autocast('cuda', dtype=torch_dtype):
-                        outputs = model(input_ids=input_ids, labels=labels)
-                        loss = outputs.loss / grad_accum
-                    loss.backward()
-                step_losses.append(loss.item() * grad_accum)
-            
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
-            
-            step_time = time.time() - step_start
-            avg_loss = sum(step_losses) / len(step_losses)
-            tokens_per_step = batch_size * SEQ_LEN * grad_accum * world_size
-            throughput = tokens_per_step / step_time
-            
-            step_times.append(step_time)
-            loss_values.append(avg_loss)
-            current_lr = scheduler.get_last_lr()[0] if scheduler is not None else optimizer.param_groups[0]['lr']
-            learning_rates.append(current_lr)
-            
-            if rank == 0:
-                logger.info(f"Step {step + 1}/{num_steps} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
-            
-            if rank == 0 and (step + 1) % 5 == 0:
-                if torch.cuda.is_available():
-                    allocated = torch.cuda.memory_allocated(device) / 1e9
-                    reserved = torch.cuda.memory_reserved(device) / 1e9
-                    logger.info(f"GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
-        
+        # Disable GC during training to avoid random pauses
+        gc.disable()
+        try:
+            for step in range(num_steps):
+                step_start = time.time()
+                optimizer.zero_grad(set_to_none=True)
+
+                step_losses = []
+                for micro_step in range(grad_accum):
+                    input_ids = next(data_iter).to(_device, non_blocking=True)
+                    labels = input_ids  # HF shifts internally; no clone needed
+
+                    # Skip allreduce on intermediate micro-steps
+                    sync_ctx = nullcontext()
+                    if is_ddp and micro_step < (grad_accum - 1):
+                        sync_ctx = model.no_sync()
+
+                    with sync_ctx:
+                        with torch.amp.autocast('cuda', dtype=torch_dtype):
+                            outputs = model(input_ids=input_ids, labels=labels)
+                            loss = outputs.loss / grad_accum
+                        loss.backward()
+                    step_losses.append(loss.item() * grad_accum)
+
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
+                optimizer.step()
+                scheduler.step()
+
+                step_time = time.time() - step_start
+                avg_loss = sum(step_losses) / len(step_losses)
+                tokens_per_step = batch_size * SEQ_LEN * grad_accum * world_size
+                throughput = tokens_per_step / step_time
+
+                step_times.append(step_time)
+                loss_values.append(avg_loss)
+                current_lr = scheduler.get_last_lr()[0] if scheduler is not None else optimizer.param_groups[0]['lr']
+                learning_rates.append(current_lr)
+
+                if rank == 0:
+                    logger.info(f"Step {step + 1}/{num_steps} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
+
+                if rank == 0 and (step + 1) % 5 == 0:
+                    if torch.cuda.is_available():
+                        allocated = torch.cuda.memory_allocated(_device) / 1e9
+                        reserved = torch.cuda.memory_reserved(_device) / 1e9
+                        logger.info(f"GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
+        finally:
+            gc.enable()
+
         training_time = time.time() - training_start
-        
+
         if rank == 0 and len(step_times) > 10:
             warmup_skip = min(10, len(step_times))
             step_times_no_warmup = step_times[warmup_skip:]
             if not step_times_no_warmup:
                 step_times_no_warmup = step_times
-            
+
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
             tokens_per_step = global_batch_size * SEQ_LEN
             tokens_per_second = tokens_per_step / avg_step_time
             tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
-            
+
             results = {
                 "platform": platform,
                 "dataset": DATASET,
@@ -343,7 +388,7 @@ def train_model(model_name: str, model_config: dict):
                 "loss_values": loss_values,
                 "learning_rates": learning_rates,
             }
-            
+
             logger.info(f"=" * 80)
             logger.info(f"Training completed for {model_name}")
             logger.info(f"Total time: {training_time:.2f}s")
@@ -351,17 +396,17 @@ def train_model(model_name: str, model_config: dict):
             logger.info(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
             logger.info(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
             logger.info(f"=" * 80)
-            
+
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             output_file = OUTPUT_DIR / f"train_{platform}_mega_{model_name}_{DATASET}.json"
             from lib.utils import round_floats
             results_rounded = round_floats(results, precision=5)
-            
+
             with open(output_file, 'w') as f:
                 json.dump(results_rounded, f, indent=2)
-            
+
             logger.info(f"Results saved to {output_file}")
-    
+
     except Exception as e:
         logger.error(f"Training failed: {e}", exc_info=True)
         if rank == 0 and len(step_times) > 0:
@@ -381,7 +426,7 @@ def train_model(model_name: str, model_config: dict):
             with open(output_file, 'w') as f:
                 json.dump(results, f, indent=2)
         raise
-    
+
     finally:
         if world_size > 1:
             torch.distributed.destroy_process_group()
@@ -413,13 +458,13 @@ def main():
     os.environ['HSA_NO_SCRATCH_RECLAIM'] = '1'
     os.environ['HSA_ENABLE_SDMA'] = '1'
     os.environ['HSA_FORCE_FINE_GRAIN_PCIE'] = '1'
-    os.environ['RCCL_DEBUG'] = 'INFO'
-    os.environ['NCCL_DEBUG'] = 'INFO'
+    os.environ.setdefault('RCCL_DEBUG', 'ERROR')
+    os.environ.setdefault('NCCL_DEBUG', 'ERROR')
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     logger.info("Environment configured for GPU training")
     logger.info(f"Output directory: {OUTPUT_DIR}")
-    
+
     if len(sys.argv) < 2:
         logger.info("No model specified, training all models")
         train_llama()

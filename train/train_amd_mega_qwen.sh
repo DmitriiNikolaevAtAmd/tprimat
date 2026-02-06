@@ -14,6 +14,17 @@ export HF_HOME
 
 NUM_GPUS="${NUM_GPUS:-8}"
 
+# Parallel / batch config
+export TP=${TP:-1}
+export PP=${PP:-1}
+export DP=${DP:-${NUM_GPUS}}
+export GA=${GA:-8}
+export MBS=${MBS:-1}
+export GBS=$((MBS * DP * GA))
+
+echo "Config: NUM_GPUS=${NUM_GPUS} TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
+echo "Batch:  MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
+
 # AMD performance settings
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -22,6 +33,10 @@ export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
+
+# Communication tuning
+export CUDA_DEVICE_MAX_CONNECTIONS=1
+export NCCL_ASYNC_ERROR_HANDLING=1
 
 cd "$SCRIPT_DIR"
 

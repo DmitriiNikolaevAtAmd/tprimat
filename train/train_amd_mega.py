@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import gc
 import json
 import logging
 import os
@@ -8,6 +9,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from contextlib import nullcontext
 
 import numpy as np
 import torch
@@ -25,6 +27,7 @@ OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(WORKSPACE_ROOT / "output")))
 
 SEED = int(os.environ.get("SEED", 42))
 MBS = int(os.environ.get("MBS", 1))
+GBS = int(os.environ.get("GBS", 128))
 SEQ_LEN = int(os.environ.get("SEQ_LEN", 2048))
 LR = float(os.environ.get("LR", 3e-4))
 WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.1))
@@ -54,33 +57,45 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class PretrainingDataset:
-    def __init__(self, tokenizer, seq_length: int, data_path: str):
-        self.tokenizer = tokenizer
-        self.seq_length = seq_length
-        
-        from lib.amd_mega_dataset import IndexedDataset
-        self.indexed_dataset = IndexedDataset(data_path)
-        self.iteration = 0
-    
-    def get_batch(self, batch_size: int, device: torch.device):
-        batch_tokens = []
-        for _ in range(batch_size):
-            dataset_idx = self.iteration % len(self.indexed_dataset)
-            tokens = self.indexed_dataset[dataset_idx]
-            self.iteration += 1
-            
-            if len(tokens) < self.seq_length:
-                pad_token = self.tokenizer.pad_token_id or 0
-                padding = torch.full((self.seq_length - len(tokens),), pad_token, dtype=torch.long)
-                input_ids = torch.cat([tokens, padding])
-            else:
-                input_ids = tokens[:self.seq_length]
-            
-            batch_tokens.append(input_ids)
-        
-        return torch.stack(batch_tokens).to(device)
+# ──────────────────────────────────────────────────────────────────────
+# Data pipeline
+# ──────────────────────────────────────────────────────────────────────
 
+class _TokenDataset(torch.utils.data.Dataset):
+    """Map-style dataset wrapping IndexedDataset for use with DataLoader."""
+
+    def __init__(self, data_path: str, seq_length: int, pad_id: int = 0):
+        from lib.amd_mega_dataset import IndexedDataset
+        self._ds = IndexedDataset(data_path)
+        self._seq = seq_length
+        self._pad = pad_id
+
+    def __len__(self):
+        return len(self._ds)
+
+    def __getitem__(self, idx):
+        t = self._ds[idx % len(self._ds)]
+        n = len(t)
+        if n >= self._seq:
+            return t[: self._seq]
+        out = torch.full((self._seq,), self._pad, dtype=torch.long)
+        out[:n] = t
+        return out
+
+
+def _cycle(loader):
+    """Yield batches forever, advancing the DistributedSampler epoch."""
+    ep = 0
+    while True:
+        if hasattr(loader, "sampler") and hasattr(loader.sampler, "set_epoch"):
+            loader.sampler.set_epoch(ep)
+        yield from loader
+        ep += 1
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────────────
 
 def set_seed(seed: int):
     torch.manual_seed(seed)
@@ -93,12 +108,12 @@ def set_seed(seed: int):
 def get_gpu_info(world_size: int) -> dict:
     if not torch.cuda.is_available():
         return {}
-    
+
     device_props = torch.cuda.get_device_properties(0)
     device_name = torch.cuda.get_device_name(0)
-    
+
     gpu_cores = 14592 if "mi300" in device_name.lower() else 6912
-    
+
     return {
         "device_count": world_size,
         "device_name": device_name,
@@ -114,102 +129,187 @@ def train_model(model_name: str):
     rank = int(os.environ.get("RANK", 0))
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
-    
+
     if world_size > 1:
         torch.cuda.set_device(local_rank)
         torch.distributed.init_process_group(backend="nccl")
-    
+
     set_seed(SEED)
-    
-    grad_accum = max(1, GA // world_size) if world_size > 1 else GA
+
+    # ── Performance knobs ──────────────────────────────────────────────
+    torch.set_float32_matmul_precision('high')
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+    # ── FIX: derive grad_accum from GBS (same fix as NVIDIA script) ───
+    grad_accum = max(1, GBS // (MBS * world_size))
     global_batch_size = MBS * grad_accum * world_size
-    
+    logger.info(f"GBS={GBS} → grad_accum={grad_accum}, effective GBS={global_batch_size}")
+
     gpu_info = get_gpu_info(world_size)
     torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
-    
+
     try:
         from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, get_cosine_schedule_with_warmup
-        
+
         hf_model = MODELS[model_name]
         tokenizer = AutoTokenizer.from_pretrained(hf_model, trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        
+
         config = AutoConfig.from_pretrained(hf_model, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+
+        # ── Attention: try sdpa first (compile-friendly), then default
+        model = None
+        for attn_impl in ("sdpa", "eager"):
+            try:
+                model = AutoModelForCausalLM.from_config(
+                    config, torch_dtype=torch_dtype,
+                    attn_implementation=attn_impl,
+                )
+                logger.info(f"Using attention implementation: {attn_impl}")
+                break
+            except Exception:
+                continue
+        if model is None:
+            model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+            logger.info("Using default attention implementation")
         model.config.use_cache = False
-        
-        device = torch.device(f"cuda:{local_rank}" if world_size > 1 else "cuda")
-        model = model.to(device)
-        
+
+        _device = torch.device(f"cuda:{local_rank}" if world_size > 1 else "cuda")
+        model = model.to(_device)
+
         if hasattr(model, "gradient_checkpointing_enable"):
             model.gradient_checkpointing_enable()
-        
+            logger.info("Enabled gradient checkpointing")
+
+        # ── torch.compile ─────────────────────────────────────────────
+        try:
+            model = torch.compile(model, mode="default")
+            logger.info("Enabled torch.compile (default)")
+        except Exception as e:
+            logger.warning(f"torch.compile not available: {e}")
+
+        # ── DDP ───────────────────────────────────────────────────────
+        is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
-            model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
-        
-        # Use same path as shell: DATA_DIR / "{DATASET}-train" (e.g. bc-train, c4-train)
+            model = DDP(
+                model,
+                device_ids=[local_rank],
+                output_device=local_rank,
+                find_unused_parameters=False,
+                static_graph=True,
+                gradient_as_bucket_view=True,
+            )
+            logger.info("Wrapped model with DDP (static_graph, bucket_view)")
+            is_ddp = True
+
+        # ── Data ──────────────────────────────────────────────────────
         dataset_name = os.environ.get("DATASET", "bc")
         dataset_path = str(DATA_DIR / f"{dataset_name}-train")
-        
+
         if not os.path.exists(f"{dataset_path}.idx") or not os.path.exists(f"{dataset_path}.bin"):
             raise FileNotFoundError(
                 f"Data not found. Expected:\n  {dataset_path}.idx\n  {dataset_path}.bin\n"
                 f"Set DATA_DIR and DATASET (e.g. DATASET=bc) or create/symlink the indexed dataset."
             )
-        
-        dataset = PretrainingDataset(tokenizer=tokenizer, seq_length=SEQ_LEN, data_path=dataset_path)
-        
-        optimizer = torch.optim.AdamW(model.parameters(), lr=LR, betas=(BETA1, BETA2), eps=1e-8, weight_decay=WEIGHT_DECAY)
+
+        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+        ds = _TokenDataset(dataset_path, SEQ_LEN, pad_id)
+        logger.info(f"Dataset: {dataset_path} ({len(ds)} sequences)")
+
+        sampler = None
+        if world_size > 1:
+            sampler = torch.utils.data.distributed.DistributedSampler(
+                ds, num_replicas=world_size, rank=rank, shuffle=True,
+            )
+        loader = torch.utils.data.DataLoader(
+            ds,
+            batch_size=MBS,
+            sampler=sampler,
+            shuffle=(sampler is None),
+            num_workers=2,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2,
+            drop_last=True,
+        )
+        data_iter = iter(_cycle(loader))
+
+        # ── Optimizer ─────────────────────────────────────────────────
+        try:
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
+            )
+            logger.info("Using fused AdamW optimizer")
+        except Exception:
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                eps=1e-8, weight_decay=WEIGHT_DECAY,
+            )
+            logger.info("Using standard AdamW optimizer")
+
         scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=TRAIN_ITERS)
-        
+
         model.train()
         step_times = []
         loss_values = []
         training_start = time.time()
-        
-        for step in range(TRAIN_ITERS):
-            step_start = time.time()
-            optimizer.zero_grad()
-            
-            step_losses = []
-            for _ in range(grad_accum):
-                input_ids = dataset.get_batch(MBS, device)
-                labels = input_ids.clone()
-                
-                with torch.amp.autocast("cuda", dtype=torch_dtype):
-                    outputs = model(input_ids=input_ids, labels=labels)
-                    loss = outputs.loss / grad_accum
-                
-                loss.backward()
-                step_losses.append(loss.item() * grad_accum)
-            
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
-            
-            step_time = time.time() - step_start
-            avg_loss = sum(step_losses) / len(step_losses)
-            tokens_per_step = MBS * SEQ_LEN * grad_accum * world_size
-            throughput = tokens_per_step / step_time
-            
-            step_times.append(step_time)
-            loss_values.append(avg_loss)
-            
-            if rank == 0:
-                logger.info(f"Step {step + 1}/{TRAIN_ITERS} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
-        
+
+        # Disable GC during training to avoid random pauses
+        gc.disable()
+        try:
+            for step in range(TRAIN_ITERS):
+                step_start = time.time()
+                optimizer.zero_grad(set_to_none=True)
+
+                step_losses = []
+                for micro_step in range(grad_accum):
+                    input_ids = next(data_iter).to(_device, non_blocking=True)
+                    labels = input_ids
+
+                    # Skip allreduce on intermediate micro-steps
+                    sync_ctx = nullcontext()
+                    if is_ddp and micro_step < (grad_accum - 1):
+                        sync_ctx = model.no_sync()
+
+                    with sync_ctx:
+                        with torch.amp.autocast("cuda", dtype=torch_dtype):
+                            outputs = model(input_ids=input_ids, labels=labels)
+                            loss = outputs.loss / grad_accum
+                        loss.backward()
+                    step_losses.append(loss.item() * grad_accum)
+
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
+                optimizer.step()
+                scheduler.step()
+
+                step_time = time.time() - step_start
+                avg_loss = sum(step_losses) / len(step_losses)
+                tokens_per_step = MBS * SEQ_LEN * grad_accum * world_size
+                throughput = tokens_per_step / step_time
+
+                step_times.append(step_time)
+                loss_values.append(avg_loss)
+
+                if rank == 0:
+                    logger.info(f"Step {step + 1}/{TRAIN_ITERS} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
+        finally:
+            gc.enable()
+
         training_time = time.time() - training_start
-        
+
         if rank == 0 and len(step_times) > 10:
             warmup_skip = min(10, len(step_times))
             step_times_steady = step_times[warmup_skip:]
-            
+
             avg_step_time = sum(step_times_steady) / len(step_times_steady)
             tokens_per_step = global_batch_size * SEQ_LEN
             tokens_per_second = tokens_per_step / avg_step_time
-            
+
             results = {
                 "platform": "amd",
                 "dataset": dataset_name,
@@ -237,8 +337,8 @@ def train_model(model_name: str):
                 "step_times": step_times,
                 "loss_values": loss_values,
             }
-            
-            # Merge memory log into results (same as amd_prim: rocm-smi/nvidia-smi sampled by shell)
+
+            # Merge memory log into results
             mem_log = os.environ.get("MEMORY_LOG")
             if mem_log and os.path.exists(mem_log):
                 try:
@@ -260,19 +360,19 @@ def train_model(model_name: str):
                         )
                 except Exception as e:
                     logger.warning("Could not merge memory log: %s", e)
-            
+
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             output_file = OUTPUT_DIR / f"train_amd_mega_{model_name}_{dataset_name}.json"
-            
+
             with open(output_file, "w") as f:
                 json.dump(results, f, indent=2)
-            
+
             logger.info(f"Results saved to {output_file}")
-    
+
     except Exception as e:
         logger.error(f"Training failed: {e}", exc_info=True)
         raise
-    
+
     finally:
         if world_size > 1:
             torch.distributed.destroy_process_group()
@@ -287,11 +387,11 @@ def main():
         choices=["llama", "qwen"],
         help="Model to train (llama or qwen)",
     )
-    
+
     args = parser.parse_args()
-    
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     if args.model:
         train_model(args.model)
     else:
