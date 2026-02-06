@@ -262,19 +262,33 @@ def train_model(model_name: str, model_config: dict):
         batch_size = MBS
         num_steps = TRAIN_ITERS
 
-        # ── Optimizer: fused AdamW (single multi-tensor CUDA kernel) ──
-        try:
-            optimizer = torch.optim.AdamW(
-                model.parameters(), lr=LR, betas=(BETA1, BETA2),
-                eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
-            )
-            logger.info("Using fused AdamW optimizer")
-        except Exception:
-            optimizer = torch.optim.AdamW(
-                model.parameters(), lr=LR, betas=(BETA1, BETA2),
+        # ── Optimizer ──────────────────────────────────────────────────
+        # Llama-8B + full AdamW FP32 states ≈ 86 GB (params 14 + opt 57 + grads 14),
+        # exceeding 80 GB per GPU. Use ZeroRedundancyOptimizer (ZeRO-1) to shard
+        # optimizer states across the data-parallel group, reducing per-GPU opt
+        # memory from ~57 GB to ~7 GB.
+        if world_size > 1:
+            from torch.distributed.optim import ZeroRedundancyOptimizer
+            optimizer = ZeroRedundancyOptimizer(
+                model.parameters(),
+                optimizer_class=torch.optim.AdamW,
+                lr=LR, betas=(BETA1, BETA2),
                 eps=1e-8, weight_decay=WEIGHT_DECAY,
             )
-            logger.info("Using standard AdamW optimizer")
+            logger.info("Using ZeroRedundancyOptimizer (sharded AdamW, ZeRO-1)")
+        else:
+            try:
+                optimizer = torch.optim.AdamW(
+                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                    eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
+                )
+                logger.info("Using fused AdamW optimizer")
+            except Exception:
+                optimizer = torch.optim.AdamW(
+                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                    eps=1e-8, weight_decay=WEIGHT_DECAY,
+                )
+                logger.info("Using standard AdamW optimizer")
 
         from transformers import get_cosine_schedule_with_warmup
         scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=num_steps)
@@ -322,8 +336,6 @@ def train_model(model_name: str, model_config: dict):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
                 optimizer.step()
                 scheduler.step()
-                # Reclaim fragmented GPU memory between optimizer steps
-                torch.cuda.empty_cache()
 
                 step_time = time.time() - step_start
                 avg_loss = sum(step_losses) / len(step_losses)
