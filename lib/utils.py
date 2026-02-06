@@ -251,7 +251,8 @@ def print_summary(results: Dict[str, Any]) -> None:
 
 class BenchmarkCallback(Callback):
     def __init__(self, output_dir: str = "./output", platform: str = "auto", model_name: str = None, 
-                 parallel_strategy: str = "unknown", framework: str = None, dataset: str = None):
+                 parallel_strategy: str = "unknown", framework: str = None, dataset: str = None,
+                 warmup_steps: int = 3):
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -264,6 +265,8 @@ class BenchmarkCallback(Callback):
         else:
             self.platform = platform
         
+        self.warmup_steps = warmup_steps
+        self._batch_count = 0
         self.step_times = []
         self.memory_allocated = []
         self.memory_reserved = []
@@ -317,11 +320,22 @@ class BenchmarkCallback(Callback):
             print(f"{'='*60}\n")
     
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+        self._batch_count += 1
+        # During warmup steps, skip timing (CUDA kernels are still compiling)
+        if self._batch_count <= self.warmup_steps:
+            self.step_start_time = None
+            return
         self.step_start_time = time.time()
         if torch.cuda.is_available():
             torch.cuda.synchronize()
     
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        # Skip recording during warmup steps
+        if self.step_start_time is None:
+            if trainer.is_global_zero and self._batch_count <= self.warmup_steps:
+                print(f"[{self.platform.upper()}] Warmup step {self._batch_count}/{self.warmup_steps} (un-timed)")
+            return
+
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         
@@ -367,7 +381,8 @@ class BenchmarkCallback(Callback):
         except (IndexError, KeyError, AttributeError):
             pass
         
-        if trainer.is_global_zero and batch_idx > 0 and batch_idx % 10 == 0:
+        measured_step = len(self.step_times)
+        if trainer.is_global_zero and measured_step > 0 and measured_step % 10 == 0:
             recent_times = self.step_times[-10:]
             avg_time = sum(recent_times) / len(recent_times)
             
@@ -378,11 +393,11 @@ class BenchmarkCallback(Callback):
             
             if torch.cuda.is_available():
                 avg_mem = sum(self.memory_allocated[-10:]) / len(self.memory_allocated[-10:])
-                print(f"[{self.platform.upper()}] Step {batch_idx:3d} | "
+                print(f"[{self.platform.upper()}] Step {measured_step:3d} | "
                       f"Time: {step_time:.3f}s | Avg: {avg_time:.3f}s | "
                       f"Memory: {avg_mem:.2f}GB{loss_str}")
             else:
-                print(f"[{self.platform.upper()}] Step {batch_idx:3d} | "
+                print(f"[{self.platform.upper()}] Step {measured_step:3d} | "
                       f"Time: {step_time:.3f}s | Avg: {avg_time:.3f}s{loss_str}")
     
     def on_train_end(self, trainer, pl_module):
@@ -392,7 +407,9 @@ class BenchmarkCallback(Callback):
         total_time = time.time() - self.train_start_time
         
         if len(self.step_times) > 1:
-            step_times_no_warmup = self.step_times[1:]
+            # Warmup steps were already excluded during recording,
+            # so step_times contains only steady-state measurements.
+            step_times_no_warmup = self.step_times
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
             

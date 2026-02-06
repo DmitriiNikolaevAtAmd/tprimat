@@ -3,7 +3,7 @@
 Extract benchmark metrics from Primus training logs.
 
 Usage:
-    python3 extract_prim_metrics.py \
+    python3 extract_metrics.py \
         --log-file primus_training.log \
         --model-name llama \
         --output output/train_amd_prim_llama.json \
@@ -240,7 +240,7 @@ def main():
         epilog="""
 Examples:
   # With model name (auto-generates filename)
-  python3 extract_prim_metrics.py \\
+  python3 extract_metrics.py \\
       --log-file primus_training.log \\
       --model-name llama \\
       --num-gpus 8 \\
@@ -248,7 +248,7 @@ Examples:
       --sequence-length 2048
   
   # With explicit output path
-  python3 extract_prim_metrics.py \\
+  python3 extract_metrics.py \\
       --log-file primus_training.log \\
       --output output/train_amd_prim_llama.json \\
       --num-gpus 8 \\

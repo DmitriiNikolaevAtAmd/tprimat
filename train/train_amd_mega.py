@@ -267,6 +267,31 @@ def train_model(model_name: str):
         scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=TRAIN_ITERS)
 
         model.train()
+
+        # ── CUDA warmup (un-timed iterations to pre-compile kernels) ────
+        _WARMUP_ITERS = 3
+        logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
+        for _w in range(_WARMUP_ITERS):
+            optimizer.zero_grad(set_to_none=True)
+            for micro_step in range(grad_accum):
+                input_ids = next(data_iter).to(_device, non_blocking=True)
+                labels = input_ids
+                sync_ctx = nullcontext()
+                if is_ddp and micro_step < (grad_accum - 1):
+                    sync_ctx = model.no_sync()
+                with sync_ctx:
+                    with torch.amp.autocast("cuda", dtype=torch_dtype):
+                        outputs = model(input_ids=input_ids, labels=labels)
+                        loss = outputs.loss / grad_accum
+                    loss.backward()
+                del outputs, loss, input_ids, labels
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
+            optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        logger.info("CUDA warmup complete, starting timed training...")
+
         step_times = []
         loss_values = []
         training_start = time.time()
@@ -357,7 +382,7 @@ def train_model(model_name: str):
             mem_log = os.environ.get("MEMORY_LOG")
             if mem_log and os.path.exists(mem_log):
                 try:
-                    from evaluate.extract_prim_metrics import parse_memory_log
+                    from evaluate.extract_metrics import parse_memory_log
                     num_steps = len(step_times)
                     mem_data = parse_memory_log(mem_log, num_steps=num_steps)
                     if mem_data:

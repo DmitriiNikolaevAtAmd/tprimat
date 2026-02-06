@@ -40,6 +40,8 @@ WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.1))
 BETA1 = float(os.environ.get("BETA1", 0.9))
 BETA2 = float(os.environ.get("BETA2", 0.95))
 PRECISION = os.environ.get("PRECISION", "bf16")
+FP8_HYBRID = os.environ.get("FP8_HYBRID", "false").lower() == "true"
+FP8_PARAM = os.environ.get("FP8_PARAM", "false").lower() == "true"
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 500))
 GA = int(os.environ.get("GA", 8))
@@ -184,20 +186,30 @@ def train_model(model_name: str, model_config: dict):
         torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
         config = AutoConfig.from_pretrained(model_config['hf_model'], trust_remote_code=True)
 
-        # ── Attention: force sdpa on both platforms for fair comparison
-        attn_impl_used = "sdpa"
+        # ── Attention: prefer flash_attention_2 (faster fused kernels),
+        #    fall back to sdpa, then default
+        attn_impl_used = "flash_attention_2"
         try:
             model = AutoModelForCausalLM.from_config(
                 config,
                 torch_dtype=torch_dtype,
-                attn_implementation="sdpa",
+                attn_implementation="flash_attention_2",
             )
-            logger.info("Using attention implementation: sdpa")
-        except Exception as attn_err:
-            logger.warning(f"SDPA not available ({attn_err}), falling back to default")
-            model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
-            attn_impl_used = "default"
-            logger.info("Using default attention implementation")
+            logger.info("Using attention implementation: flash_attention_2")
+        except Exception:
+            try:
+                model = AutoModelForCausalLM.from_config(
+                    config,
+                    torch_dtype=torch_dtype,
+                    attn_implementation="sdpa",
+                )
+                attn_impl_used = "sdpa"
+                logger.info("flash_attention_2 not available, using sdpa")
+            except Exception as attn_err:
+                logger.warning(f"SDPA not available ({attn_err}), falling back to default")
+                model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+                attn_impl_used = "default"
+                logger.info("Using default attention implementation")
         model.config.use_cache = False
 
         _device = torch.device(f'cuda:{local_rank}') if world_size > 1 else torch.device('cuda')
@@ -207,12 +219,15 @@ def train_model(model_name: str, model_config: dict):
             model.gradient_checkpointing_enable()
             logger.info("Enabled gradient checkpointing")
 
-        # NOTE: torch.compile disabled — incompatible with gradient
-        # checkpointing + DDP static_graph on this PyTorch/transformers
-        # version (graph too large for Dynamo to trace all 32 layers).
-        # model = torch.compile(model, mode="default")
+        # ── torch.compile: use reduce-overhead mode for lower kernel launch
+        #    latency without the full graph capture of max-autotune.
+        try:
+            model = torch.compile(model, mode="reduce-overhead")
+            logger.info("Enabled torch.compile (reduce-overhead)")
+        except Exception as compile_err:
+            logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
 
-        # ── DDP ───────────────────────────────────────────────────────
+        # ── DDP with static graph for gradient communication overlap ──
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -222,8 +237,9 @@ def train_model(model_name: str, model_config: dict):
                 output_device=local_rank,
                 find_unused_parameters=False,
                 gradient_as_bucket_view=True,
+                static_graph=True,           # enables comm/compute overlap
             )
-            logger.info(f"Wrapped model with DDP (bucket_view)")
+            logger.info(f"Wrapped model with DDP (bucket_view, static_graph)")
             is_ddp = True
 
         # ── Data ──────────────────────────────────────────────────────
@@ -303,8 +319,60 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"  Learning rate: {LR}")
         logger.info(f"  LR scheduler: Cosine with {WARMUP_STEPS} warmup steps")
         logger.info(f"  Precision: {PRECISION}")
+        logger.info(f"  FP8 Hybrid: {FP8_HYBRID}")
+        logger.info(f"  FP8 Param: {FP8_PARAM}")
+
+        # ── FP8 setup (NVIDIA H100+ only) ─────────────────────────────
+        fp8_enabled = False
+        fp8_ctx_fn = nullcontext
+        if FP8_HYBRID:
+            try:
+                import transformer_engine.pytorch as te
+                fp8_recipe = te.recipe.DelayedScaling(
+                    fp8_format=te.recipe.Format.HYBRID,
+                    amax_history_len=4,
+                    amax_compute_algo="most_recent",
+                )
+                fp8_ctx_fn = lambda: te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe)
+                fp8_enabled = True
+                logger.info("FP8 hybrid enabled via TransformerEngine")
+            except ImportError:
+                logger.warning("FP8 requested but transformer_engine not installed — running in BF16")
+            except Exception as fp8_err:
+                logger.warning(f"FP8 init failed ({fp8_err}) — running in BF16")
 
         model.train()
+
+        # ── CUDA warmup (un-timed iterations to pre-compile kernels) ────
+        # Running a few real forward+backward passes forces CUDA to JIT-
+        # compile all kernels, warms the cuDNN autotuner, and allocates
+        # memory pools.  This eliminates the large initial spike visible
+        # in the first ~5 timed steps.
+        _WARMUP_ITERS = 3
+        logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
+        for _w in range(_WARMUP_ITERS):
+            optimizer.zero_grad(set_to_none=True)
+            for micro_step in range(grad_accum):
+                input_ids = next(data_iter).to(_device, non_blocking=True)
+                labels = input_ids
+                sync_ctx = nullcontext()
+                if is_ddp and micro_step < (grad_accum - 1):
+                    sync_ctx = model.no_sync()
+                with sync_ctx, fp8_ctx_fn():
+                    with torch.amp.autocast('cuda', dtype=torch_dtype):
+                        outputs = model(input_ids=input_ids, labels=labels)
+                        loss = outputs.loss / grad_accum
+                    loss.backward()
+                del outputs, loss, input_ids, labels
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
+            optimizer.step()
+            # NOTE: scheduler.step() intentionally NOT called during warmup
+            # so the LR schedule starts cleanly at the first timed step.
+        optimizer.zero_grad(set_to_none=True)
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        logger.info("CUDA warmup complete, starting timed training...")
+
         logger.info("Starting training...")
         training_start = time.time()
 
@@ -325,7 +393,7 @@ def train_model(model_name: str, model_config: dict):
                     if is_ddp and micro_step < (grad_accum - 1):
                         sync_ctx = model.no_sync()
 
-                    with sync_ctx:
+                    with sync_ctx, fp8_ctx_fn():
                         with torch.amp.autocast('cuda', dtype=torch_dtype):
                             outputs = model(input_ids=input_ids, labels=labels)
                             loss = outputs.loss / grad_accum
@@ -387,6 +455,7 @@ def train_model(model_name: str, model_config: dict):
                     "parallel_strategy": "ddp",
                     "gradient_accumulation_steps": grad_accum,
                     "attn_implementation": attn_impl_used,
+                    "fp8_hybrid": fp8_enabled,
                 },
                 "performance_metrics": {
                     "total_steps": len(step_times),
