@@ -22,23 +22,20 @@ from pathlib import Path
 DATASETS = ["bc", "c4"]
 
 # Expected (framework, model) pairs for each platform
+# Only includes frameworks that are actually run by run_nvd.sh and run_amd.sh
 NVD_PAIRS = [
-    ("deep", "llama"),
-    ("deep", "qwen"),
-    ("fsdp", "llama"),
-    ("fsdp", "qwen"),
-    ("mega", "llama"),
-    ("mega", "qwen"),
     ("nemo", "llama"),
     ("nemo", "qwen"),
-    ("tran", "llama"),
-    ("tran", "qwen"),
 ]
 
 AMD_PAIRS = [
     ("prim", "llama"),
     ("prim", "qwen"),
 ]
+
+# Full list of all available frameworks (for reference)
+# NVD_ALL = ["deep", "fsdp", "mega", "nemo", "tran"]
+# AMD_ALL = ["deep", "fsdp", "mega", "nemo", "prim", "tran"]
 
 
 def get_expected_files(platform: str, datasets: list[str]) -> list[str]:
