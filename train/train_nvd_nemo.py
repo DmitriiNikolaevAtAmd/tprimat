@@ -33,7 +33,8 @@ WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.1))
 BETA1 = float(os.environ.get("BETA1", 0.9))
 BETA2 = float(os.environ.get("BETA2", 0.95))
 PRECISION = os.environ.get("PRECISION", "bf16")
-
+FP8_HYBRID = os.environ.get("FP8_HYBRID", "false").lower() == "true"
+FP8_PARAM = os.environ.get("FP8_PARAM", "false").lower() == "true"
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
 GA = int(os.environ.get("GA", 32))
@@ -358,7 +359,10 @@ def train_model(model_name: str):
         global_batch_size=GBS,
     )
     
-    recipe.trainer.max_steps = TRAIN_ITERS
+    # Extra un-timed warmup iterations so CUDA kernels are pre-compiled
+    # before the BenchmarkCallback starts recording step times.
+    _WARMUP_ITERS = 3
+    recipe.trainer.max_steps = TRAIN_ITERS + _WARMUP_ITERS
     recipe.optim.config.lr = LR
     recipe.optim.config.min_lr = 0.0
     recipe.optim.config.weight_decay = WEIGHT_DECAY
@@ -366,11 +370,14 @@ def train_model(model_name: str):
     recipe.optim.config.adam_beta2 = BETA2
     recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS
     recipe.optim.lr_scheduler.constant_steps = 0
-    recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS
+    recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS + _WARMUP_ITERS
     recipe.optim.lr_scheduler.min_lr = 0.0  # Ensure LR decays to zero like Primus
     
-    recipe.model.config.fp8 = None
-    recipe.model.config.fp8_param = False
+    if FP8_HYBRID:
+        recipe.model.config.fp8 = "hybrid"
+    else:
+        recipe.model.config.fp8 = None
+    recipe.model.config.fp8_param = FP8_PARAM
     recipe.model.config.recompute_granularity = "selective"
     recipe.model.config.recompute_method = "uniform"
     
@@ -389,7 +396,8 @@ def train_model(model_name: str):
         model_name=model_name,
         parallel_strategy="minimal_communication",
         framework=f"{platform_prefix}_nemo",
-        dataset=DATASET
+        dataset=DATASET,
+        warmup_steps=_WARMUP_ITERS,
     )
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []
@@ -408,6 +416,8 @@ def train_model(model_name: str):
     logger.info(f"  Learning rate: {LR}")
     logger.info(f"  Warmup steps: {WARMUP_STEPS}")
     logger.info(f"  Precision: {PRECISION}")
+    logger.info(f"  FP8 Hybrid: {FP8_HYBRID}")
+    logger.info(f"  FP8 Param: {FP8_PARAM}")
     logger.info(f"  TP: {TP}, PP: {PP}, DP: {DP}")
     logger.info(f"  Profiling: {PROFILING}")
     logger.info(f"  Verify data: {VERIFY_DATA} (samples={VERIFY_SAMPLES}, full_scan={VERIFY_FULL_SCAN})")
