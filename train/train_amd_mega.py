@@ -184,12 +184,10 @@ def train_model(model_name: str):
             model.gradient_checkpointing_enable()
             logger.info("Enabled gradient checkpointing")
 
-        # ── torch.compile ─────────────────────────────────────────────
-        try:
-            model = torch.compile(model, mode="default")
-            logger.info("Enabled torch.compile (default)")
-        except Exception as e:
-            logger.warning(f"torch.compile not available: {e}")
+        # NOTE: torch.compile disabled — incompatible with gradient
+        # checkpointing + DDP static_graph on this PyTorch/transformers
+        # version (graph too large for Dynamo to trace all 32 layers).
+        # model = torch.compile(model, mode="default")
 
         # ── DDP ───────────────────────────────────────────────────────
         is_ddp = False
