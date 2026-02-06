@@ -14,8 +14,10 @@ DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
 
 # Verify data files exist
 if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
-    echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
-    echo "       Run prepare/data.sh first to generate the dataset"
+    echo "ERROR: Data files not found:"
+    echo "  ${DATA_PREFIX}.bin"
+    echo "  ${DATA_PREFIX}.idx"
+    echo "  Run prepare/data.sh first to generate the dataset (DATASET=${DATASET})"
     exit 1
 fi
 

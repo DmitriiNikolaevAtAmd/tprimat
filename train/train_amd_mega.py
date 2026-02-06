@@ -149,10 +149,15 @@ def train_model(model_name: str):
             from torch.nn.parallel import DistributedDataParallel as DDP
             model = DDP(model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=False)
         
-        dataset_path = str(DATA_DIR / f"allenai-c4-{model_name}-mega")
+        # Use same path as shell: DATA_DIR / "{DATASET}-train" (e.g. bc-train, c4-train)
+        dataset_name = os.environ.get("DATASET", "bc")
+        dataset_path = str(DATA_DIR / f"{dataset_name}-train")
         
         if not os.path.exists(f"{dataset_path}.idx") or not os.path.exists(f"{dataset_path}.bin"):
-            raise FileNotFoundError(f"Data not found at {dataset_path}.bin/.idx")
+            raise FileNotFoundError(
+                f"Data not found. Expected:\n  {dataset_path}.idx\n  {dataset_path}.bin\n"
+                f"Set DATA_DIR and DATASET (e.g. DATASET=bc) or create/symlink the indexed dataset."
+            )
         
         dataset = PretrainingDataset(tokenizer=tokenizer, seq_length=SEQ_LEN, data_path=dataset_path)
         
