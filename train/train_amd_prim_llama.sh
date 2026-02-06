@@ -59,6 +59,9 @@ export HF_HUB_DISABLE_PROGRESS_BARS=1
 export TORCH_CPP_LOG_LEVEL=ERROR
 export TORCH_SHOW_CPP_STACKTRACES=0
 
+# Add Primus to Python path for internal imports
+export PYTHONPATH="$PRIMUS_PATH:${PYTHONPATH:-}"
+
 CONFIG_FILE="examples/megatron/configs/MI300X/llama3.1_8B-BF16-pretrain.yaml"
 cd "$PRIMUS_PATH"
 
