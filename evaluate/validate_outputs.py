@@ -2,6 +2,9 @@
 """
 Validate that all expected training outputs exist before running comparisons.
 
+Outputs follow the naming convention:
+    train_{platform}_{framework}_{model}_{dataset}.json
+
 Usage:
     python3 validate_outputs.py [--platform nvd|amd|all] [--results-dir ./output]
     
@@ -16,27 +19,54 @@ import sys
 from pathlib import Path
 
 
-# Define expected outputs for each platform
-EXPECTED_NVD = [
-    "train_nvd_deep_llama.json",
-    "train_nvd_deep_qwen.json",
-    "train_nvd_fsdp_llama.json",
-    "train_nvd_fsdp_qwen.json",
-    "train_nvd_mega_llama.json",
-    "train_nvd_mega_qwen.json",
-    "train_nvd_nemo_llama.json",
-    "train_nvd_nemo_qwen.json",
-    "train_nvd_tran_llama.json",
-    "train_nvd_tran_qwen.json",
+DATASETS = ["bc", "c4"]
+
+# Expected (framework, model) pairs for each platform
+NVD_PAIRS = [
+    ("deep", "llama"),
+    ("deep", "qwen"),
+    ("fsdp", "llama"),
+    ("fsdp", "qwen"),
+    ("mega", "llama"),
+    ("mega", "qwen"),
+    ("nemo", "llama"),
+    ("nemo", "qwen"),
+    ("tran", "llama"),
+    ("tran", "qwen"),
 ]
 
-EXPECTED_AMD = [
-    "train_amd_prim_llama.json",
-    "train_amd_prim_qwen.json",
+AMD_PAIRS = [
+    ("prim", "llama"),
+    ("prim", "qwen"),
 ]
 
 
-def validate_outputs(results_dir: str, platform: str) -> tuple[list[str], list[str]]:
+def get_expected_files(platform: str, datasets: list[str]) -> list[str]:
+    """Generate expected filenames for the given platform and datasets."""
+    if platform == "nvd":
+        pairs = NVD_PAIRS
+    elif platform == "amd":
+        pairs = AMD_PAIRS
+    elif platform == "all":
+        pairs = [("nvd", fw, model) for fw, model in NVD_PAIRS] + \
+                [("amd", fw, model) for fw, model in AMD_PAIRS]
+    else:
+        raise ValueError(f"Unknown platform: {platform}")
+    
+    expected = []
+    for item in pairs:
+        if len(item) == 3:
+            plat, fw, model = item
+        else:
+            fw, model = item
+            plat = platform
+        for ds in datasets:
+            expected.append(f"train_{plat}_{fw}_{model}_{ds}.json")
+    
+    return sorted(expected)
+
+
+def validate_outputs(results_dir: str, platform: str, datasets: list[str]) -> tuple[list[str], list[str]]:
     """
     Check which expected outputs exist and which are missing.
     
@@ -44,15 +74,7 @@ def validate_outputs(results_dir: str, platform: str) -> tuple[list[str], list[s
         Tuple of (found_files, missing_files)
     """
     results_path = Path(results_dir)
-    
-    if platform == "nvd":
-        expected = EXPECTED_NVD
-    elif platform == "amd":
-        expected = EXPECTED_AMD
-    elif platform == "all":
-        expected = EXPECTED_NVD + EXPECTED_AMD
-    else:
-        raise ValueError(f"Unknown platform: {platform}")
+    expected = get_expected_files(platform, datasets)
     
     found = []
     missing = []
@@ -76,23 +98,28 @@ def main():
                        help='Directory containing benchmark JSON files (default: ./output)')
     parser.add_argument('--platform', choices=['nvd', 'amd', 'all'], default='all',
                        help='Platform to validate (default: all)')
+    parser.add_argument('--dataset', nargs='*', default=None,
+                       help='Datasets to validate (default: all known: bc c4)')
     parser.add_argument('--quiet', '-q', action='store_true',
                        help='Only output missing files, no success messages')
     
     args = parser.parse_args()
+    
+    datasets = args.dataset if args.dataset else DATASETS
     
     results_path = Path(args.results_dir)
     if not results_path.exists():
         print(f"[x] Output directory does not exist: {args.results_dir}")
         return 1
     
-    found, missing = validate_outputs(args.results_dir, args.platform)
+    found, missing = validate_outputs(args.results_dir, args.platform, datasets)
     
     if not args.quiet:
         print("=" * 70)
         print(f"TRAINING OUTPUT VALIDATION - Platform: {args.platform.upper()}")
         print("=" * 70)
         print(f"\nResults directory: {args.results_dir}")
+        print(f"Datasets: {', '.join(datasets)}")
         print(f"\nFound {len(found)}/{len(found) + len(missing)} expected outputs:")
     
     if found and not args.quiet:
@@ -111,12 +138,13 @@ def main():
             print("-" * 70)
             print("\nRun the corresponding training scripts to generate missing outputs:")
             
-            # Map filenames to training scripts
             for f in missing:
-                # train_nvd_nemo_llama.json -> train/nvd_nemo_llama.sh
-                parts = f.replace("train_", "").replace(".json", "")
-                script = f"train/{parts}.sh"
-                print(f"  ./train/{parts}.sh  ->  output/{f}")
+                # train_amd_prim_llama_bc.json -> train/train_amd_prim_llama.sh
+                stem = f.replace(".json", "")
+                # Remove dataset suffix to get the script name
+                parts = stem.rsplit("_", 1)
+                script_base = parts[0]
+                print(f"  ./train/{script_base}.sh  ->  output/{f}")
         
         return 1
     

@@ -165,6 +165,7 @@ def create_comparison_plot(
     benchmarks: Dict[str, Dict],
     output_file: str = "compare.png",
     framework_filter: str | None = None,
+    dataset_label: str | None = None,
 ):
     """Create visual comparison of all platform-model combinations."""
     
@@ -192,14 +193,15 @@ def create_comparison_plot(
     has_nvidia = any(key.startswith('nvidia-') for key in benchmarks.keys())
     has_amd = any(key.startswith('amd-') for key in benchmarks.keys())
     
+    ds_suffix = f' on {dataset_label.upper()} dataset' if dataset_label else ''
     if has_nvidia and has_amd:
-        title = 'NVIDIA H100 vs AMD MI300X'
+        title = f'NVIDIA H100 vs AMD MI300X{ds_suffix}'
     elif has_nvidia:
-        title = 'NVIDIA H100 Benchmark Results'
+        title = f'NVIDIA H100 Benchmark Results{ds_suffix}'
     elif has_amd:
-        title = 'AMD MI300X Benchmark Results'
+        title = f'AMD MI300X Benchmark Results{ds_suffix}'
     else:
-        title = 'GPU Benchmark Results'
+        title = f'GPU Benchmark Results{ds_suffix}'
     
     fig, axes = plt.subplots(2, 3, figsize=(18, 10), facecolor='white')
     fig.suptitle(title, fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
@@ -420,21 +422,19 @@ def create_comparison_plot(
                 gbs = config.get('global_batch_size', 'N/A')
                 mbs = config.get('micro_batch_size', 1)
                 seq = config.get('sequence_length', 'N/A')
-                peak_mem = mem_metrics.get('peak_memory_allocated_gb', 'N/A')
-                if isinstance(peak_mem, (int, float)):
-                    peak_mem = f"{peak_mem:.1f}"
                 
                 table_data.append([
                     f"{platform_label} {model_label}",
-                    f"TP={tp}, PP={pp}, DP={dp}",
-                    f"{gbs}",
+                    f"{tp}",
+                    f"{pp}",
+                    f"{dp}",
                     f"{mbs}",
+                    f"{gbs}",
                     f"{seq}",
-                    f"{peak_mem}"
                 ])
     
     if table_data:
-        col_labels = ['Config', 'Parallelism', 'GBS', 'MBS', 'SeqLen', 'Mem(GB)']
+        col_labels = ['Config', 'TP', 'PP', 'DP', 'MBS', 'GBS', 'SL']
         
         table = ax6.table(
             cellText=table_data,
@@ -447,7 +447,7 @@ def create_comparison_plot(
         table.set_fontsize(10)
         table.scale(1.4, 1.8)
         
-        col_widths = [0.18, 0.25, 0.12, 0.12, 0.13, 0.10]
+        col_widths = [0.22, 0.09, 0.09, 0.09, 0.09, 0.09, 0.11]
         for i, width in enumerate(col_widths):
             for row in range(len(table_data) + 1):
                 table[(row, i)].set_width(width)
@@ -559,7 +559,7 @@ def run_comparison(benchmarks: Dict[str, Dict], output_file: str, framework_filt
     
     print(f"\nGenerating comparison plot: {output_file}")
     try:
-        create_comparison_plot(benchmarks, output_file, framework_filter=framework_filter)
+        create_comparison_plot(benchmarks, output_file, framework_filter=framework_filter, dataset_label=dataset_label)
     except Exception as e:
         print(f"[!] Could not generate plot: {e}")
         import traceback
