@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import gc
 import os
 import sys
 from pathlib import Path
@@ -58,6 +59,19 @@ logging.basicConfig(
     force=True
 )
 logger = logging.getLogger(__name__)
+
+
+class GCCallback(Callback):
+    """Disable Python GC during training to avoid random step-time spikes."""
+
+    def on_train_start(self, trainer, pl_module):
+        gc.disable()
+        logger.info("GC disabled for training (avoiding step-time spikes)")
+
+    def on_train_end(self, trainer, pl_module):
+        gc.enable()
+        gc.collect()
+        logger.info("GC re-enabled after training")
 
 
 class KinetoProfilerCallback(Callback):
@@ -406,9 +420,11 @@ def train_model(model_name: str):
         dataset=DATASET,
         warmup_steps=_WARMUP_ITERS,
     )
+    gc_callback = GCCallback()
     if recipe.trainer.callbacks is None:
         recipe.trainer.callbacks = []
     recipe.trainer.callbacks.append(benchmark_callback)
+    recipe.trainer.callbacks.append(gc_callback)
     
     # Add Kineto profiler callback if profiling is enabled
     if PROFILING:

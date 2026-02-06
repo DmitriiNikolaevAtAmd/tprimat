@@ -25,8 +25,14 @@ export GBS=$((MBS * DP * GA))
 echo "Config: NUM_GPUS=${NUM_GPUS} TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch:  MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 
-# AMD performance settings
+# Performance settings (aligned with NVD mega shells)
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
+export TOKENIZERS_PARALLELISM=false
+export TRANSFORMERS_VERBOSITY=error
+export HF_HUB_DISABLE_PROGRESS_BARS=1
+
+# AMD-specific tuning
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
@@ -36,6 +42,7 @@ export NCCL_DEBUG=ERROR
 # Communication tuning
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_NCCL_AVOID_RECORD_STREAMS=1    # reduces NCCL memory fragmentation
 
 cd "$SCRIPT_DIR"
 

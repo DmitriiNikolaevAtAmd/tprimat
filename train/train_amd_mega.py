@@ -160,36 +160,40 @@ def train_model(model_name: str):
 
         config = AutoConfig.from_pretrained(hf_model, trust_remote_code=True)
 
-        # ── Attention: try sdpa first (compile-friendly), then default
-        model = None
-        for attn_impl in ("sdpa", "eager"):
-            try:
+        _device = torch.device(f"cuda:{local_rank}" if world_size > 1 else "cuda")
+
+        # ── Attention: try sdpa first, then eager fallback
+        attn_impl_used = "sdpa"
+        try:
+            with torch.device(_device):
                 model = AutoModelForCausalLM.from_config(
                     config, torch_dtype=torch_dtype,
-                    attn_implementation=attn_impl,
+                    attn_implementation="sdpa",
                 )
-                logger.info(f"Using attention implementation: {attn_impl}")
-                break
+            logger.info("Using attention implementation: sdpa")
+        except Exception:
+            try:
+                with torch.device(_device):
+                    model = AutoModelForCausalLM.from_config(
+                        config, torch_dtype=torch_dtype,
+                        attn_implementation="eager",
+                    )
+                attn_impl_used = "eager"
+                logger.info("sdpa not available, using eager")
             except Exception:
-                continue
-        if model is None:
-            model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
-            logger.info("Using default attention implementation")
+                with torch.device(_device):
+                    model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
+                attn_impl_used = "default"
+                logger.info("Using default attention implementation")
         model.config.use_cache = False
 
-        _device = torch.device(f"cuda:{local_rank}" if world_size > 1 else "cuda")
-        model = model.to(_device)
-
-        if hasattr(model, "gradient_checkpointing_enable"):
-            model.gradient_checkpointing_enable()
-            logger.info("Enabled gradient checkpointing")
-
-        # NOTE: torch.compile disabled — incompatible with gradient
-        # checkpointing + DDP static_graph on this PyTorch/transformers
-        # version (graph too large for Dynamo to trace all 32 layers).
-        # model = torch.compile(model, mode="default")
+        # NOTE: gradient checkpointing intentionally disabled for fair
+        # benchmarking — it halves activation memory but costs ~30-40 %
+        # throughput.  Disabled on NVIDIA side as well.
 
         # ── DDP ───────────────────────────────────────────────────────
+        # static_graph=True lets DDP pre-compute the reduction schedule
+        # after the first iteration, avoiding per-step bucket rebuilds.
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -199,8 +203,9 @@ def train_model(model_name: str):
                 output_device=local_rank,
                 find_unused_parameters=False,
                 gradient_as_bucket_view=True,
+                static_graph=True,
             )
-            logger.info("Wrapped model with DDP (bucket_view)")
+            logger.info("Wrapped model with DDP (bucket_view, static_graph)")
             is_ddp = True
 
         # ── Data ──────────────────────────────────────────────────────
@@ -254,6 +259,31 @@ def train_model(model_name: str):
         model.train()
         step_times = []
         loss_values = []
+        learning_rates = []
+
+        # ── CUDA warmup (un-timed iterations to pre-compile kernels) ────
+        _WARMUP_ITERS = 3
+        logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
+        for _w in range(_WARMUP_ITERS):
+            optimizer.zero_grad(set_to_none=True)
+            for micro_step in range(grad_accum):
+                input_ids = next(data_iter).to(_device, non_blocking=True)
+                labels = input_ids
+                sync_ctx = nullcontext()
+                if is_ddp and micro_step < (grad_accum - 1):
+                    sync_ctx = model.no_sync()
+                with sync_ctx:
+                    with torch.amp.autocast("cuda", dtype=torch_dtype):
+                        outputs = model(input_ids=input_ids, labels=labels)
+                        loss = outputs.loss / grad_accum
+                    loss.backward()
+                del outputs, loss, input_ids, labels
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
+            optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+        torch.cuda.synchronize()
+        logger.info("CUDA warmup complete, starting timed training...")
+
         training_start = time.time()
 
         # Disable GC during training to avoid random pauses
@@ -285,8 +315,6 @@ def train_model(model_name: str):
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
                 optimizer.step()
                 scheduler.step()
-                # Reclaim fragmented GPU memory between optimizer steps
-                torch.cuda.empty_cache()
 
                 step_time = time.time() - step_start
                 avg_loss = sum(step_losses) / len(step_losses)
@@ -295,6 +323,8 @@ def train_model(model_name: str):
 
                 step_times.append(step_time)
                 loss_values.append(avg_loss)
+                current_lr = scheduler.get_last_lr()[0]
+                learning_rates.append(current_lr)
 
                 if rank == 0:
                     logger.info(f"Step {step + 1}/{TRAIN_ITERS} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
@@ -327,6 +357,7 @@ def train_model(model_name: str):
                     "pipeline_parallel_size": PP,
                     "data_parallel_size": DP,
                     "gradient_accumulation_steps": grad_accum,
+                    "attn_implementation": attn_impl_used,
                 },
                 "performance_metrics": {
                     "total_steps": len(step_times),
@@ -337,6 +368,7 @@ def train_model(model_name: str):
                 },
                 "step_times": step_times,
                 "loss_values": loss_values,
+                "learning_rates": learning_rates,
             }
 
             # Merge memory log into results

@@ -188,10 +188,8 @@ def train_model(model_name: str, model_config: dict):
 
         _device = torch.device(f'cuda:{local_rank}') if world_size > 1 else torch.device('cuda')
 
-        # ── Attention: prefer flash_attention_2 (faster fused kernels),
-        #    fall back to sdpa, then default.
-        # Initialise directly on the target GPU via init_device to avoid
-        # allocating a full CPU copy per rank that then races to .to(device).
+        # ── Attention: prefer flash_attention_2 (faster fused kernels on
+        #    NVIDIA), fall back to sdpa, then default.
         attn_impl_used = "flash_attention_2"
         try:
             with torch.device(_device):
@@ -210,9 +208,9 @@ def train_model(model_name: str, model_config: dict):
                         attn_implementation="sdpa",
                     )
                 attn_impl_used = "sdpa"
-                logger.info("flash_attention_2 not available, using sdpa")
+                logger.info("flash_attention_2 not available, falling back to sdpa")
             except Exception as attn_err:
-                logger.warning(f"SDPA not available ({attn_err}), falling back to default")
+                logger.warning(f"sdpa not available ({attn_err}), falling back to default")
                 with torch.device(_device):
                     model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
                 attn_impl_used = "default"
@@ -224,11 +222,8 @@ def train_model(model_name: str, model_config: dict):
         # Checkpointing halves activation memory but costs ~30-40 % throughput.
 
         # ── DDP ───────────────────────────────────────────────────────
-        # NOTE: DDP must wrap the model BEFORE torch.compile so that
-        # the autograd hooks for gradient all-reduce are part of the
-        # compiled graph.  static_graph=True is also incompatible with
-        # torch.compile — compile rewrites the autograd graph which
-        # trips DDP's expect_autograd_hooks_ assertion in reducer.cpp.
+        # static_graph=True lets DDP pre-compute the reduction schedule
+        # after the first iteration, avoiding per-step bucket rebuilds.
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -238,15 +233,15 @@ def train_model(model_name: str, model_config: dict):
                 output_device=local_rank,
                 find_unused_parameters=False,
                 gradient_as_bucket_view=True,
+                static_graph=True,
             )
-            logger.info(f"Wrapped model with DDP (bucket_view)")
+            logger.info(f"Wrapped model with DDP (bucket_view, static_graph)")
             is_ddp = True
 
         # ── torch.compile ─────────────────────────────────────────────
-        # Disabled under DDP: HuggingFace flash-attention uses .item()
-        # which forces graph breaks, and the resulting recompilation
-        # storms add overhead instead of saving it.  Single-GPU still
-        # benefits from reduce-overhead (CUDA-graph) mode.
+        # Single-GPU: use reduce-overhead (CUDA-graph) mode.
+        # DDP + static_graph: torch.compile is incompatible (compile
+        # rewrites the autograd graph, tripping DDP's hook assertions).
         if not is_ddp:
             try:
                 model = torch.compile(model, mode="reduce-overhead")
@@ -254,7 +249,7 @@ def train_model(model_name: str, model_config: dict):
             except Exception as compile_err:
                 logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
         else:
-            logger.info("Skipping torch.compile (incompatible with DDP + HF flash-attn graph breaks)")
+            logger.info("Skipping torch.compile (incompatible with DDP static_graph)")
 
         # ── Data ──────────────────────────────────────────────────────
         dataset_path = str(DATA_DIR / f"{DATASET}-train")
@@ -294,32 +289,18 @@ def train_model(model_name: str, model_config: dict):
         num_steps = TRAIN_ITERS
 
         # ── Optimizer ──────────────────────────────────────────────────
-        # Llama-8B + full AdamW FP32 states ≈ 86 GB (params 14 + opt 57 + grads 14),
-        # exceeding 80 GB per GPU. Use ZeroRedundancyOptimizer (ZeRO-1) to shard
-        # optimizer states across the data-parallel group, reducing per-GPU opt
-        # memory from ~57 GB to ~7 GB.
-        if world_size > 1:
-            from torch.distributed.optim import ZeroRedundancyOptimizer
-            optimizer = ZeroRedundancyOptimizer(
-                model.parameters(),
-                optimizer_class=torch.optim.AdamW,
-                lr=LR, betas=(BETA1, BETA2),
+        try:
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
+            )
+            logger.info("Using fused AdamW optimizer")
+        except Exception:
+            optimizer = torch.optim.AdamW(
+                model.parameters(), lr=LR, betas=(BETA1, BETA2),
                 eps=1e-8, weight_decay=WEIGHT_DECAY,
             )
-            logger.info("Using ZeroRedundancyOptimizer (sharded AdamW, ZeRO-1)")
-        else:
-            try:
-                optimizer = torch.optim.AdamW(
-                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
-                    eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
-                )
-                logger.info("Using fused AdamW optimizer")
-            except Exception:
-                optimizer = torch.optim.AdamW(
-                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
-                    eps=1e-8, weight_decay=WEIGHT_DECAY,
-                )
-                logger.info("Using standard AdamW optimizer")
+            logger.info("Using standard AdamW optimizer")
 
         from transformers import get_cosine_schedule_with_warmup
         scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=num_steps)
