@@ -28,7 +28,7 @@ OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(WORKSPACE_ROOT / "output")))
 SEED = int(os.environ.get("SEED", 42))
 MBS = int(os.environ.get("MBS", 1))
 GBS = int(os.environ.get("GBS", 128))
-SEQ_LEN = int(os.environ.get("SEQ_LEN", 2048))
+SL = int(os.environ.get("SL", 2048))
 LR = float(os.environ.get("LR", 3e-4))
 WEIGHT_DECAY = float(os.environ.get("WEIGHT_DECAY", 0.1))
 BETA1 = float(os.environ.get("BETA1", 0.9))
@@ -295,7 +295,6 @@ def train_model(model_name: str):
 
     dataset_name = DATASET
     train_dataset_path = str(DATA_DIR / f"{dataset_name}-train")
-    test_dataset_path = str(DATA_DIR / f"{dataset_name}-test")
 
     train_idx = train_dataset_path + ".idx"
     train_bin = train_dataset_path + ".bin"
@@ -307,32 +306,16 @@ def train_model(model_name: str):
             f"  Run data preparation: python prepare/encode_data.py"
         )
 
-    test_idx = test_dataset_path + ".idx"
-    test_bin = test_dataset_path + ".bin"
-    if not os.path.exists(test_idx) or not os.path.exists(test_bin):
-        raise FileNotFoundError(
-            f"Test dataset not found at {test_dataset_path}\n"
-            f"  Missing: {test_idx if not os.path.exists(test_idx) else ''} "
-            f"{test_bin if not os.path.exists(test_bin) else ''}\n"
-            f"  Run data preparation: python prepare/encode_data.py"
-        )
-
     logger.info(f"Train dataset: {train_dataset_path}")
-    logger.info(f"Test dataset:  {test_dataset_path}")
-    logger.info("Using separate train/test files (validation uses test dataset)")
-
-    data_paths = {
-        "train": [train_dataset_path],
-        "validation": [test_dataset_path],
-        "test": [test_dataset_path],
-    }
+    logger.info("Using split=100,0,0 (all data for training, matching AMD/Primus pipeline)")
 
     from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
     recipe.data = PreTrainingDataModule(
-        paths=data_paths,
-        seq_length=SEQ_LEN,
+        paths=train_dataset_path,
+        seq_length=SL,
         micro_batch_size=MBS,
         global_batch_size=GBS,
+        split="100,0,0",
     )
 
     _WARMUP_ITERS = 0
@@ -352,15 +335,18 @@ def train_model(model_name: str):
     else:
         recipe.model.config.fp8 = None
     recipe.model.config.fp8_param = FP8_PARAM
+    # Disable gradient checkpointing/recompute for fair comparison
     recipe.model.config.recompute_granularity = None
     recipe.model.config.recompute_method = None
+    recipe.model.config.recompute_num_layers = None
 
-    recipe.model.config.bias_activation_fusion = True
-    recipe.model.config.bias_dropout_fusion = True
-    recipe.model.config.masked_softmax_fusion = True
-    recipe.model.config.persist_layer_norm = True
-    recipe.model.config.apply_rope_fusion = True
-    recipe.model.config.cross_entropy_loss_fusion = True
+    # Fusions disabled for fair cross-platform comparison with AMD/Primus
+    recipe.model.config.bias_activation_fusion = False
+    recipe.model.config.bias_dropout_fusion = False
+    recipe.model.config.masked_softmax_fusion = False
+    recipe.model.config.persist_layer_norm = False
+    recipe.model.config.apply_rope_fusion = False
+    recipe.model.config.cross_entropy_loss_fusion = False
     recipe.model.config.gradient_accumulation_fusion = False
 
     recipe.trainer.enable_checkpointing = False
@@ -392,7 +378,7 @@ def train_model(model_name: str):
         recipe.trainer.callbacks.append(profiler_callback)
 
     logger.info(f"Configuration:")
-    logger.info(f"  Sequence length: {SEQ_LEN}")
+    logger.info(f"  Sequence length: {SL}")
     logger.info(f"  Micro batch size: {MBS}")
     logger.info(f"  Global batch size: {GBS}")
     logger.info(f"  Training steps: {TRAIN_ITERS}")

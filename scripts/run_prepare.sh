@@ -6,10 +6,10 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 if command -v nvidia-smi &>/dev/null; then
-    IMAGE="primat:nvd"
+    IMAGE="tprimat:nvd"
     DOCKER_ARGS="--gpus all"
 elif [ -e /dev/kfd ]; then
-    IMAGE="primat:amd"
+    IMAGE="tprimat:amd"
     DOCKER_ARGS="--device=/dev/kfd --device=/dev/dri --group-add video"
 else
     echo "ERROR: No GPU runtime detected (need nvidia-smi or /dev/kfd)"

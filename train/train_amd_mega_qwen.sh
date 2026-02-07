@@ -20,11 +20,11 @@ else
 fi
 
 NUM_GPUS=$((TP * PP * DP))
-GBS=$((MBS * NUM_GPUS * GA))
+GBS=$((MBS * DP * GA))
 LR_DECAY_ITERS=$TRAIN_ITERS
 
 echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
-echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
+echo "Batch: MBS=${MBS} GBS=${GBS} SL=${SL}"
 
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
@@ -78,7 +78,7 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$TPRIMAT_PATH/output/mega_qwen2.5_7B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-export PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY DATA_PREFIX TOKENIZER_MODEL
+export PATCHED_CONFIG TP PP GBS MBS SL GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY DATA_PREFIX TOKENIZER_MODEL
 if python3 -c "import yaml" 2>/dev/null; then
     python3 << 'PYTHON_EOF'
 import os
@@ -89,7 +89,7 @@ tp = int(os.environ['TP'])
 pp = int(os.environ['PP'])
 gbs = int(os.environ['GBS'])
 mbs = int(os.environ['MBS'])
-seq_len = int(os.environ['SEQ_LEN'])
+seq_len = int(os.environ['SL'])
 grad_accum = int(os.environ['GA'])
 train_iters = int(os.environ['TRAIN_ITERS'])
 warmup_steps = int(os.environ['WARMUP_STEPS'])
@@ -151,6 +151,11 @@ config['torch_profiler_with_stack'] = False
 config['torch_profiler_record_shapes'] = False
 config['torch_profiler_use_gzip'] = False
 
+# Disable gradient checkpointing/recompute for fair comparison
+config['recompute_granularity'] = None
+config['recompute_method'] = None
+config['recompute_num_layers'] = None
+
 with open(patched_config, 'w') as f:
     yaml.dump(config, f)
 PYTHON_EOF
@@ -183,7 +188,7 @@ bash "$TRAIN_SCRIPT" \
     --train_iters "$TRAIN_ITERS" \
     --global_batch_size "$GBS" \
     --micro_batch_size "$MBS" \
-    --seq_length "$SEQ_LEN" \
+    --seq_length "$SL" \
     --tensor_model_parallel_size "$TP" \
     --pipeline_model_parallel_size "$PP" \
     --lr "$LR" \
@@ -196,6 +201,8 @@ bash "$TRAIN_SCRIPT" \
     --tokenizer_type HuggingFaceTokenizer \
     --tokenizer_model "$TOKENIZER_MODEL" \
     --split 100,0,0 \
+    --log-throughput \
+    --log-memory-to-tensorboard \
     >> "$LOG_FILE" 2>&1
 
 kill $TAIL_PID 2>/dev/null || true
@@ -220,7 +227,7 @@ python3 evaluate/extract_metrics.py \
     --micro-batch-size "$MBS" \
     --tensor-parallel-size "$TP" \
     --pipeline-parallel-size "$PP" \
-    --sequence-length "$SEQ_LEN" \
+    --sequence-length "$SL" \
     --parallel-strategy "TP${TP}_PP${PP}_DP${DP}" \
     $MEMORY_ARG
 

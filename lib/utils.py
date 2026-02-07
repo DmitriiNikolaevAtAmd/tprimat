@@ -130,6 +130,31 @@ def detect_gpu_info() -> Dict[str, Any]:
     return gpu_info
 
 
+def extract_param_count_from_log(log_file: str) -> Optional[int]:
+    """Extract model parameter count from Megatron/Primus training log.
+    
+    Megatron logs lines like:
+        'number of parameters on (tensor, pipeline) model parallel rank (0, 0): 8030261248'
+        'number of parameters: 8030261248'
+    """
+    patterns = [
+        r'number of parameters on.*?rank\s*\(0,\s*0\)[:\s]+(\d+)',
+        r'number of parameters[:\s]+(\d+)',
+        r'total parameters[:\s]+([0-9,]+)',
+        r'\[DIAG\]\s*Total parameters[:\s]+([0-9,]+)',
+    ]
+    with open(log_file, 'r') as f:
+        for line in f:
+            for pattern in patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    try:
+                        return int(match.group(1).replace(',', ''))
+                    except (ValueError, IndexError):
+                        continue
+    return None
+
+
 def extract_step_times_from_log(log_file: str) -> Tuple[List[float], List[float], List[float], List[float]]:
     step_times = []
     tokens_per_gpu_values = []
@@ -306,6 +331,10 @@ class BenchmarkCallback(Callback):
             self.sequence_length = getattr(trainer.datamodule, 'seq_length', 
                                           getattr(trainer.datamodule, 'sequence_length', 2048))
         
+        # Count model parameters
+        self.total_params = sum(p.numel() for p in pl_module.parameters())
+        self.trainable_params = sum(p.numel() for p in pl_module.parameters() if p.requires_grad)
+        
         if torch.cuda.is_available():
             device_props = torch.cuda.get_device_properties(0)
             device_name = torch.cuda.get_device_name(0)
@@ -330,10 +359,36 @@ class BenchmarkCallback(Callback):
             print(f"{'='*60}")
             for key, value in self.gpu_info.items():
                 print(f"{key}: {value}")
+            print(f"[DIAG] Total parameters: {self.total_params:,}")
+            print(f"[DIAG] Trainable parameters: {self.trainable_params:,}")
             print(f"{'='*60}\n")
     
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
         self._batch_count += 1
+        
+        # Log token IDs from the first 3 micro-batches for data pipeline verification
+        if self._batch_count <= 3 and trainer.is_global_zero and batch is not None:
+            try:
+                tokens = None
+                if isinstance(batch, dict):
+                    tokens = batch.get('tokens', batch.get('input_ids', batch.get('text', None)))
+                elif isinstance(batch, (list, tuple)) and len(batch) > 0:
+                    tokens = batch[0]
+                elif torch.is_tensor(batch):
+                    tokens = batch
+                
+                if tokens is not None and torch.is_tensor(tokens):
+                    first_seq = tokens[0] if tokens.dim() > 1 else tokens
+                    ids = first_seq[:32].tolist()
+                    print(f"[DIAG] Batch {self._batch_count} tokens (first 32): {ids}")
+                    print(f"[DIAG] Batch {self._batch_count} shape: {list(tokens.shape)}, "
+                          f"dtype: {tokens.dtype}, min: {tokens.min().item()}, max: {tokens.max().item()}")
+                else:
+                    print(f"[DIAG] Batch {self._batch_count}: type={type(batch).__name__}, "
+                          f"could not extract token IDs")
+            except Exception as e:
+                print(f"[DIAG] Batch {self._batch_count}: error extracting tokens: {e}")
+        
         # During warmup steps, skip timing (CUDA kernels are still compiling)
         if self._batch_count <= self.warmup_steps:
             self.step_start_time = None
@@ -424,12 +479,8 @@ class BenchmarkCallback(Callback):
         total_time = time.time() - self.train_start_time
         
         if len(self.step_times) > 1:
-            # Skip first 10 timed steps (CUDA kernel compilation overhead),
-            # matching the Megatron scripts' warmup_skip logic.
-            warmup_skip = min(10, len(self.step_times))
-            step_times_no_warmup = self.step_times[warmup_skip:]
-            if not step_times_no_warmup:
-                step_times_no_warmup = self.step_times
+            # Skip first step (JIT/compilation warmup), matching extract_metrics.py
+            step_times_no_warmup = self.step_times[1:]
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
             
@@ -467,6 +518,10 @@ class BenchmarkCallback(Callback):
                 "dataset": self.dataset,
                 "gpu_info": self.gpu_info,
                 "timestamp": datetime.now().isoformat(),
+                "model_info": {
+                    "total_params": self.total_params,
+                    "trainable_params": self.trainable_params,
+                },
                 "parallelism_config": parallelism_info,
                 "training_config": {
                     "max_steps": trainer.max_steps,
@@ -497,7 +552,14 @@ class BenchmarkCallback(Callback):
                     "peak_memory_allocated_gb": max(self.memory_allocated),
                     "avg_memory_allocated_gb": sum(self.memory_allocated) / len(self.memory_allocated),
                     "min_memory_allocated_gb": min(self.memory_allocated),
+                    "measurement_method": "torch.cuda.memory_allocated",
                 }
+            if self.memory_reserved:
+                results.setdefault("memory_metrics", {}).update({
+                    "peak_memory_reserved_gb": max(self.memory_reserved),
+                    "avg_memory_reserved_gb": sum(self.memory_reserved) / len(self.memory_reserved),
+                    "min_memory_reserved_gb": min(self.memory_reserved),
+                })
             
             dataset_suffix = f"_{self.dataset}" if self.dataset else ""
             if self.framework and self.model_name:
@@ -532,6 +594,16 @@ class BenchmarkCallback(Callback):
                 print(f"  (Global batch size: {self.global_batch_size}, Sequence length: {self.sequence_length})")
             else:
                 print(f"Throughput: {results['performance_metrics']['steps_per_second']:.3f} steps/s")
+            
+            mem_metrics = results.get('memory_metrics', {})
+            if mem_metrics:
+                alloc = mem_metrics.get('avg_memory_allocated_gb')
+                resv = mem_metrics.get('avg_memory_reserved_gb')
+                print(f"\nMemory (avg per GPU):")
+                if alloc:
+                    print(f"  Allocated (tensors): {alloc:.2f} GB")
+                if resv:
+                    print(f"  Reserved (caching):  {resv:.2f} GB")
             
             print(f"\nResults saved to: {filepath}")
             print(f"{'='*60}\n")
@@ -698,7 +770,14 @@ class BenchmarkCallbackTran(TrainerCallback):
                     "peak_memory_allocated_gb": max(self.memory_allocated),
                     "avg_memory_allocated_gb": sum(self.memory_allocated) / len(self.memory_allocated),
                     "min_memory_allocated_gb": min(self.memory_allocated),
+                    "measurement_method": "torch.cuda.memory_allocated",
                 }
+            if self.memory_reserved:
+                results.setdefault("memory_metrics", {}).update({
+                    "peak_memory_reserved_gb": max(self.memory_reserved),
+                    "avg_memory_reserved_gb": sum(self.memory_reserved) / len(self.memory_reserved),
+                    "min_memory_reserved_gb": min(self.memory_reserved),
+                })
             
             dataset_suffix = f"_{self.dataset}" if self.dataset else ""
             if self.framework and self.model_name:
@@ -733,6 +812,16 @@ class BenchmarkCallbackTran(TrainerCallback):
                 print(f"  (Global batch size: {self.global_batch_size}, Sequence length: {self.sequence_length})")
             else:
                 print(f"Throughput: {results['performance_metrics']['steps_per_second']:.3f} steps/s")
+            
+            mem_metrics = results.get('memory_metrics', {})
+            if mem_metrics:
+                alloc = mem_metrics.get('avg_memory_allocated_gb')
+                resv = mem_metrics.get('avg_memory_reserved_gb')
+                print(f"\nMemory (avg per GPU):")
+                if alloc:
+                    print(f"  Allocated (tensors): {alloc:.2f} GB")
+                if resv:
+                    print(f"  Reserved (caching):  {resv:.2f} GB")
             
             print(f"\nResults saved to: {filepath}")
             print(f"{'='*60}\n")

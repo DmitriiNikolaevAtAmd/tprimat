@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/../config.env"
 export DATA_DIR
 export DATA_SAMPLES
 export TRAIN_SPLIT
-export SEQ_LEN
+export SL
 
 python3 "${SCRIPT_DIR}/fetch_deps.py" \
     --samples "${DATA_SAMPLES}" \
@@ -28,7 +28,7 @@ python3 "${SCRIPT_DIR}/encode_data.py" \
     --input "${DATA_DIR}/allenai-c4.jsonl" \
     --output-dir "${DATA_DIR}" \
     --output-name "c4" \
-    --seq-length "${SEQ_LEN}" \
+    --seq-length "${SL}" \
     --max-samples "${DATA_SAMPLES}" \
     --train-split "${TRAIN_SPLIT}"
 
@@ -38,7 +38,7 @@ python3 "${SCRIPT_DIR}/encode_data.py" \
     --input "${DATA_DIR}/bookcorpus.jsonl" \
     --output-dir "${DATA_DIR}" \
     --output-name "bc" \
-    --seq-length "${SEQ_LEN}" \
+    --seq-length "${SL}" \
     --max-samples "${DATA_SAMPLES}" \
     --train-split "${TRAIN_SPLIT}"
 

@@ -24,6 +24,7 @@ from lib.utils import (
     round_floats,
     detect_gpu_info,
     extract_step_times_from_log,
+    extract_param_count_from_log,
     extract_memory_from_log,
     get_parallelism_config,
     print_summary
@@ -101,6 +102,13 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     """Extract comprehensive metrics from Primus training log."""
     
     print(f"Analyzing log file: {log_file}")
+    
+    # Extract parameter count from log
+    param_count = extract_param_count_from_log(log_file)
+    if param_count:
+        print(f"  + Model parameters: {param_count:,}")
+    else:
+        print(f"  ! Could not extract parameter count from log")
     
     # Extract step times, tokens per GPU, loss values, and learning rates
     step_times, tokens_per_gpu_values, loss_values, learning_rates = extract_step_times_from_log(log_file)
@@ -200,6 +208,10 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
         "platform": platform,
         "gpu_info": gpu_info,
         "timestamp": datetime.now().isoformat(),
+        "model_info": {
+            "total_params": param_count,
+            "trainable_params": param_count,  # Megatron logs don't distinguish; assume all trainable
+        },
         "parallelism_config": {
             "strategy_name": parallel_strategy or parallelism_config.get("strategy", "unknown"),
             "tensor_model_parallel_size": tensor_parallel_size,
@@ -231,7 +243,9 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
         "learning_rates": learning_rates if learning_rates else [],
     }
     
-    # Add memory metrics if available (per-step tracking)
+    # Add memory metrics if available (per-step tracking from training log).
+    # Training log patterns (mem-alloc-GB, memory (GB) | allocated) report
+    # torch.cuda.memory_allocated — actual tensor allocations, same as BenchmarkCallback.
     if memory_values:
         steady_values = memory_values[1:] if len(memory_values) > 1 else memory_values
         results["memory_metrics"] = {
@@ -240,6 +254,7 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
             "min_memory_allocated_gb": min(memory_values),
             "warmup_memory_allocated_gb": memory_values[0],
             "steady_state_memory_allocated_gb": sum(steady_values) / len(steady_values),
+            "measurement_method": "training_log_mem_alloc",
         }
         # Include per-step memory values for detailed analysis
         results["memory_values"] = memory_values
@@ -346,24 +361,41 @@ Examples:
     # memory_allocated, so AMD should too.  rocm-smi VRAM includes reserved-but-
     # unused memory and inflates numbers by 2-3x.
     has_training_log_memory = results and results.get("memory_values")
-    if results and args.memory_log and not has_training_log_memory:
-        # Fallback to rocm-smi/nvidia-smi only if training log has no memory data
+    if results and args.memory_log:
         num_steps = len(results.get('step_times', []))
         mem_data = parse_memory_log(args.memory_log, num_steps=num_steps)
         if mem_data:
-            results["memory_metrics"] = {
-                "peak_memory_allocated_gb": mem_data['peak_memory_gb'],
-                "avg_memory_allocated_gb": mem_data['avg_memory_gb'],
-                "min_memory_allocated_gb": mem_data['min_memory_gb'],
-            }
-            results["memory_values"] = mem_data['memory_values']
-            raw_samples = mem_data.get('raw_samples', len(mem_data['memory_values']))
-            print(f"  + Memory (smi fallback): {raw_samples} samples → {len(mem_data['memory_values'])} values")
-            print(f"    Peak: {mem_data['peak_memory_gb']:.2f} GB, Avg: {mem_data['avg_memory_gb']:.2f} GB")
+            # rocm-smi/nvidia-smi reports total VRAM used (reserved by caching allocator
+            # + CUDA/HIP context). This is NOT the same as torch.cuda.memory_allocated().
+            # Store as memory_reserved for correct cross-platform comparison.
+            results.setdefault("memory_metrics", {}).update({
+                "peak_memory_reserved_gb": mem_data['peak_memory_gb'],
+                "avg_memory_reserved_gb": mem_data['avg_memory_gb'],
+                "min_memory_reserved_gb": mem_data['min_memory_gb'],
+            })
+            if not has_training_log_memory:
+                # No training log memory available; also fill allocated fields
+                # from smi data so downstream code has something, but mark the source.
+                results["memory_metrics"].update({
+                    "peak_memory_allocated_gb": mem_data['peak_memory_gb'],
+                    "avg_memory_allocated_gb": mem_data['avg_memory_gb'],
+                    "min_memory_allocated_gb": mem_data['min_memory_gb'],
+                    "measurement_method": "smi_total_vram",
+                })
+                results["memory_values"] = mem_data['memory_values']
+                raw_samples = mem_data.get('raw_samples', len(mem_data['memory_values']))
+                print(f"  + Memory (smi): {raw_samples} samples → {len(mem_data['memory_values'])} values")
+                print(f"    Peak: {mem_data['peak_memory_gb']:.2f} GB, Avg: {mem_data['avg_memory_gb']:.2f} GB")
+                print(f"    WARNING: smi reports total VRAM (reserved+context), not tensor allocations.")
+                print(f"    Compare with memory_reserved_gb on NVIDIA for apples-to-apples.")
+            else:
+                raw_samples = mem_data.get('raw_samples', len(mem_data['memory_values']))
+                print(f"  + Using training log memory (allocated) + smi memory (reserved)")
+                print(f"    SMI reserved: peak={mem_data['peak_memory_gb']:.2f} GB, avg={mem_data['avg_memory_gb']:.2f} GB")
         else:
             print(f"  ! Warning: Could not parse memory log: {args.memory_log}")
-    elif results and args.memory_log and has_training_log_memory:
-        print(f"  + Using training log memory (allocated), skipping smi log (total VRAM)")
+    elif results and has_training_log_memory:
+        print(f"  + Using training log memory (allocated), no smi log available")
     # Legacy: Load from intermediate JSON file
     elif results and args.memory_values_file:
         try:

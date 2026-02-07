@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 docker run -it --rm \
-    --name primat \
+    --name tprimat \
     --network=host \
     --device=/dev/kfd --device=/dev/dri \
     --group-add video \
@@ -19,4 +19,4 @@ docker run -it --rm \
     -w /workspace/code \
     --env-file config.env \
     --env-file secrets.env \
-    primat:amd "$@"
+    tprimat:amd "$@"

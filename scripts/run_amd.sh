@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
-docker build -t primat:amd -f amd.Dockerfile .
+docker build -t tprimat:amd -f amd.Dockerfile .
 
 docker run --rm \
     --network=host \
@@ -21,4 +21,4 @@ docker run --rm \
     -w /workspace/code \
     --env-file config.env \
     --env-file secrets.env \
-    primat:amd bash scripts/train_amd.sh
+    tprimat:amd bash scripts/train_amd.sh

@@ -194,31 +194,72 @@ def create_comparison_plot(
         ax1.text(0.5, 0.5, 'Throughput data not available', ha='center', va='center', transform=ax1.transAxes)
         ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
     
-    # Panel 2: Memory bar chart
+    # Panel 2: Memory bar chart — dual bars (allocated vs reserved)
     ax2 = axes[1]
-    labels, values, colors = [], [], []
+    mem_labels = []
+    mem_allocated = []
+    mem_reserved = []
+    mem_colors = []
     
     for key in ordered_keys:
         mem = benchmarks[key].get('memory_metrics', {})
-        avg_mem = mem.get('avg_memory_allocated_gb') or mem.get('peak_memory_allocated_gb')
-        if avg_mem and avg_mem != 'N/A':
-            labels.append(styles[key]['label'])
-            values.append(float(avg_mem))
-            colors.append(styles[key]['color'])
+        alloc = mem.get('avg_memory_allocated_gb')
+        resv = mem.get('avg_memory_reserved_gb')
+        # Only include if at least one metric exists
+        if (alloc and alloc != 'N/A') or (resv and resv != 'N/A'):
+            mem_labels.append(styles[key]['label'])
+            mem_allocated.append(float(alloc) if alloc and alloc != 'N/A' else 0)
+            mem_reserved.append(float(resv) if resv and resv != 'N/A' else 0)
+            mem_colors.append(styles[key]['color'])
     
-    if values:
-        bars = ax2.bar(range(len(values)), values, color=colors, alpha=0.75, edgecolor='#333', linewidth=1.2)
+    if mem_labels:
+        n = len(mem_labels)
+        bar_width = 0.35
+        x = np.arange(n)
+        
+        has_alloc = any(v > 0 for v in mem_allocated)
+        has_resv = any(v > 0 for v in mem_reserved)
+        
+        if has_alloc and has_resv:
+            # Dual bars: allocated (solid) + reserved (hatched)
+            bars_a = ax2.bar(x - bar_width/2, mem_allocated, bar_width,
+                            color=mem_colors, alpha=0.80, edgecolor='#333', linewidth=1.0,
+                            label='Allocated (tensors)')
+            bars_r = ax2.bar(x + bar_width/2, mem_reserved, bar_width,
+                            color=mem_colors, alpha=0.40, edgecolor='#333', linewidth=1.0,
+                            hatch='///', label='Reserved (total VRAM)')
+            for bar, val in zip(bars_a, mem_allocated):
+                if val > 0:
+                    ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
+                            f'{val:.1f}', ha='center', va='bottom', fontweight='bold', fontsize=7)
+            for bar, val in zip(bars_r, mem_reserved):
+                if val > 0:
+                    ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
+                            f'{val:.1f}', ha='center', va='bottom', fontsize=7, color='#555')
+            ax2.legend(fontsize=7, loc='upper right')
+        elif has_alloc:
+            bars = ax2.bar(x, mem_allocated, bar_width * 2,
+                          color=mem_colors, alpha=0.75, edgecolor='#333', linewidth=1.2)
+            for bar, val in zip(bars, mem_allocated):
+                if val > 0:
+                    ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
+                            f'{val:.1f}', ha='center', va='bottom', fontweight='bold', fontsize=8)
+        else:
+            bars = ax2.bar(x, mem_reserved, bar_width * 2,
+                          color=mem_colors, alpha=0.50, edgecolor='#333', linewidth=1.2, hatch='///')
+            for bar, val in zip(bars, mem_reserved):
+                if val > 0:
+                    ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
+                            f'{val:.1f}', ha='center', va='bottom', fontweight='bold', fontsize=8)
+        
         ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
-        ax2.set_title('Average GPU Memory Usage', fontweight='bold', fontsize=12)
-        ax2.set_xticks(range(len(labels)))
-        ax2.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
+        ax2.set_title('GPU Memory: Allocated vs Reserved', fontweight='bold', fontsize=12)
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(mem_labels, rotation=45, ha='right', fontsize=7)
         ax2.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
-        for bar, val in zip(bars, values):
-            ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
-                    f'{val:.1f}', ha='center', va='bottom', fontweight='bold', fontsize=8)
     else:
         ax2.text(0.5, 0.5, 'Memory data not available', ha='center', va='center', transform=ax2.transAxes, fontsize=10)
-        ax2.set_title('Average GPU Memory Usage', fontweight='bold', fontsize=12)
+        ax2.set_title('GPU Memory: Allocated vs Reserved', fontweight='bold', fontsize=12)
     
     # Panel 3: Loss over time
     ax3 = axes[2]

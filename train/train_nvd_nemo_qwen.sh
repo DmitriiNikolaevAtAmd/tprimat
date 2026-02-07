@@ -20,7 +20,7 @@ export MBS=${MBS:-1}
 export GBS=$((MBS * DP * GA))
 
 echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
-echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
+echo "Batch: MBS=${MBS} GBS=${GBS} SL=${SL}"
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=ERROR
@@ -34,8 +34,9 @@ export CUDA_MODULE_LOADING=EAGER
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 
-export NVTE_FUSED_ATTN=1
-export NVTE_FLASH_ATTN=1
+# NVTE fused/flash attention disabled for fair cross-platform comparison
+export NVTE_FUSED_ATTN=0
+export NVTE_FLASH_ATTN=0
 
 export FP8_HYBRID=${FP8_HYBRID:-false}
 export FP8_PARAM=${FP8_PARAM:-false}

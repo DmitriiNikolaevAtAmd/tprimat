@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 docker run --gpus all -it --rm \
-    --name primat \
+    --name tprimat \
     --shm-size=64g \
     --ulimit memlock=-1 \
     --ulimit stack=67108864 \
@@ -15,4 +15,4 @@ docker run --gpus all -it --rm \
     --env-file config.env \
     --env-file secrets.env \
     -e CUDA_LAUNCH_BLOCKING=1 \
-    primat:nvd "$@"
+    tprimat:nvd "$@"

@@ -1,4 +1,4 @@
-# TPrimat - LLM Training Benchmark Suite
+# TPrimat - Training Benchmark and Profiling Suite
 
 **Comprehensive LLM training benchmarks comparing AMD MI300X vs NVIDIA H100 GPUs across multiple frameworks and parallelism strategies.**
 
@@ -151,11 +151,11 @@ These scripts work on **both** NVIDIA and AMD (auto-detect platform):
 
 ```bash
 # NVIDIA
-docker build -f nvd.Dockerfile -t primat:nvd .
+docker build -f nvd.Dockerfile -t tprimat:nvd .
 ./train_docker_nvd.sh
 
 # AMD
-docker build -f amd.Dockerfile -t primat:amd .
+docker build -f amd.Dockerfile -t tprimat:amd .
 ./train_docker_amd.sh
 ```
 
@@ -427,10 +427,10 @@ Average Step Time:
 
 ```bash
 # NVIDIA
-docker build -f nvd.Dockerfile -t primat:nvd .
+docker build -f nvd.Dockerfile -t tprimat:nvd .
 
 # AMD
-docker build -f amd.Dockerfile -t primat:amd .
+docker build -f amd.Dockerfile -t tprimat:amd .
 ```
 
 ### Run Containers
@@ -457,10 +457,10 @@ HF_TOKEN=your_token ./train_docker_nvd.sh ./train_nvd.sh
 ./train_docker_amd_detached.sh ./train_amd.sh
 
 # Check logs
-docker logs -f primat
+docker logs -f tprimat
 
 # Stop container
-docker stop primat
+docker stop tprimat
 ```
 
 **Option 2: Tmux Inside Container**
@@ -490,7 +490,7 @@ rocm-smi -l 1
 watch -n 1 rocm-smi
 
 # Inside container
-docker exec -it primat nvidia-smi  # or rocm-smi
+docker exec -it tprimat nvidia-smi  # or rocm-smi
 ```
 
 ---
@@ -558,7 +558,7 @@ ls -lh output/
 cat output/training_llama.log
 
 # Docker logs
-docker logs primat
+docker logs tprimat
 
 # Find errors
 grep -i error output/training_*.log
@@ -701,7 +701,7 @@ If you use TPrimat in your research, please cite:
 
 ```bibtex
 @software{tprimat2024,
-  title = {TPrimat: LLM Training Benchmark Suite},
+  title = {TPrimat: Training Benchmark and Profiling Suite},
   author = {[Your Name]},
   year = {2024},
   url = {https://github.com/yourusername/tprimat}
