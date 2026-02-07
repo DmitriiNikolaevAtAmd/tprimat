@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
-docker build -t tprimat:nvd -f nvd.Dockerfile .
+"$SCRIPT_DIR/build_nvd.sh"
 
 docker run --gpus all --rm \
     --shm-size=64g \

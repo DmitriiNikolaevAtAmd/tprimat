@@ -7,7 +7,7 @@ for the first N documents/sequences. Run on both AMD and NVIDIA platforms to
 verify that the same data is being presented to the model.
 
 Usage:
-    python3 evaluate/verify_data_pipeline.py [--data-prefix /data/tprimat/bc-train] \
+    python3 evaluate/verify_data.py [--data-prefix /data/tprimat/bc-train] \
         [--seq-len 2048] [--num-samples 5] [--tokens-per-sample 32]
 
 Output:

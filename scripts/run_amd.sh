@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
-docker build -t tprimat:amd -f amd.Dockerfile .
+"$SCRIPT_DIR/build_amd.sh"
 
 docker run --rm \
     --network=host \

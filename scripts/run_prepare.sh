@@ -24,4 +24,4 @@ docker run --rm \
     -w /workspace/code \
     --env-file config.env \
     --env-file secrets.env \
-    "$IMAGE" bash prepare/data.sh "$@"
+    "$IMAGE" bash scripts/prepare.sh "$@"

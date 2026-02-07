@@ -53,7 +53,7 @@ DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
 
 if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
     echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
-    echo "       Run prepare/data.sh first to generate the dataset"
+    echo "       Run scripts/prepare.sh first to generate the dataset"
     exit 1
 fi
 
@@ -63,4 +63,4 @@ echo "Training qwen (nemo) on dataset: ${DATASET}"
 echo "=========================================="
 echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
-python3 -u "$SCRIPT_DIR/train_nvd_nemo.py" qwen
+python3 -u "$SCRIPT_DIR/train_nemo.py" qwen

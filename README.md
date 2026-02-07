@@ -113,7 +113,7 @@ python3 compare.py --platform nvidia
 | Framework | Identifier | Script | Configurable | Description | Parallelism |
 |-----------|-----------|--------|--------------|-------------|-------------|
 | **NeMo** | `nemo` | `train_all_nemo.py` | `train_all_nemo_cfg.py` | Cross-platform NeMo framework | TP/PP/DP |
-| **Megatron** | `mega` | `train_nvd_mega.py` | - | Model parallelism baseline | TP/PP/DP |
+| **Megatron** | `mega` | `train_mega.py` | - | Model parallelism baseline | TP/PP/DP |
 | **DeepSpeed** | `deep` | `train_nvd_deep.py` | - | Memory-efficient ZeRO-3 | ZeRO-3 |
 | **Transformers** | `tran` | `train_all_tran.py` | - | HuggingFace portable baseline | DP |
 
@@ -256,7 +256,7 @@ All scripts follow a consistent naming pattern:
 
 | Prefix | Platform | Example |
 |--------|----------|---------|
-| `nvd_` | NVIDIA platform | `train_nvd_mega.py`, `train_nvd_deep.py` |
+| `nvd_` | NVIDIA platform | `train_mega.py`, `train_nvd_deep.py` |
 | `amd_` | AMD-specific | `train_amd_nemo_llama.sh` |
 | `prim_` | AMD Primus | `train_amd_prim_llama.sh` |
 | (none) | Platform-agnostic | `train_all_tran.py` |
@@ -267,7 +267,7 @@ All scripts follow a consistent naming pattern:
 # NVIDIA-specific (nvd_ prefix)
 train_nvd.sh       # Run all NVIDIA frameworks
 train_all_nemo.py        # NeMo (platform-agnostic)
-train_nvd_mega.py        # Megatron-LM
+train_mega.py        # Megatron-LM
 train_nvd_deep.py      # DeepSpeed
 train_nvd_docker.sh          # NVIDIA Docker launcher
 
@@ -637,7 +637,7 @@ tprimat/
 ├── NVIDIA Scripts (nvd_ prefix)
 │   ├── train_nvd.sh       # Run all NVIDIA frameworks
 │   ├── train_all_nemo.py            # NeMo (platform-agnostic)
-│   ├── train_nvd_mega.py      # Megatron
+│   ├── train_mega.py      # Megatron
 │   ├── train_nvd_deep.py      # DeepSpeed
 │   └── train_nvd_docker.sh          # Docker launcher
 │
