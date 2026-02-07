@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""
-Megatron benchmark using Megatron-Core + TransformerEngine + PyTorch Lightning.
-
-This script uses the same infrastructure as the NeMo benchmark:
-  - Megatron-Core model definitions (via NeMo recipes)
-  - TransformerEngine fused attention (NVTE_FUSED_ATTN / NVTE_FLASH_ATTN)
-  - Kernel fusions: bias+activation, bias+dropout, masked softmax,
-    persistent LayerNorm, fused RoPE, fused cross-entropy
-  - PyTorch Lightning trainer with MegatronStrategy (ZeRO-1)
-  - PreTrainingDataModule for data loading
-
-This ensures an apples-to-apples memory and throughput comparison
-(both scripts share the identical model + framework overhead).
-"""
 import gc
 import os
 import sys
@@ -55,7 +41,7 @@ GA = int(os.environ.get("GA", 32))
 TP = int(os.environ.get("TP", 1))
 PP = int(os.environ.get("PP", 1))
 DP = int(os.environ.get("DP", 4))
-DATASET = os.environ.get("DATASET", "bc")  # bc or c4
+DATASET = os.environ.get("DATASET", "bc")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,7 +53,6 @@ logger = logging.getLogger(__name__)
 
 
 class GCCallback(Callback):
-    """Disable Python GC during training to avoid random step-time spikes."""
 
     def on_train_start(self, trainer, pl_module):
         gc.disable()
@@ -110,7 +95,6 @@ def ensure_hf_token_for_gated_repo(repo_id: str) -> None:
 
 
 def get_tokenizer_path(model_name: str) -> str:
-    """Get tokenizer path, preferring local if it exists, otherwise HuggingFace."""
     local_paths = {
         "llama": str(DATA_DIR / "tokenizers" / "llama"),
         "qwen": str(DATA_DIR / "tokenizers" / "qwen"),
@@ -183,9 +167,8 @@ def train_model(model_name: str):
     os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
-    # ── Performance knobs ──────────────────────────────────────────────
-    torch.set_float32_matmul_precision('high')          # TF32 matmuls
-    torch.backends.cudnn.benchmark = True               # cuDNN autotuner
+    torch.set_float32_matmul_precision('high')
+    torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
@@ -211,14 +194,8 @@ def train_model(model_name: str):
         num_gpus_per_node=num_gpus,
     )
 
-    # Ensure model vocab matches tokenizer to avoid out-of-bounds embedding ids.
     recipe.model.config.vocab_size = tokenizer_vocab_size
 
-    # ── Strategy with distributed optimizer (ZeRO-1) ─────────────────
-    # use_distributed_optimizer: shards optimizer states across DP ranks (ZeRO-1)
-    # overlap disabled: with DP-only (TP=1, PP=1) and GA=8, the single
-    # allreduce per step has minimal overlap opportunity.  Disabling saves
-    # ~24 GB/GPU and keeps memory comparable across benchmarks.
     try:
         from megatron.core.distributed import DistributedDataParallelConfig
         ddp_config = DistributedDataParallelConfig(
@@ -237,16 +214,14 @@ def train_model(model_name: str):
         pipeline_model_parallel_size=PP,
         context_parallel_size=1,
         virtual_pipeline_model_parallel_size=None,
-        sequence_parallel=(TP > 1),  # activates when tensor parallel > 1
+        sequence_parallel=(TP > 1),
         ddp=ddp_config,
     )
 
-    # Dataset paths: separate train and test files
-    dataset_name = DATASET  # "bc" or "c4"
+    dataset_name = DATASET
     train_dataset_path = str(DATA_DIR / f"{dataset_name}-train")
     test_dataset_path = str(DATA_DIR / f"{dataset_name}-test")
 
-    # Validate train dataset exists
     train_idx = train_dataset_path + ".idx"
     train_bin = train_dataset_path + ".bin"
     if not os.path.exists(train_idx) or not os.path.exists(train_bin):
@@ -257,7 +232,6 @@ def train_model(model_name: str):
             f"  Run data preparation: python prepare/encode_data.py"
         )
 
-    # Validate test dataset exists
     test_idx = test_dataset_path + ".idx"
     test_bin = test_dataset_path + ".bin"
     if not os.path.exists(test_idx) or not os.path.exists(test_bin):
@@ -272,7 +246,6 @@ def train_model(model_name: str):
     logger.info(f"Test dataset:  {test_dataset_path}")
     logger.info("Using separate train/test files (validation uses test dataset)")
 
-    # Use explicit paths dict: train for training, test for both validation and test
     data_paths = {
         "train": [train_dataset_path],
         "validation": [test_dataset_path],
@@ -287,8 +260,6 @@ def train_model(model_name: str):
         global_batch_size=GBS,
     )
 
-    # Extra un-timed warmup iterations so CUDA kernels are pre-compiled
-    # before the BenchmarkCallback starts recording step times.
     _WARMUP_ITERS = 0
     recipe.trainer.max_steps = TRAIN_ITERS + _WARMUP_ITERS
     recipe.optim.config.lr = LR
@@ -296,43 +267,33 @@ def train_model(model_name: str):
     recipe.optim.config.weight_decay = WEIGHT_DECAY
     recipe.optim.config.adam_beta1 = BETA1
     recipe.optim.config.adam_beta2 = BETA2
-    # Compensate for _WARMUP_ITERS: NeMo's Lightning trainer advances the
-    # LR scheduler during the un-timed CUDA warmup iterations, so we add
-    # _WARMUP_ITERS to warmup_steps so the *recorded* warmup (after the
-    # un-timed phase) aligns with the expected schedule.
     recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS + _WARMUP_ITERS
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS + _WARMUP_ITERS
-    recipe.optim.lr_scheduler.min_lr = 0.0  # Ensure LR decays to zero
+    recipe.optim.lr_scheduler.min_lr = 0.0
 
     if FP8_HYBRID:
         recipe.model.config.fp8 = "hybrid"
     else:
         recipe.model.config.fp8 = None
     recipe.model.config.fp8_param = FP8_PARAM
-    # NOTE: activation recompute disabled — Llama-8B / Qwen-7B fit in
-    # H100 80 GB with ZeRO-1 without it, and selective recompute costs
-    # ~30-40 % throughput by re-running forward ops during backward.
     recipe.model.config.recompute_granularity = None
     recipe.model.config.recompute_method = None
 
-    # ── Megatron-Core kernel fusions for throughput ────────────────────
-    # These are the same fusions enabled in the NeMo benchmark to ensure
-    # identical model execution paths and a fair memory comparison.
-    recipe.model.config.bias_activation_fusion = True    # fuse bias + SiLU/GeLU
-    recipe.model.config.bias_dropout_fusion = True       # fuse bias + dropout
-    recipe.model.config.masked_softmax_fusion = True     # fuse attention mask + softmax
-    recipe.model.config.persist_layer_norm = True        # persistent LayerNorm kernel
-    recipe.model.config.apply_rope_fusion = True         # fused RoPE kernel
-    recipe.model.config.cross_entropy_loss_fusion = True  # fused cross-entropy kernel
-    recipe.model.config.gradient_accumulation_fusion = False  # requires APEX fused CUDA ext
+    recipe.model.config.bias_activation_fusion = True
+    recipe.model.config.bias_dropout_fusion = True
+    recipe.model.config.masked_softmax_fusion = True
+    recipe.model.config.persist_layer_norm = True
+    recipe.model.config.apply_rope_fusion = True
+    recipe.model.config.cross_entropy_loss_fusion = True
+    recipe.model.config.gradient_accumulation_fusion = False
 
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
     recipe.log.tensorboard = None
     recipe.log.wandb = None
-    recipe.trainer.val_check_interval = TRAIN_ITERS + _WARMUP_ITERS + 1  # effectively disable validation
+    recipe.trainer.val_check_interval = TRAIN_ITERS + _WARMUP_ITERS + 1
     recipe.trainer.check_val_every_n_epoch = None
     recipe.trainer.limit_val_batches = 0
     recipe.trainer.num_sanity_val_steps = 0

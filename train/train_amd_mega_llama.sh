@@ -14,7 +14,6 @@ export HF_HOME
 
 NUM_GPUS="${NUM_GPUS:-8}"
 
-# Parallel / batch config
 export TP=${TP:-1}
 export PP=${PP:-1}
 export DP=${DP:-${NUM_GPUS}}
@@ -25,37 +24,31 @@ export GBS=$((MBS * DP * GA))
 echo "Config: NUM_GPUS=${NUM_GPUS} TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch:  MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 
-# Performance settings (aligned with NVD mega shells)
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
 export HF_HUB_DISABLE_PROGRESS_BARS=1
 
-# AMD-specific tuning
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
 
-# Communication tuning
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
-export TORCH_NCCL_AVOID_RECORD_STREAMS=1    # reduces NCCL memory fragmentation
+export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 
 cd "$SCRIPT_DIR"
 
-# Kill stale distributed training processes from previous runs
 pkill -9 -f "torchrun.*train_amd_mega" 2>/dev/null || true
 sleep 1
 
-# Data paths - uses DATASET from config.env (bc or c4)
 DATASET="${DATASET:-bc}"
 export DATASET
 DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
 
-# Verify data files exist
 if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
     echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
     echo "       Run prepare/data.sh first to generate the dataset"
@@ -69,11 +62,9 @@ echo "=========================================="
 echo "Config: NUM_GPUS=${NUM_GPUS}"
 echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
-# Use random port to avoid conflicts with stale processes
 MASTER_PORT=$((30000 + RANDOM % 5000))
 echo "Using MASTER_PORT: $MASTER_PORT"
 
-# Start memory monitoring in background (samples every 2 seconds)
 MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_llama_${DATASET}.log"
 : > "$MEMORY_LOG"
 (
@@ -100,6 +91,5 @@ else
     python3 -u train_amd_mega.py llama
 fi
 
-# Stop memory monitoring
 kill $MEMORY_PID 2>/dev/null || true
 rm -f "$MEMORY_LOG"

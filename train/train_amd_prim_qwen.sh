@@ -11,7 +11,6 @@ mkdir -p "$TPRIMAT_PATH/output"
 TOKENIZER_PATH="${DATA_DIR}/tokenizers/qwen"
 TOKENIZER_HF="Qwen/Qwen2.5-7B"
 
-# Use local tokenizer if available, otherwise fall back to HuggingFace
 if [ -d "${TOKENIZER_PATH}" ]; then
     TOKENIZER_MODEL="${TOKENIZER_PATH}"
     echo "Using local tokenizer: ${TOKENIZER_MODEL}"
@@ -20,7 +19,6 @@ else
     echo "Using HuggingFace tokenizer: ${TOKENIZER_MODEL}"
 fi
 
-# Training batch config (from config.env: TP, PP, DP, GA, MBS, SEQ_LEN, etc.)
 NUM_GPUS=$((TP * PP * DP))
 GBS=$((MBS * NUM_GPUS * GA))
 LR_DECAY_ITERS=$TRAIN_ITERS
@@ -28,7 +26,6 @@ LR_DECAY_ITERS=$TRAIN_ITERS
 echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 
-# Critical AMD performance settings
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
 export GLOO_LOG_LEVEL=ERROR
@@ -39,7 +36,6 @@ export HSA_FORCE_FINE_GRAIN_PCIE=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
-# Disable extra logging/profiling noise
 export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
@@ -47,7 +43,6 @@ export HF_HUB_DISABLE_PROGRESS_BARS=1
 export TORCH_CPP_LOG_LEVEL=ERROR
 export TORCH_SHOW_CPP_STACKTRACES=0
 
-# Add Primus to Python path permanently via .pth file
 python3 -c "import site; open(site.getsitepackages()[0] + '/primus.pth', 'w').write('$PRIMUS_PATH')" 2>/dev/null || true
 export PYTHONPATH="$PRIMUS_PATH:${PYTHONPATH:-}"
 
@@ -63,11 +58,9 @@ if [ ! -f "$PRIMUS_PATH/$TRAIN_SCRIPT" ]; then
     exit 1
 fi
 
-# Data paths - uses DATASET from config.env (bc or c4)
 DATASET="${DATASET:-bc}"
 DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
 
-# Verify data files exist
 if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
     echo "ERROR: Data files not found at ${DATA_PREFIX}.bin/.idx"
     echo "       Run prepare/data.sh first to generate the dataset"
@@ -106,7 +99,7 @@ with open(patched_config, 'r') as f:
 
 config['tensor_model_parallel_size'] = tp
 config['pipeline_model_parallel_size'] = pp
-config['sequence_parallel'] = (tp > 1)  # Enable with tensor parallelism for memory efficiency
+config['sequence_parallel'] = (tp > 1)
 config['global_batch_size'] = gbs
 config['micro_batch_size'] = mbs
 config['seq_length'] = seq_len
@@ -120,10 +113,8 @@ config['train_iters'] = train_iters
 config['lr_decay_iters'] = train_iters
 config['lr_warmup_iters'] = warmup_steps
 
-# Match NeMo weight initialization (default is 0.02)
 config['init_method_std'] = 0.02
 
-# Also update nested overrides to ensure consistency
 if 'modules' in config and 'pre_trainer' in config['modules']:
     overrides = config['modules']['pre_trainer'].get('overrides', {})
     overrides['init_method_std'] = 0.02
@@ -134,7 +125,6 @@ if 'modules' in config and 'pre_trainer' in config['modules']:
     overrides['train_iters'] = train_iters
     config['modules']['pre_trainer']['overrides'] = overrides
 
-# External data configuration
 data_prefix = os.environ['DATA_PREFIX']
 tokenizer_model = os.environ['TOKENIZER_MODEL']
 config['data_path'] = data_prefix
@@ -142,14 +132,12 @@ config['tokenizer_type'] = 'HuggingFaceTokenizer'
 config['tokenizer_model'] = tokenizer_model
 config['split'] = '100,0,0'
 config['eval_iters'] = 0
-config['eval_interval'] = train_iters + 1  # effectively disable validation
+config['eval_interval'] = train_iters + 1
 
-# Logging: enable per-step memory tracking
-config['log_interval'] = 1  # Log every step for memory tracking
-config['log_memory_to_tensorboard'] = True  # Enables memory logging in output
-config['log_throughput'] = True  # Log throughput metrics
+config['log_interval'] = 1
+config['log_memory_to_tensorboard'] = True
+config['log_throughput'] = True
 
-# Disable external logging services
 config['disable_tensorboard'] = True
 config['disable_wandb'] = True
 config['disable_mlflow'] = True
@@ -157,7 +145,6 @@ config['log_timers_to_tensorboard'] = False
 config['log_learning_rate_to_tensorboard'] = False
 config['log_loss_scale_to_tensorboard'] = False
 
-# Profiling (disabled for benchmarking)
 config['profile'] = False
 config['use_pytorch_profiler'] = False
 config['torch_profiler_with_stack'] = False
@@ -174,7 +161,6 @@ fi
 
 export EXP="$PATCHED_CONFIG"
 
-# Start memory monitoring in background (samples every 2 seconds)
 MEMORY_LOG="$TPRIMAT_PATH/output/memory_qwen_${DATASET}.log"
 (
     while true; do
@@ -215,12 +201,10 @@ bash "$TRAIN_SCRIPT" \
 kill $TAIL_PID 2>/dev/null || true
 wait $TAIL_PID 2>/dev/null || true
 
-# Stop memory monitoring
 kill $MEMORY_PID 2>/dev/null || true
 
 cd "$TPRIMAT_PATH"
 
-# Extract metrics and include memory values directly in JSON output
 MEMORY_ARG=""
 if [ -f "$MEMORY_LOG" ]; then
     MEMORY_ARG="--memory-log $MEMORY_LOG"
@@ -240,5 +224,4 @@ python3 evaluate/extract_metrics.py \
     --parallel-strategy "TP${TP}_PP${PP}_DP${DP}" \
     $MEMORY_ARG
 
-# Clean up temporary memory log
 rm -f "$MEMORY_LOG"

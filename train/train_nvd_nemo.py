@@ -50,7 +50,7 @@ PROFILE_REPEAT = int(os.environ.get("PROFILE_REPEAT", 1))
 VERIFY_DATA = os.environ.get("VERIFY_DATA", "false").lower() == "true"
 VERIFY_SAMPLES = int(os.environ.get("VERIFY_SAMPLES", 100))
 VERIFY_FULL_SCAN = os.environ.get("VERIFY_FULL_SCAN", "false").lower() == "true"
-DATASET = os.environ.get("DATASET", "bc")  # bc (BookCorpus) or c4
+DATASET = os.environ.get("DATASET", "bc")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,7 +62,6 @@ logger = logging.getLogger(__name__)
 
 
 class GCCallback(Callback):
-    """Disable Python GC during training to avoid random step-time spikes."""
 
     def on_train_start(self, trainer, pl_module):
         gc.disable()
@@ -75,45 +74,42 @@ class GCCallback(Callback):
 
 
 class KinetoProfilerCallback(Callback):
-    """Lightning callback for Kineto GPU profiling integrated with training loop."""
-    
+
     def __init__(self, output_dir: Path, model_name: str):
         self.output_dir = output_dir
         self.model_name = model_name
         self.profiler = None
         self.profile_dir = output_dir / "profiles"
-        
+
     def on_train_start(self, trainer, pl_module):
         if not PROFILING:
             return
-            
+
         self.profile_dir.mkdir(parents=True, exist_ok=True)
-        
+
         logger.info(f"Kineto GPU profiling enabled")
         logger.info(f"  Profile output: {self.profile_dir}")
         logger.info(f"  Schedule: wait={PROFILE_WAIT}, warmup={PROFILE_WARMUP}, "
                     f"active={PROFILE_ACTIVE}, repeat={PROFILE_REPEAT}")
-        
+
         def trace_handler(prof):
             rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
             trace_file = self.profile_dir / f"nvd_nemo_{self.model_name}_rank{rank}.json"
             logger.info(f"Exporting trace to {trace_file}")
             prof.export_chrome_trace(str(trace_file))
-            
-            # Also export stacks for flame graph generation
+
             stacks_file = self.profile_dir / f"nvd_nemo_{self.model_name}_rank{rank}_stacks.txt"
             try:
                 prof.export_stacks(str(stacks_file), "self_cuda_time_total")
                 logger.info(f"Exported CUDA stacks to {stacks_file}")
             except Exception as e:
                 logger.warning(f"Could not export stacks: {e}")
-            
-            # Print summary table
+
             if trainer.is_global_zero:
                 logger.info("\n" + prof.key_averages().table(
                     sort_by="cuda_time_total", row_limit=20
                 ))
-        
+
         self.profiler = torch.profiler.profile(
             activities=[
                 torch.profiler.ProfilerActivity.CPU,
@@ -133,11 +129,11 @@ class KinetoProfilerCallback(Callback):
             with_modules=True,
         )
         self.profiler.__enter__()
-    
+
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if self.profiler is not None:
             self.profiler.step()
-    
+
     def on_train_end(self, trainer, pl_module):
         if self.profiler is not None:
             self.profiler.__exit__(None, None, None)
@@ -176,7 +172,6 @@ def ensure_hf_token_for_gated_repo(repo_id: str) -> None:
 
 
 def get_tokenizer_path(model_name: str) -> str:
-    """Get tokenizer path, preferring local if it exists, otherwise HuggingFace."""
     local_paths = {
         "llama": str(DATA_DIR / "tokenizers" / "llama"),
         "qwen": str(DATA_DIR / "tokenizers" / "qwen"),
@@ -185,23 +180,23 @@ def get_tokenizer_path(model_name: str) -> str:
         "llama": "meta-llama/Llama-3.1-8B",
         "qwen": "Qwen/Qwen2.5-7B",
     }
-    
+
     local_path = local_paths.get(model_name)
     if local_path and os.path.isdir(local_path):
         logger.info(f"Using local tokenizer: {local_path}")
         return local_path
-    
+
     hf_path = hf_paths.get(model_name)
     if hf_path:
         logger.info(f"Using HuggingFace tokenizer: {hf_path}")
         return hf_path
-    
+
     raise ValueError(f"Unknown model for tokenizer: {model_name}")
 
 
 def get_model_config(model_name: str):
     tokenizer_path = get_tokenizer_path(model_name)
-    
+
     configs = {
         "llama": {
             "display_name": "Llama 3.1 8B",
@@ -216,32 +211,32 @@ def get_model_config(model_name: str):
             "tokenizer_path": tokenizer_path,
         }
     }
-    
+
     if model_name not in configs:
         logger.error(f"Unknown model: {model_name}. Supported: {list(configs.keys())}")
         sys.exit(1)
-    
+
     return configs[model_name]
 
 
 def train_model(model_name: str):
     load_env_file("secrets.env")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     if not torch.cuda.is_available():
         logger.error("CUDA is not available!")
         sys.exit(1)
-    
+
     platform_prefix = "nvd"
     num_gpus = torch.cuda.device_count()
-    
+
     logger.info(f"CUDA devices available: {num_gpus}")
-    
+
     config = get_model_config(model_name)
     ensure_hf_token_for_gated_repo(config["tokenizer_path"])
-    
+
     logger.info(f"Setting up {config['display_name']} training...")
-    
+
     torch.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED)
     np.random.seed(SEED)
@@ -249,12 +244,11 @@ def train_model(model_name: str):
     os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
-    # ── Performance knobs ──────────────────────────────────────────────
-    torch.set_float32_matmul_precision('high')          # TF32 matmuls
-    torch.backends.cudnn.benchmark = True               # cuDNN autotuner
+    torch.set_float32_matmul_precision('high')
+    torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
-    
+
     logger.info(f"Loading tokenizer for {config['display_name']}...")
     tokenizer = AutoTokenizer.from_pretrained(
         config["tokenizer_path"],
@@ -277,14 +271,8 @@ def train_model(model_name: str):
         num_gpus_per_node=num_gpus,
     )
 
-    # Ensure model vocab matches tokenizer to avoid out-of-bounds embedding ids.
     recipe.model.config.vocab_size = tokenizer_vocab_size
-    
-    # ── Strategy with distributed optimizer (ZeRO-1) ─────────────────
-    # use_distributed_optimizer: shards optimizer states across DP ranks (ZeRO-1)
-    # overlap disabled: with DP-only (TP=1, PP=1) and GA=8, the single
-    # allreduce per step has minimal overlap opportunity.  Disabling saves
-    # ~24 GB/GPU and keeps memory comparable to the HF Megatron baseline.
+
     try:
         from megatron.core.distributed import DistributedDataParallelConfig
         ddp_config = DistributedDataParallelConfig(
@@ -303,16 +291,14 @@ def train_model(model_name: str):
         pipeline_model_parallel_size=PP,
         context_parallel_size=1,
         virtual_pipeline_model_parallel_size=None,
-        sequence_parallel=(TP > 1),  # activates when tensor parallel > 1
+        sequence_parallel=(TP > 1),
         ddp=ddp_config,
     )
-    
-    # Dataset paths: separate train and test files
-    dataset_name = DATASET  # "bc" or "c4"
+
+    dataset_name = DATASET
     train_dataset_path = str(DATA_DIR / f"{dataset_name}-train")
     test_dataset_path = str(DATA_DIR / f"{dataset_name}-test")
-    
-    # Validate train dataset exists
+
     train_idx = train_dataset_path + ".idx"
     train_bin = train_dataset_path + ".bin"
     if not os.path.exists(train_idx) or not os.path.exists(train_bin):
@@ -322,8 +308,7 @@ def train_model(model_name: str):
             f"{train_bin if not os.path.exists(train_bin) else ''}\n"
             f"  Run data preparation: python prepare/encode_data.py"
         )
-    
-    # Validate test dataset exists
+
     test_idx = test_dataset_path + ".idx"
     test_bin = test_dataset_path + ".bin"
     if not os.path.exists(test_idx) or not os.path.exists(test_bin):
@@ -333,7 +318,7 @@ def train_model(model_name: str):
             f"{test_bin if not os.path.exists(test_bin) else ''}\n"
             f"  Run data preparation: python prepare/encode_data.py"
         )
-    
+
     logger.info(f"Train dataset: {train_dataset_path}")
     logger.info(f"Test dataset:  {test_dataset_path}")
     logger.info("Using separate train/test files (validation uses test dataset)")
@@ -358,14 +343,13 @@ def train_model(model_name: str):
         except Exception as e:
             logger.error("Dataset verification errored: %s", e)
             sys.exit(1)
-    
-    # Use explicit paths dict: train for training, test for both validation and test
+
     data_paths = {
         "train": [train_dataset_path],
         "validation": [test_dataset_path],
         "test": [test_dataset_path],
     }
-    
+
     from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
     recipe.data = PreTrainingDataModule(
         paths=data_paths,
@@ -373,9 +357,7 @@ def train_model(model_name: str):
         micro_batch_size=MBS,
         global_batch_size=GBS,
     )
-    
-    # Extra un-timed warmup iterations so CUDA kernels are pre-compiled
-    # before the BenchmarkCallback starts recording step times.
+
     _WARMUP_ITERS = 0
     recipe.trainer.max_steps = TRAIN_ITERS + _WARMUP_ITERS
     recipe.optim.config.lr = LR
@@ -383,45 +365,37 @@ def train_model(model_name: str):
     recipe.optim.config.weight_decay = WEIGHT_DECAY
     recipe.optim.config.adam_beta1 = BETA1
     recipe.optim.config.adam_beta2 = BETA2
-    # Compensate for _WARMUP_ITERS: NeMo's Lightning trainer advances the
-    # LR scheduler during the un-timed CUDA warmup iterations, so we add
-    # _WARMUP_ITERS to warmup_steps so the *recorded* warmup (after the
-    # un-timed phase) aligns with the Megatron script's schedule.
     recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS + _WARMUP_ITERS
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS + _WARMUP_ITERS
-    recipe.optim.lr_scheduler.min_lr = 0.0  # Ensure LR decays to zero like Primus
-    
+    recipe.optim.lr_scheduler.min_lr = 0.0
+
     if FP8_HYBRID:
         recipe.model.config.fp8 = "hybrid"
     else:
         recipe.model.config.fp8 = None
     recipe.model.config.fp8_param = FP8_PARAM
-    # NOTE: activation recompute disabled — Llama-8B / Qwen-7B fit in
-    # H100 80 GB with ZeRO-1 without it, and selective recompute costs
-    # ~30-40 % throughput by re-running forward ops during backward.
     recipe.model.config.recompute_granularity = None
     recipe.model.config.recompute_method = None
 
-    # ── Megatron-Core kernel fusions for throughput ────────────────────
-    recipe.model.config.bias_activation_fusion = True    # fuse bias + SiLU/GeLU
-    recipe.model.config.bias_dropout_fusion = True       # fuse bias + dropout
-    recipe.model.config.masked_softmax_fusion = True     # fuse attention mask + softmax
-    recipe.model.config.persist_layer_norm = True        # persistent LayerNorm kernel
-    recipe.model.config.apply_rope_fusion = True         # fused RoPE kernel
-    recipe.model.config.cross_entropy_loss_fusion = True  # fused cross-entropy kernel
-    recipe.model.config.gradient_accumulation_fusion = False  # requires APEX fused CUDA ext
-    
+    recipe.model.config.bias_activation_fusion = True
+    recipe.model.config.bias_dropout_fusion = True
+    recipe.model.config.masked_softmax_fusion = True
+    recipe.model.config.persist_layer_norm = True
+    recipe.model.config.apply_rope_fusion = True
+    recipe.model.config.cross_entropy_loss_fusion = True
+    recipe.model.config.gradient_accumulation_fusion = False
+
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
     recipe.resume = None
     recipe.log.tensorboard = None
     recipe.log.wandb = None
-    recipe.trainer.val_check_interval = TRAIN_ITERS + _WARMUP_ITERS + 1  # effectively disable validation
+    recipe.trainer.val_check_interval = TRAIN_ITERS + _WARMUP_ITERS + 1
     recipe.trainer.check_val_every_n_epoch = None
     recipe.trainer.limit_val_batches = 0
     recipe.trainer.num_sanity_val_steps = 0
-    
+
     benchmark_callback = BenchmarkCallback(
         output_dir=str(OUTPUT_DIR),
         platform="nvd",
@@ -436,12 +410,11 @@ def train_model(model_name: str):
         recipe.trainer.callbacks = []
     recipe.trainer.callbacks.append(benchmark_callback)
     recipe.trainer.callbacks.append(gc_callback)
-    
-    # Add Kineto profiler callback if profiling is enabled
+
     if PROFILING:
         profiler_callback = KinetoProfilerCallback(OUTPUT_DIR, model_name)
         recipe.trainer.callbacks.append(profiler_callback)
-    
+
     logger.info(f"Configuration:")
     logger.info(f"  Sequence length: {SEQ_LEN}")
     logger.info(f"  Micro batch size: {MBS}")
@@ -455,11 +428,11 @@ def train_model(model_name: str):
     logger.info(f"  TP: {TP}, PP: {PP}, DP: {DP}")
     logger.info(f"  Profiling: {PROFILING}")
     logger.info(f"  Verify data: {VERIFY_DATA} (samples={VERIFY_SAMPLES}, full_scan={VERIFY_FULL_SCAN})")
-    
+
     logger.info(f"Starting {config['display_name']} training...")
-    
+
     run.run(recipe, direct=True)
-    
+
     logger.info(f"{config['display_name']} training completed!")
 
 

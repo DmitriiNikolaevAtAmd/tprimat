@@ -39,7 +39,6 @@ WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
 TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 500))
 GA = int(os.environ.get("GA", 8))
 
-# Parallelism
 TP = int(os.environ.get("TP", 1))
 PP = int(os.environ.get("PP", 1))
 DP = int(os.environ.get("DP", 8))
@@ -58,12 +57,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Data pipeline
-# ──────────────────────────────────────────────────────────────────────
-
 class _TokenDataset(torch.utils.data.Dataset):
-    """Map-style dataset wrapping IndexedDataset for use with DataLoader."""
 
     def __init__(self, data_path: str, seq_length: int, pad_id: int = 0):
         from lib.dataset import IndexedDataset
@@ -85,7 +79,6 @@ class _TokenDataset(torch.utils.data.Dataset):
 
 
 def _cycle(loader):
-    """Yield batches forever, advancing the DistributedSampler epoch."""
     ep = 0
     while True:
         if hasattr(loader, "sampler") and hasattr(loader.sampler, "set_epoch"):
@@ -93,10 +86,6 @@ def _cycle(loader):
         yield from loader
         ep += 1
 
-
-# ──────────────────────────────────────────────────────────────────────
-# Helpers
-# ──────────────────────────────────────────────────────────────────────
 
 def set_seed(seed: int):
     torch.manual_seed(seed)
@@ -137,13 +126,11 @@ def train_model(model_name: str):
 
     set_seed(SEED)
 
-    # ── Performance knobs ──────────────────────────────────────────────
     torch.set_float32_matmul_precision('high')
     torch.backends.cudnn.benchmark = True
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
-    # ── FIX: derive grad_accum from GBS (same fix as NVIDIA script) ───
     grad_accum = max(1, GBS // (MBS * world_size))
     global_batch_size = MBS * grad_accum * world_size
     logger.info(f"GBS={GBS} → grad_accum={grad_accum}, effective GBS={global_batch_size}")
@@ -163,7 +150,6 @@ def train_model(model_name: str):
 
         _device = torch.device(f"cuda:{local_rank}" if world_size > 1 else "cuda")
 
-        # ── Attention: try sdpa first, then eager fallback
         attn_impl_used = "sdpa"
         try:
             with torch.device(_device):
@@ -188,14 +174,6 @@ def train_model(model_name: str):
                 logger.info("Using default attention implementation")
         model.config.use_cache = False
 
-        # NOTE: gradient checkpointing intentionally disabled for fair
-        # benchmarking — it halves activation memory but costs ~30-40 %
-        # throughput.  Disabled on NVIDIA side as well.
-
-        # ── DDP ───────────────────────────────────────────────────────
-        # NOTE: static_graph=True is incompatible with model.no_sync()
-        # used during gradient accumulation (the autograd graph differs
-        # between synced and no-sync micro-steps).
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP
@@ -209,7 +187,6 @@ def train_model(model_name: str):
             logger.info("Wrapped model with DDP (bucket_view)")
             is_ddp = True
 
-        # ── Data ──────────────────────────────────────────────────────
         dataset_name = os.environ.get("DATASET", "bc")
         dataset_path = str(DATA_DIR / f"{dataset_name}-train")
 
@@ -241,9 +218,6 @@ def train_model(model_name: str):
         )
         data_iter = iter(_cycle(loader))
 
-        # ── Optimizer ─────────────────────────────────────────────────
-        # Use ZeRO-1 for multi-GPU to match NVIDIA script — shards
-        # optimizer states across DP ranks, reducing per-GPU memory.
         if world_size > 1:
             from torch.distributed.optim import ZeroRedundancyOptimizer
             optimizer = ZeroRedundancyOptimizer(
@@ -269,9 +243,6 @@ def train_model(model_name: str):
 
         import math
         from torch.optim.lr_scheduler import LambdaLR
-        # Custom scheduler matching NeMo's CosineAnnealing warmup formula:
-        #   warmup:  lr = peak * (step + 2) / (warmup_steps + 1)
-        #   decay:   cosine from peak to min_lr
         _WARMUP_ITERS = 0
         _total = TRAIN_ITERS + _WARMUP_ITERS
         _warmup = WARMUP_STEPS + _WARMUP_ITERS
@@ -286,8 +257,8 @@ def train_model(model_name: str):
         step_times = []
         loss_values = []
         learning_rates = []
+        memory_allocated = []
 
-        # ── CUDA warmup (un-timed iterations to pre-compile kernels) ────
         logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
         for _w in range(_WARMUP_ITERS):
             optimizer.zero_grad(set_to_none=True)
@@ -312,7 +283,6 @@ def train_model(model_name: str):
 
         training_start = time.time()
 
-        # Disable GC during training to avoid random pauses
         gc.disable()
         try:
             for step in range(TRAIN_ITERS):
@@ -324,7 +294,6 @@ def train_model(model_name: str):
                     input_ids = next(data_iter).to(_device, non_blocking=True)
                     labels = input_ids
 
-                    # Skip allreduce on intermediate micro-steps
                     sync_ctx = nullcontext()
                     if is_ddp and micro_step < (grad_accum - 1):
                         sync_ctx = model.no_sync()
@@ -335,10 +304,8 @@ def train_model(model_name: str):
                             loss = outputs.loss / grad_accum
                         loss.backward()
                     step_losses.append(loss.item() * grad_accum)
-                    # Free activation memory immediately to avoid OOM on next micro-step
                     del outputs, loss, input_ids, labels
 
-                # Record LR used for THIS step (before scheduler advances)
                 current_lr = optimizer.param_groups[0]['lr']
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
@@ -353,6 +320,9 @@ def train_model(model_name: str):
                 step_times.append(step_time)
                 loss_values.append(avg_loss)
                 learning_rates.append(current_lr)
+
+                if torch.cuda.is_available():
+                    memory_allocated.append(torch.cuda.memory_allocated() / 1e9)
 
                 if rank == 0:
                     logger.info(f"Step {step + 1}/{TRAIN_ITERS} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
@@ -399,28 +369,41 @@ def train_model(model_name: str):
                 "learning_rates": learning_rates,
             }
 
-            # Merge memory log into results
-            mem_log = os.environ.get("MEMORY_LOG")
-            if mem_log and os.path.exists(mem_log):
-                try:
-                    from evaluate.extract_metrics import parse_memory_log
-                    num_steps = len(step_times)
-                    mem_data = parse_memory_log(mem_log, num_steps=num_steps)
-                    if mem_data:
-                        results["memory_metrics"] = {
-                            "peak_memory_allocated_gb": mem_data["peak_memory_gb"],
-                            "avg_memory_allocated_gb": mem_data["avg_memory_gb"],
-                            "min_memory_allocated_gb": mem_data["min_memory_gb"],
-                        }
-                        results["memory_values"] = mem_data["memory_values"]
-                        logger.info(
-                            "Memory: peak %.2f GB, avg %.2f GB (%d samples)",
-                            mem_data["peak_memory_gb"],
-                            mem_data["avg_memory_gb"],
-                            mem_data.get("raw_samples", len(mem_data["memory_values"])),
-                        )
-                except Exception as e:
-                    logger.warning("Could not merge memory log: %s", e)
+            if memory_allocated:
+                results["memory_metrics"] = {
+                    "peak_memory_allocated_gb": round(max(memory_allocated), 2),
+                    "avg_memory_allocated_gb": round(sum(memory_allocated) / len(memory_allocated), 2),
+                    "min_memory_allocated_gb": round(min(memory_allocated), 2),
+                }
+                results["memory_values"] = [round(v, 2) for v in memory_allocated]
+                logger.info(
+                    "Memory (allocated): peak %.2f GB, avg %.2f GB (%d samples)",
+                    results["memory_metrics"]["peak_memory_allocated_gb"],
+                    results["memory_metrics"]["avg_memory_allocated_gb"],
+                    len(memory_allocated),
+                )
+            else:
+                mem_log = os.environ.get("MEMORY_LOG")
+                if mem_log and os.path.exists(mem_log):
+                    try:
+                        from evaluate.extract_metrics import parse_memory_log
+                        num_steps = len(step_times)
+                        mem_data = parse_memory_log(mem_log, num_steps=num_steps)
+                        if mem_data:
+                            results["memory_metrics"] = {
+                                "peak_memory_allocated_gb": mem_data["peak_memory_gb"],
+                                "avg_memory_allocated_gb": mem_data["avg_memory_gb"],
+                                "min_memory_allocated_gb": mem_data["min_memory_gb"],
+                            }
+                            results["memory_values"] = mem_data["memory_values"]
+                            logger.info(
+                                "Memory (smi fallback): peak %.2f GB, avg %.2f GB (%d samples)",
+                                mem_data["peak_memory_gb"],
+                                mem_data["avg_memory_gb"],
+                                mem_data.get("raw_samples", len(mem_data["memory_values"])),
+                            )
+                    except Exception as e:
+                        logger.warning("Could not merge memory log: %s", e)
 
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             output_file = OUTPUT_DIR / f"train_amd_mega_{model_name}_{dataset_name}.json"
