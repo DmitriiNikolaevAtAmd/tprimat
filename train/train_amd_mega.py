@@ -254,7 +254,16 @@ def train_model(model_name: str):
             )
             logger.info("Using standard AdamW optimizer")
 
-        scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=TRAIN_ITERS)
+        # Include _WARMUP_ITERS in the schedule so the LR curve aligns with
+        # NeMo (where Lightning advances the scheduler during CUDA warmup).
+        # scheduler.step() is called during warmup below, consuming the extra
+        # steps before timed training begins.
+        _WARMUP_ITERS = 3
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=WARMUP_STEPS + _WARMUP_ITERS,
+            num_training_steps=TRAIN_ITERS + _WARMUP_ITERS,
+        )
 
         model.train()
         step_times = []
@@ -262,7 +271,6 @@ def train_model(model_name: str):
         learning_rates = []
 
         # ── CUDA warmup (un-timed iterations to pre-compile kernels) ────
-        _WARMUP_ITERS = 3
         logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
         for _w in range(_WARMUP_ITERS):
             optimizer.zero_grad(set_to_none=True)
@@ -280,6 +288,7 @@ def train_model(model_name: str):
                 del outputs, loss, input_ids, labels
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
             optimizer.step()
+            scheduler.step()
         optimizer.zero_grad(set_to_none=True)
         torch.cuda.synchronize()
         logger.info("CUDA warmup complete, starting timed training...")

@@ -188,29 +188,30 @@ def train_model(model_name: str, model_config: dict):
 
         _device = torch.device(f'cuda:{local_rank}') if world_size > 1 else torch.device('cuda')
 
-        # ── Attention: prefer flash_attention_2 (faster fused kernels on
-        #    NVIDIA), fall back to sdpa, then default.
-        attn_impl_used = "flash_attention_2"
+        # ── Attention: use sdpa (matched with AMD script for fair
+        #    benchmarking; flash_attention_2 OOMs on Llama-8B without
+        #    ZeRO due to HF wrapper peak-memory overhead).
+        attn_impl_used = "sdpa"
         try:
             with torch.device(_device):
                 model = AutoModelForCausalLM.from_config(
                     config,
                     torch_dtype=torch_dtype,
-                    attn_implementation="flash_attention_2",
+                    attn_implementation="sdpa",
                 )
-            logger.info("Using attention implementation: flash_attention_2")
+            logger.info("Using attention implementation: sdpa")
         except Exception:
             try:
                 with torch.device(_device):
                     model = AutoModelForCausalLM.from_config(
                         config,
                         torch_dtype=torch_dtype,
-                        attn_implementation="sdpa",
+                        attn_implementation="eager",
                     )
-                attn_impl_used = "sdpa"
-                logger.info("flash_attention_2 not available, falling back to sdpa")
+                attn_impl_used = "eager"
+                logger.info("sdpa not available, falling back to eager")
             except Exception as attn_err:
-                logger.warning(f"sdpa not available ({attn_err}), falling back to default")
+                logger.warning(f"eager not available ({attn_err}), falling back to default")
                 with torch.device(_device):
                     model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
                 attn_impl_used = "default"
@@ -303,7 +304,16 @@ def train_model(model_name: str, model_config: dict):
             logger.info("Using standard AdamW optimizer")
 
         from transformers import get_cosine_schedule_with_warmup
-        scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=WARMUP_STEPS, num_training_steps=num_steps)
+        # Include _WARMUP_ITERS in the schedule so the LR curve aligns with
+        # NeMo (where Lightning advances the scheduler during CUDA warmup).
+        # scheduler.step() is called during warmup below, consuming the extra
+        # steps before timed training begins.
+        _WARMUP_ITERS = 3
+        scheduler = get_cosine_schedule_with_warmup(
+            optimizer,
+            num_warmup_steps=WARMUP_STEPS + _WARMUP_ITERS,
+            num_training_steps=num_steps + _WARMUP_ITERS,
+        )
 
         logger.info(f"Configuration:")
         logger.info(f"  Sequence length: {SEQ_LEN}")
@@ -312,7 +322,7 @@ def train_model(model_name: str, model_config: dict):
         logger.info(f"  Gradient accumulation: {grad_accum}")
         logger.info(f"  Training steps: {num_steps}")
         logger.info(f"  Learning rate: {LR}")
-        logger.info(f"  LR scheduler: Cosine with {WARMUP_STEPS} warmup steps")
+        logger.info(f"  LR scheduler: Cosine with {WARMUP_STEPS}+{_WARMUP_ITERS} warmup steps")
         logger.info(f"  Precision: {PRECISION}")
         logger.info(f"  FP8 Hybrid: {FP8_HYBRID}")
         logger.info(f"  FP8 Param: {FP8_PARAM}")
@@ -343,7 +353,6 @@ def train_model(model_name: str, model_config: dict):
         # compile all kernels, warms the cuDNN autotuner, and allocates
         # memory pools.  This eliminates the large initial spike visible
         # in the first ~5 timed steps.
-        _WARMUP_ITERS = 3
         logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
         for _w in range(_WARMUP_ITERS):
             optimizer.zero_grad(set_to_none=True)
@@ -361,8 +370,7 @@ def train_model(model_name: str, model_config: dict):
                 del outputs, loss, input_ids, labels
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
             optimizer.step()
-            # NOTE: scheduler.step() intentionally NOT called during warmup
-            # so the LR schedule starts cleanly at the first timed step.
+            scheduler.step()
         optimizer.zero_grad(set_to_none=True)
         torch.cuda.synchronize()
         # NOTE: do NOT call empty_cache() here — it flushes the CUDA memory
