@@ -409,7 +409,7 @@ def train_model(model_name: str):
     recipe.model.config.persist_layer_norm = True        # persistent LayerNorm kernel
     recipe.model.config.apply_rope_fusion = True         # fused RoPE kernel
     recipe.model.config.cross_entropy_loss_fusion = True  # fused cross-entropy kernel
-    recipe.model.config.gradient_accumulation_fusion = True  # fuse grad accum into backward
+    recipe.model.config.gradient_accumulation_fusion = False  # requires APEX fused CUDA ext
     
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
