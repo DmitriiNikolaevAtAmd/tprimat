@@ -141,6 +141,8 @@ config['data_path'] = data_prefix
 config['tokenizer_type'] = 'HuggingFaceTokenizer'
 config['tokenizer_model'] = tokenizer_model
 config['split'] = '100,0,0'
+config['eval_iters'] = 0
+config['eval_interval'] = train_iters + 1  # effectively disable validation
 
 # Logging: enable per-step memory tracking
 config['log_interval'] = 1  # Log every step for memory tracking

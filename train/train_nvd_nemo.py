@@ -407,8 +407,9 @@ def train_model(model_name: str):
     recipe.resume = None
     recipe.log.tensorboard = None
     recipe.log.wandb = None
-    recipe.trainer.val_check_interval = None
+    recipe.trainer.val_check_interval = TRAIN_ITERS + _WARMUP_ITERS + 1  # effectively disable validation
     recipe.trainer.check_val_every_n_epoch = None
+    recipe.trainer.limit_val_batches = 0
     recipe.trainer.num_sanity_val_steps = 0
     
     benchmark_callback = BenchmarkCallback(
