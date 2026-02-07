@@ -201,8 +201,6 @@ bash "$TRAIN_SCRIPT" \
     --tokenizer_type HuggingFaceTokenizer \
     --tokenizer_model "$TOKENIZER_MODEL" \
     --split 100,0,0 \
-    --log-throughput \
-    --log-memory-to-tensorboard \
     >> "$LOG_FILE" 2>&1
 
 kill $TAIL_PID 2>/dev/null || true

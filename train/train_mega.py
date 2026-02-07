@@ -340,6 +340,11 @@ def train_model(model_name: str):
     recipe.model.config.recompute_method = None
     recipe.model.config.recompute_num_layers = None
 
+    # Unfused attention backend for fair cross-platform comparison with AMD/Primus
+    for var in ("NVTE_FUSED_ATTN", "NVTE_FLASH_ATTN", "NVTE_UNFUSED_ATTN"):
+        os.environ.pop(var, None)
+    recipe.model.config.attention_backend = "unfused"
+
     # Fusions disabled for fair cross-platform comparison with AMD/Primus
     recipe.model.config.bias_activation_fusion = False
     recipe.model.config.bias_dropout_fusion = False
