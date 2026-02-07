@@ -151,7 +151,7 @@ def train_model(model_name: str):
     torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
 
     try:
-        from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, get_cosine_schedule_with_warmup
+        from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 
         hf_model = MODELS[model_name]
         tokenizer = AutoTokenizer.from_pretrained(hf_model, trust_remote_code=True)
@@ -266,16 +266,20 @@ def train_model(model_name: str):
                 )
                 logger.info("Using standard AdamW optimizer")
 
-        # Include _WARMUP_ITERS in the schedule so the LR curve aligns with
-        # NeMo (where Lightning advances the scheduler during CUDA warmup).
-        # scheduler.step() is called during warmup below, consuming the extra
-        # steps before timed training begins.
+        import math
+        from torch.optim.lr_scheduler import LambdaLR
+        # Custom scheduler matching NeMo's CosineAnnealing warmup formula:
+        #   warmup:  lr = peak * (step + 2) / (warmup_steps + 1)
+        #   decay:   cosine from peak to min_lr
         _WARMUP_ITERS = 0
-        scheduler = get_cosine_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=WARMUP_STEPS + _WARMUP_ITERS,
-            num_training_steps=TRAIN_ITERS + _WARMUP_ITERS,
-        )
+        _total = TRAIN_ITERS + _WARMUP_ITERS
+        _warmup = WARMUP_STEPS + _WARMUP_ITERS
+        def _nemo_cosine_lr(step):
+            if step < _warmup:
+                return (step + 2) / (_warmup + 1)
+            progress = (step - _warmup + 1) / max(1, _total - _warmup)
+            return 0.5 * (1.0 + math.cos(math.pi * progress))
+        scheduler = LambdaLR(optimizer, _nemo_cosine_lr)
 
         model.train()
         step_times = []

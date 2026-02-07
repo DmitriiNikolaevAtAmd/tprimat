@@ -280,19 +280,20 @@ def train_model(model_name: str):
     # Ensure model vocab matches tokenizer to avoid out-of-bounds embedding ids.
     recipe.model.config.vocab_size = tokenizer_vocab_size
     
-    # ── Strategy with communication overlap ───────────────────────────
-    # overlap_grad_reduce: overlaps gradient allreduce with backward pass
+    # ── Strategy with distributed optimizer (ZeRO-1) ─────────────────
     # use_distributed_optimizer: shards optimizer states across DP ranks (ZeRO-1)
-    # overlap_param_gather: overlaps param allgather with forward (requires dist opt)
+    # overlap disabled: with DP-only (TP=1, PP=1) and GA=8, the single
+    # allreduce per step has minimal overlap opportunity.  Disabling saves
+    # ~24 GB/GPU and keeps memory comparable to the HF Megatron baseline.
     try:
         from megatron.core.distributed import DistributedDataParallelConfig
         ddp_config = DistributedDataParallelConfig(
             grad_reduce_in_fp32=False,
-            overlap_grad_reduce=True,
-            overlap_param_gather=True,
+            overlap_grad_reduce=False,
+            overlap_param_gather=False,
             use_distributed_optimizer=True,
         )
-        logger.info("Using optimized DDP config (overlap_grad_reduce, distributed_optimizer)")
+        logger.info("Using DDP config (distributed_optimizer, no overlap)")
     except ImportError:
         ddp_config = "megatron"
         logger.info("Megatron DDP config not available, using default")
