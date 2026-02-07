@@ -384,7 +384,7 @@ def train_model(model_name: str):
             mem_log = os.environ.get("MEMORY_LOG")
             if mem_log and os.path.exists(mem_log):
                 try:
-                    from evaluate.extract_prim_metrics import parse_memory_log
+                    from evaluate.extract_metrics import parse_memory_log
                     num_steps = len(step_times)
                     mem_data = parse_memory_log(mem_log, num_steps=num_steps)
                     if mem_data:
