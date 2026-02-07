@@ -21,4 +21,4 @@ docker run --rm \
     -v "$(pwd)":/workspace/code \
     -v /data:/data \
     -w /workspace/code \
-    "$IMAGE" bash scripts/purge.sh "$@"
+    "$IMAGE" bash scripts/clean.sh "$@"

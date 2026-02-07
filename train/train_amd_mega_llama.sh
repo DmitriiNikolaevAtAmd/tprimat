@@ -217,7 +217,7 @@ if [ -f "$MEMORY_LOG" ]; then
     MEMORY_ARG="--memory-log $MEMORY_LOG"
 fi
 
-python3 evaluate/extract_metrics.py \
+python3 evaluate/extract.py \
     --log-file "$TPRIMAT_PATH/output/training_main_mega_llama_${DATASET}.log" \
     --model-name "llama" \
     --dataset "$DATASET" \

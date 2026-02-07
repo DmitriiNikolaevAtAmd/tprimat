@@ -305,7 +305,7 @@ def train_model(model_name: str):
             f"Training dataset not found at {train_dataset_path}\n"
             f"  Missing: {train_idx if not os.path.exists(train_idx) else ''} "
             f"{train_bin if not os.path.exists(train_bin) else ''}\n"
-            f"  Run data preparation: python prepare/encode_data.py"
+            f"  Run data preparation: python prepare/encode.py"
         )
 
     logger.info(f"Train dataset: {train_dataset_path}")

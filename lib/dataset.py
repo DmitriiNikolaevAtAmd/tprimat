@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Indexed Dataset Loader for datasets created by prepare/encode_data.py
+Indexed Dataset Loader for datasets created by prepare/encode.py
 Format: MMIDIDX header + sequence_count + document_count + seq_lengths + seq_pointers + doc_indices
 """
 import struct
@@ -12,7 +12,7 @@ from pathlib import Path
 class IndexedDataset:
     """
     Loader for indexed datasets (binary format with .bin and .idx files)
-    Compatible with datasets created by prepare/encode_data.py
+    Compatible with datasets created by prepare/encode.py
     """
     
     def __init__(self, path):
@@ -39,11 +39,11 @@ class IndexedDataset:
             dtype_code = struct.unpack('<B', f.read(1))[0]
             self.dtype = self._code_to_dtype(dtype_code)
             
-            # Read counts (order matches encode_data.py: sequence_count, document_count)
+            # Read counts (order matches encode.py: sequence_count, document_count)
             self.num_seqs = struct.unpack('<Q', f.read(8))[0]
             self.num_docs = struct.unpack('<Q', f.read(8))[0]
             
-            # Read arrays in order written by encode_data.py:
+            # Read arrays in order written by encode.py:
             # 1. sequence_lengths (int32 array of length num_seqs)
             # 2. sequence_pointers (int64 array of length num_seqs)
             # 3. document_indices (int64 array of length num_docs)

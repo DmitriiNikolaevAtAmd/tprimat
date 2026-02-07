@@ -479,7 +479,7 @@ class BenchmarkCallback(Callback):
         total_time = time.time() - self.train_start_time
         
         if len(self.step_times) > 1:
-            # Skip first step (JIT/compilation warmup), matching extract_metrics.py
+            # Skip first step (JIT/compilation warmup), matching extract.py
             step_times_no_warmup = self.step_times[1:]
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
