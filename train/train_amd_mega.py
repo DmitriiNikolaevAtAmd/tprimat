@@ -112,7 +112,7 @@ def get_gpu_info(world_size: int) -> dict:
     device_props = torch.cuda.get_device_properties(0)
     device_name = torch.cuda.get_device_name(0)
 
-    gpu_cores = 14592 if "mi300" in device_name.lower() else 6912
+    gpu_cores = 19456 if "mi300" in device_name.lower() else 6912
 
     return {
         "device_count": world_size,
@@ -241,18 +241,30 @@ def train_model(model_name: str):
         data_iter = iter(_cycle(loader))
 
         # ── Optimizer ─────────────────────────────────────────────────
-        try:
-            optimizer = torch.optim.AdamW(
-                model.parameters(), lr=LR, betas=(BETA1, BETA2),
-                eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
-            )
-            logger.info("Using fused AdamW optimizer")
-        except Exception:
-            optimizer = torch.optim.AdamW(
-                model.parameters(), lr=LR, betas=(BETA1, BETA2),
+        # Use ZeRO-1 for multi-GPU to match NVIDIA script — shards
+        # optimizer states across DP ranks, reducing per-GPU memory.
+        if world_size > 1:
+            from torch.distributed.optim import ZeroRedundancyOptimizer
+            optimizer = ZeroRedundancyOptimizer(
+                model.parameters(),
+                optimizer_class=torch.optim.AdamW,
+                lr=LR, betas=(BETA1, BETA2),
                 eps=1e-8, weight_decay=WEIGHT_DECAY,
             )
-            logger.info("Using standard AdamW optimizer")
+            logger.info("Using ZeroRedundancyOptimizer (sharded AdamW, ZeRO-1)")
+        else:
+            try:
+                optimizer = torch.optim.AdamW(
+                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                    eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
+                )
+                logger.info("Using fused AdamW optimizer")
+            except Exception:
+                optimizer = torch.optim.AdamW(
+                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
+                    eps=1e-8, weight_decay=WEIGHT_DECAY,
+                )
+                logger.info("Using standard AdamW optimizer")
 
         # Include _WARMUP_ITERS in the schedule so the LR curve aligns with
         # NeMo (where Lightning advances the scheduler during CUDA warmup).

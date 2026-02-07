@@ -239,18 +239,10 @@ def train_model(model_name: str, model_config: dict):
             logger.info(f"Wrapped model with DDP (bucket_view)")
             is_ddp = True
 
-        # ── torch.compile ─────────────────────────────────────────────
-        # Single-GPU: use reduce-overhead (CUDA-graph) mode.
-        # DDP: HuggingFace flash-attention uses .item() which forces
-        # graph breaks and recompilation storms under torch.compile.
-        if not is_ddp:
-            try:
-                model = torch.compile(model, mode="reduce-overhead")
-                logger.info("Enabled torch.compile (reduce-overhead)")
-            except Exception as compile_err:
-                logger.warning(f"torch.compile failed ({compile_err}), running eagerly")
-        else:
-            logger.info("Skipping torch.compile (graph breaks with DDP + HF attention)")
+        # ── torch.compile disabled for fair benchmarking vs AMD ──────
+        # AMD/ROCm does not use torch.compile, so we disable it here
+        # to keep the comparison apples-to-apples.
+        logger.info("torch.compile disabled for fair benchmarking")
 
         # ── Data ──────────────────────────────────────────────────────
         dataset_path = str(DATA_DIR / f"{DATASET}-train")

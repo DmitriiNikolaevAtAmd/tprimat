@@ -43,9 +43,9 @@ export TORCH_NCCL_AVOID_RECORD_STREAMS=1  # reduces NCCL memory fragmentation
 export NVTE_FUSED_ATTN=1
 export NVTE_FLASH_ATTN=1
 
-# FP8 hybrid (NVIDIA H100+)
-export FP8_HYBRID=${FP8_HYBRID:-true}
-export FP8_PARAM=${FP8_PARAM:-true}
+# FP8 hybrid (NVIDIA H100+) — disabled for fair benchmarking vs AMD
+export FP8_HYBRID=${FP8_HYBRID:-false}
+export FP8_PARAM=${FP8_PARAM:-false}
 
 # Data paths - uses DATASET from config.env (bc or c4)
 DATASET="${DATASET:-bc}"

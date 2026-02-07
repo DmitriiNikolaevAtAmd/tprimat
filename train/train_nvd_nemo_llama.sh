@@ -42,9 +42,9 @@ export TORCH_NCCL_AVOID_RECORD_STREAMS=1  # reduces NCCL memory fragmentation
 export NVTE_FUSED_ATTN=1
 export NVTE_FLASH_ATTN=1
 
-# FP8 hybrid (NVIDIA H100+)
-export FP8_HYBRID=${FP8_HYBRID:-true}
-export FP8_PARAM=${FP8_PARAM:-true}
+# FP8 disabled for fair BF16-vs-BF16 benchmarking
+export FP8_HYBRID=${FP8_HYBRID:-false}
+export FP8_PARAM=${FP8_PARAM:-false}
 
 # Profiling (from config.env)
 export PROFILING=${PROFILING:-false}
