@@ -174,6 +174,10 @@ def train_model(model_name: str):
                 logger.info("Using default attention implementation")
         model.config.use_cache = False
 
+        if hasattr(model, "gradient_checkpointing_enable"):
+            model.gradient_checkpointing_enable()
+            logger.info("Gradient checkpointing enabled")
+
         is_ddp = False
         if world_size > 1:
             from torch.nn.parallel import DistributedDataParallel as DDP

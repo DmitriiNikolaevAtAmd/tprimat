@@ -10,6 +10,7 @@ sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 import torch
+import torch.profiler
 import random
 import numpy as np
 import logging
@@ -43,6 +44,12 @@ PP = int(os.environ.get("PP", 1))
 DP = int(os.environ.get("DP", 4))
 DATASET = os.environ.get("DATASET", "bc")
 
+PROFILING = os.environ.get("PROFILING", "false").lower() == "true"
+PROFILE_WAIT = int(os.environ.get("PROFILE_WAIT", 1))
+PROFILE_WARMUP = int(os.environ.get("PROFILE_WARMUP", 1))
+PROFILE_ACTIVE = int(os.environ.get("PROFILE_ACTIVE", 3))
+PROFILE_REPEAT = int(os.environ.get("PROFILE_REPEAT", 1))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -62,6 +69,74 @@ class GCCallback(Callback):
         gc.enable()
         gc.collect()
         logger.info("GC re-enabled after training")
+
+
+class KinetoProfilerCallback(Callback):
+
+    def __init__(self, output_dir: Path, model_name: str):
+        self.output_dir = output_dir
+        self.model_name = model_name
+        self.profiler = None
+        self.profile_dir = output_dir / "profiles"
+
+    def on_train_start(self, trainer, pl_module):
+        if not PROFILING:
+            return
+
+        self.profile_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Kineto GPU profiling enabled")
+        logger.info(f"  Profile output: {self.profile_dir}")
+        logger.info(f"  Schedule: wait={PROFILE_WAIT}, warmup={PROFILE_WARMUP}, "
+                    f"active={PROFILE_ACTIVE}, repeat={PROFILE_REPEAT}")
+
+        def trace_handler(prof):
+            rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+            trace_file = self.profile_dir / f"nvd_mega_{self.model_name}_rank{rank}.json"
+            logger.info(f"Exporting trace to {trace_file}")
+            prof.export_chrome_trace(str(trace_file))
+
+            stacks_file = self.profile_dir / f"nvd_mega_{self.model_name}_rank{rank}_stacks.txt"
+            try:
+                prof.export_stacks(str(stacks_file), "self_cuda_time_total")
+                logger.info(f"Exported CUDA stacks to {stacks_file}")
+            except Exception as e:
+                logger.warning(f"Could not export stacks: {e}")
+
+            if trainer.is_global_zero:
+                logger.info("\n" + prof.key_averages().table(
+                    sort_by="cuda_time_total", row_limit=20
+                ))
+
+        self.profiler = torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            schedule=torch.profiler.schedule(
+                wait=PROFILE_WAIT,
+                warmup=PROFILE_WARMUP,
+                active=PROFILE_ACTIVE,
+                repeat=PROFILE_REPEAT,
+            ),
+            on_trace_ready=trace_handler,
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+            with_flops=True,
+            with_modules=True,
+        )
+        self.profiler.__enter__()
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        if self.profiler is not None:
+            self.profiler.step()
+
+    def on_train_end(self, trainer, pl_module):
+        if self.profiler is not None:
+            self.profiler.__exit__(None, None, None)
+            self.profiler = None
+            logger.info(f"Kineto profiling completed. Traces saved to {self.profile_dir}")
 
 
 def load_env_file(env_path: str) -> None:
@@ -312,6 +387,9 @@ def train_model(model_name: str):
         recipe.trainer.callbacks = []
     recipe.trainer.callbacks.append(benchmark_callback)
     recipe.trainer.callbacks.append(gc_callback)
+    if PROFILING:
+        profiler_callback = KinetoProfilerCallback(OUTPUT_DIR, model_name)
+        recipe.trainer.callbacks.append(profiler_callback)
 
     logger.info(f"Configuration:")
     logger.info(f"  Sequence length: {SEQ_LEN}")
