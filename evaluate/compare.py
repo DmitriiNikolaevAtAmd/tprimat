@@ -224,10 +224,10 @@ def create_comparison_plot(
             # Dual bars: allocated (solid) + reserved (hatched)
             bars_a = ax2.bar(x - bar_width/2, mem_allocated, bar_width,
                             color=mem_colors, alpha=0.80, edgecolor='#333', linewidth=1.0,
-                            label='Allocated (tensors)')
+                            label='Allocated by Torch')
             bars_r = ax2.bar(x + bar_width/2, mem_reserved, bar_width,
                             color=mem_colors, alpha=0.40, edgecolor='#333', linewidth=1.0,
-                            hatch='///', label='Reserved (total VRAM)')
+                            hatch='///', label='Reserved by System')
             for bar, val in zip(bars_a, mem_allocated):
                 if val > 0:
                     ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
@@ -253,13 +253,13 @@ def create_comparison_plot(
                             f'{val:.1f}', ha='center', va='bottom', fontweight='bold', fontsize=8)
         
         ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
-        ax2.set_title('GPU Memory: Allocated vs Reserved', fontweight='bold', fontsize=12)
+        ax2.set_title('GPU Memory Usage', fontweight='bold', fontsize=12)
         ax2.set_xticks(x)
         ax2.set_xticklabels(mem_labels, rotation=45, ha='right', fontsize=7)
         ax2.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
     else:
         ax2.text(0.5, 0.5, 'Memory data not available', ha='center', va='center', transform=ax2.transAxes, fontsize=10)
-        ax2.set_title('GPU Memory: Allocated vs Reserved', fontweight='bold', fontsize=12)
+        ax2.set_title('GPU Memory Usage', fontweight='bold', fontsize=12)
     
     # Panel 3: Loss over time
     ax3 = axes[2]

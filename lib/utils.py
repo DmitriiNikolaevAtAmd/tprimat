@@ -260,6 +260,70 @@ def extract_memory_from_log(log_file: str) -> List[float]:
     return memory_values
 
 
+def parse_memory_log(log_file: str, num_steps: int = None) -> Optional[Dict[str, Any]]:
+    """Parse rocm-smi or nvidia-smi memory log to extract memory values.
+    
+    Converts all values to decimal GB (1 GB = 1e9 bytes) for consistency
+    with torch.cuda.memory_allocated() / 1e9 used elsewhere.
+    
+    Args:
+        log_file: Path to memory log file
+        num_steps: If provided, interpolate memory values to match step count
+    
+    Returns:
+        Dict with memory_values array and summary stats, or None if no data found.
+    """
+    if not os.path.exists(log_file):
+        return None
+    
+    raw_values = []
+    
+    with open(log_file, 'r') as f:
+        for line in f:
+            # rocm-smi format: "VRAM Total Used Memory (B): 73014444032"
+            match = re.search(r'Used.*\(B\)[:\s]+(\d+)', line)
+            if match:
+                bytes_val = int(match.group(1))
+                raw_values.append(bytes_val / 1e9)  # bytes -> GB
+                continue
+            
+            # rocm-smi format: "Used: 69632 MB" (GPU tools report MiB)
+            match = re.search(r'Used[:\s]+(\d+)\s*MB', line, re.IGNORECASE)
+            if match:
+                mib_val = int(match.group(1))
+                raw_values.append(mib_val * 1048576 / 1e9)  # MiB -> bytes -> GB
+                continue
+            
+            # nvidia-smi CSV format: "0, 65432" (index, memory_mib)
+            match = re.search(r'^\d+,\s*(\d+)', line)
+            if match:
+                mib_val = int(match.group(1))
+                raw_values.append(mib_val * 1048576 / 1e9)  # MiB -> bytes -> GB
+                continue
+    
+    if not raw_values:
+        return None
+    
+    # Interpolate to match step count if requested
+    if num_steps and num_steps > 0 and len(raw_values) != num_steps:
+        import numpy as np
+        raw_indices = np.linspace(0, len(raw_values) - 1, len(raw_values))
+        step_indices = np.linspace(0, len(raw_values) - 1, num_steps)
+        memory_values = list(np.interp(step_indices, raw_indices, raw_values))
+    else:
+        memory_values = raw_values
+    
+    memory_values = [round(v, 2) for v in memory_values]
+    
+    return {
+        "memory_values": memory_values,
+        "peak_memory_gb": round(max(memory_values), 2),
+        "avg_memory_gb": round(sum(memory_values) / len(memory_values), 2),
+        "min_memory_gb": round(min(memory_values), 2),
+        "raw_samples": len(raw_values),
+    }
+
+
 def get_parallelism_config(strategy: str, model: str, platform: str) -> Dict[str, Any]:
     return {
         "strategy": strategy or "unknown",
@@ -432,7 +496,9 @@ class BenchmarkCallback(Callback):
         
         if torch.cuda.is_available():
             mem_allocated = torch.cuda.memory_allocated() / 1e9
-            mem_reserved = torch.cuda.memory_reserved() / 1e9
+            # Total VRAM used (matches nvidia-smi/rocm-smi) for cross-platform consistency
+            free, total = torch.cuda.mem_get_info()
+            mem_reserved = (total - free) / 1e9
             self.memory_allocated.append(mem_allocated)
             self.memory_reserved.append(mem_reserved)
             
@@ -601,9 +667,9 @@ class BenchmarkCallback(Callback):
                 resv = mem_metrics.get('avg_memory_reserved_gb')
                 print(f"\nMemory (avg per GPU):")
                 if alloc:
-                    print(f"  Allocated (tensors): {alloc:.2f} GB")
+                    print(f"  Allocated: {alloc:.2f} GB")
                 if resv:
-                    print(f"  Reserved (caching):  {resv:.2f} GB")
+                    print(f"  Reserved (VRAM used): {resv:.2f} GB")
             
             print(f"\nResults saved to: {filepath}")
             print(f"{'='*60}\n")
@@ -695,7 +761,9 @@ class BenchmarkCallbackTran(TrainerCallback):
         
         if torch.cuda.is_available():
             mem_allocated = torch.cuda.memory_allocated() / 1e9
-            mem_reserved = torch.cuda.memory_reserved() / 1e9
+            # Total VRAM used (matches nvidia-smi/rocm-smi) for cross-platform consistency
+            free, total = torch.cuda.mem_get_info()
+            mem_reserved = (total - free) / 1e9
             self.memory_allocated.append(mem_allocated)
             self.memory_reserved.append(mem_reserved)
         
@@ -819,9 +887,9 @@ class BenchmarkCallbackTran(TrainerCallback):
                 resv = mem_metrics.get('avg_memory_reserved_gb')
                 print(f"\nMemory (avg per GPU):")
                 if alloc:
-                    print(f"  Allocated (tensors): {alloc:.2f} GB")
+                    print(f"  Allocated: {alloc:.2f} GB")
                 if resv:
-                    print(f"  Reserved (caching):  {resv:.2f} GB")
+                    print(f"  Reserved (VRAM used): {resv:.2f} GB")
             
             print(f"\nResults saved to: {filepath}")
             print(f"{'='*60}\n")

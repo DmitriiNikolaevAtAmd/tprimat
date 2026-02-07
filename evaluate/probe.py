@@ -12,6 +12,10 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from lib.utils import parse_memory_log
 
 
 def get_gpu_memory_stats():
@@ -99,65 +103,6 @@ def print_memory_summary(stats):
     print(f"{'='*60}\n")
 
 
-def parse_memory_log(log_file, return_values=False):
-    """Parse rocm-smi or nvidia-smi memory log to find memory usage.
-    
-    Args:
-        log_file: Path to the memory log file
-        return_values: If True, include full memory_values array in result
-    
-    Returns:
-        Dict with peak_memory_gb, avg_memory_gb, samples, and optionally memory_values
-    """
-    import re
-    
-    if not os.path.exists(log_file):
-        return None
-    
-    memory_values = []
-    
-    with open(log_file, 'r') as f:
-        for line in f:
-            # rocm-smi formats:
-            # "VRAM Total Used Memory (B): 73014444032"
-            # "Used: 69632 MB"
-            # nvidia-smi format: "0, 65432" (index, memory_mb)
-            
-            # Match bytes format
-            match = re.search(r'Used.*\(B\)[:\s]+(\d+)', line)
-            if match:
-                bytes_val = int(match.group(1))
-                memory_values.append(round(bytes_val / 1e9, 2))  # Convert to GB
-                continue
-            
-            # Match MB format
-            match = re.search(r'Used[:\s]+(\d+)\s*MB', line, re.IGNORECASE)
-            if match:
-                mb_val = int(match.group(1))
-                memory_values.append(round(mb_val / 1024, 2))  # Convert to GB
-                continue
-            
-            # Match nvidia-smi CSV format (index, memory_mb)
-            match = re.search(r'^\d+,\s*(\d+)', line)
-            if match:
-                mb_val = int(match.group(1))
-                memory_values.append(round(mb_val / 1024, 2))  # Convert to GB
-                continue
-    
-    if memory_values:
-        result = {
-            "peak_memory_gb": round(max(memory_values), 2),
-            "avg_memory_gb": round(sum(memory_values) / len(memory_values), 2),
-            "min_memory_gb": round(min(memory_values), 2),
-            "samples": len(memory_values),
-        }
-        if return_values:
-            result["memory_values"] = memory_values
-        return result
-    
-    return None
-
-
 def main():
     parser = argparse.ArgumentParser(description='Probe GPU memory usage')
     parser.add_argument('--output', '-o', help='Output JSON file path')
@@ -170,14 +115,13 @@ def main():
     
     # If parsing a log file, use that instead of probing
     if args.parse_log:
-        # Get full values if output-values is requested
-        log_stats = parse_memory_log(args.parse_log, return_values=bool(args.output_values))
+        log_stats = parse_memory_log(args.parse_log)
         if log_stats:
             if not args.quiet:
                 print(f"Parsed memory log: {args.parse_log}")
                 print(f"  Peak memory: {log_stats['peak_memory_gb']:.2f} GB")
                 print(f"  Avg memory:  {log_stats['avg_memory_gb']:.2f} GB")
-                print(f"  Samples:     {log_stats['samples']}")
+                print(f"  Samples:     {log_stats['raw_samples']}")
             
             # Write memory values to JSON file if requested
             if args.output_values and 'memory_values' in log_stats:

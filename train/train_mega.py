@@ -270,6 +270,7 @@ def train_model(model_name: str):
     )
 
     recipe.model.config.vocab_size = tokenizer_vocab_size
+    recipe.model.config.init_method_std = 0.02
 
     try:
         from megatron.core.distributed import DistributedDataParallelConfig
@@ -371,7 +372,7 @@ def train_model(model_name: str):
         parallel_strategy="minimal_communication",
         framework=f"{platform_prefix}_mega",
         dataset=DATASET,
-        warmup_steps=_WARMUP_ITERS,
+        warmup_steps=max(_WARMUP_ITERS, 1),  # Skip step 0 to align with 1-indexed Megatron logs
     )
     gc_callback = GCCallback()
     if recipe.trainer.callbacks is None:

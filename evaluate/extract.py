@@ -26,76 +26,10 @@ from lib.utils import (
     extract_step_times_from_log,
     extract_param_count_from_log,
     extract_memory_from_log,
+    parse_memory_log,
     get_parallelism_config,
     print_summary
 )
-
-
-def parse_memory_log(log_file, num_steps=None):
-    """Parse rocm-smi or nvidia-smi memory log to extract memory values.
-    
-    Args:
-        log_file: Path to memory log file
-        num_steps: If provided, interpolate memory values to match step count
-    
-    Returns dict with memory_values array and summary stats.
-    """
-    if not os.path.exists(log_file):
-        return None
-    
-    raw_values = []
-    
-    with open(log_file, 'r') as f:
-        for line in f:
-            # rocm-smi formats:
-            # "VRAM Total Used Memory (B): 73014444032"
-            # "Used: 69632 MB"
-            # nvidia-smi format: "0, 65432" (index, memory_mb)
-            
-            # Match bytes format
-            match = re.search(r'Used.*\(B\)[:\s]+(\d+)', line)
-            if match:
-                bytes_val = int(match.group(1))
-                raw_values.append(bytes_val / 1e9)
-                continue
-            
-            # Match MB format
-            match = re.search(r'Used[:\s]+(\d+)\s*MB', line, re.IGNORECASE)
-            if match:
-                mb_val = int(match.group(1))
-                raw_values.append(mb_val / 1024)
-                continue
-            
-            # Match nvidia-smi CSV format (index, memory_mb)
-            match = re.search(r'^\d+,\s*(\d+)', line)
-            if match:
-                mb_val = int(match.group(1))
-                raw_values.append(mb_val / 1024)
-                continue
-    
-    if not raw_values:
-        return None
-    
-    # Interpolate to match step count if requested
-    if num_steps and num_steps > 0 and len(raw_values) != num_steps:
-        # Linear interpolation to resample memory values to match steps
-        import numpy as np
-        raw_indices = np.linspace(0, len(raw_values) - 1, len(raw_values))
-        step_indices = np.linspace(0, len(raw_values) - 1, num_steps)
-        memory_values = list(np.interp(step_indices, raw_indices, raw_values))
-    else:
-        memory_values = raw_values
-    
-    # Round values
-    memory_values = [round(v, 2) for v in memory_values]
-    
-    return {
-        "memory_values": memory_values,
-        "peak_memory_gb": round(max(memory_values), 2),
-        "avg_memory_gb": round(sum(memory_values) / len(memory_values), 2),
-        "min_memory_gb": round(min(memory_values), 2),
-        "raw_samples": len(raw_values),
-    }
 
 
 def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, micro_batch_size=1, tensor_parallel_size=1, pipeline_parallel_size=1, parallel_strategy=None, model_name=None):

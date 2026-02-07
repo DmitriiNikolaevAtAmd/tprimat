@@ -78,7 +78,7 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$TPRIMAT_PATH/output/mega_qwen2.5_7B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-export PATCHED_CONFIG TP PP GBS MBS SL GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY DATA_PREFIX TOKENIZER_MODEL
+export PATCHED_CONFIG TP PP GBS MBS SL GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY BETA1 BETA2 DATA_PREFIX TOKENIZER_MODEL
 if python3 -c "import yaml" 2>/dev/null; then
     python3 << 'PYTHON_EOF'
 import os
@@ -93,6 +93,8 @@ seq_len = int(os.environ['SL'])
 grad_accum = int(os.environ['GA'])
 train_iters = int(os.environ['TRAIN_ITERS'])
 warmup_steps = int(os.environ['WARMUP_STEPS'])
+beta1 = float(os.environ.get('BETA1', '0.9'))
+beta2 = float(os.environ.get('BETA2', '0.95'))
 
 with open(patched_config, 'r') as f:
     config = yaml.safe_load(f)
@@ -106,14 +108,16 @@ config['seq_length'] = seq_len
 config['encoder_seq_length'] = seq_len
 config['gradient_accumulation_steps'] = grad_accum
 config['use_distributed_optimizer'] = True
-config['use_flash_attn'] = True
-config['use_fused_rmsnorm'] = True
+config['use_flash_attn'] = False
+config['use_fused_rmsnorm'] = False
 config['fp32_residual_connection'] = False
 config['train_iters'] = train_iters
 config['lr_decay_iters'] = train_iters
 config['lr_warmup_iters'] = warmup_steps
 
 config['init_method_std'] = 0.02
+config['adam_beta1'] = beta1
+config['adam_beta2'] = beta2
 
 if 'modules' in config and 'pre_trainer' in config['modules']:
     overrides = config['modules']['pre_trainer'].get('overrides', {})
