@@ -41,7 +41,7 @@ export NCCL_DEBUG=ERROR
 
 # Communication tuning
 export CUDA_DEVICE_MAX_CONNECTIONS=1
-export NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1    # reduces NCCL memory fragmentation
 
 cd "$SCRIPT_DIR"

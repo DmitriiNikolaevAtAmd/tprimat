@@ -375,7 +375,7 @@ def train_model(model_name: str):
     
     # Extra un-timed warmup iterations so CUDA kernels are pre-compiled
     # before the BenchmarkCallback starts recording step times.
-    _WARMUP_ITERS = 3
+    _WARMUP_ITERS = 0
     recipe.trainer.max_steps = TRAIN_ITERS + _WARMUP_ITERS
     recipe.optim.config.lr = LR
     recipe.optim.config.min_lr = 0.0

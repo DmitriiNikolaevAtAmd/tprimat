@@ -323,7 +323,7 @@ def train_model(model_name: str, model_config: dict):
         # NeMo (where Lightning advances the scheduler during CUDA warmup).
         # scheduler.step() is called during warmup below, consuming the extra
         # steps before timed training begins.
-        _WARMUP_ITERS = 3
+        _WARMUP_ITERS = 0
         scheduler = get_cosine_schedule_with_warmup(
             optimizer,
             num_warmup_steps=WARMUP_STEPS + _WARMUP_ITERS,
