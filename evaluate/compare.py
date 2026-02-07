@@ -224,10 +224,10 @@ def create_comparison_plot(
             # Dual bars: allocated (solid) + reserved (hatched)
             bars_a = ax2.bar(x - bar_width/2, mem_allocated, bar_width,
                             color=mem_colors, alpha=0.80, edgecolor='#333', linewidth=1.0,
-                            label='Allocated by Torch')
+                            label='Allocated')
             bars_r = ax2.bar(x + bar_width/2, mem_reserved, bar_width,
                             color=mem_colors, alpha=0.40, edgecolor='#333', linewidth=1.0,
-                            hatch='///', label='Reserved by System')
+                            hatch='///', label='Reserved')
             for bar, val in zip(bars_a, mem_allocated):
                 if val > 0:
                     ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),

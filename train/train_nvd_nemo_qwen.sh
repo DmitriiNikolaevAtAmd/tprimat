@@ -62,4 +62,5 @@ echo "Training qwen (nemo) on dataset: ${DATASET}"
 echo "=========================================="
 echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
-python3 -u "$SCRIPT_DIR/train_nemo.py" qwen
+LOG_FILE="$TPRIMAT_PATH/output/training_nvd_nemo_qwen_${DATASET}.log"
+python3 -u "$SCRIPT_DIR/train_nemo.py" qwen 2>&1 | tee "$LOG_FILE"

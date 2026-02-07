@@ -468,6 +468,93 @@ class BenchmarkCallback(Callback):
         except (IndexError, KeyError, AttributeError):
             self._step_lr = None
     
+    def _extract_loss(self, trainer, pl_module, outputs) -> float:
+        """Extract training loss using all available sources.
+        
+        Priority (highest to lowest):
+          1. trainer.callback_metrics['reduced_train_loss'] — Megatron's true reduced lm loss
+          2. trainer.callback_metrics['train_loss']
+          3. pl_module.loss_mean (NeMo internal)
+          4. outputs.loss / outputs['loss'] (Lightning default — may be scaled/transformed)
+        
+        Returns the loss as a Python float, or None if nothing found.
+        """
+        loss = None
+        source = None
+
+        # --- Source 1: callback_metrics (most reliable for NeMo/Megatron) ---
+        cb = getattr(trainer, 'callback_metrics', {}) or {}
+        for key in ('reduced_train_loss', 'train_loss', 'loss'):
+            val = cb.get(key)
+            if val is not None:
+                loss = val.item() if torch.is_tensor(val) else float(val)
+                source = f'callback_metrics[{key!r}]'
+                break
+
+        # --- Source 2: pl_module.loss_mean (NeMo stores average loss here) ---
+        if loss is None:
+            for attr in ('loss_mean', '_loss_mean'):
+                val = getattr(pl_module, attr, None)
+                if val is not None:
+                    loss = val.item() if torch.is_tensor(val) else float(val)
+                    source = f'pl_module.{attr}'
+                    break
+
+        # --- Source 3: outputs (Lightning default) ---
+        if loss is None and outputs is not None:
+            if isinstance(outputs, dict):
+                val = outputs.get('loss')
+            elif hasattr(outputs, 'loss'):
+                val = outputs.loss
+            elif torch.is_tensor(outputs):
+                val = outputs
+            else:
+                val = None
+            if val is not None:
+                loss = val.item() if torch.is_tensor(val) else float(val)
+                source = 'outputs.loss'
+
+        # --- Diagnostic: log all sources for the first 3 measured steps ---
+        measured_step = len(self.step_times) + 1  # about to append
+        if trainer.is_global_zero and measured_step <= 3:
+            print(f"[LOSS-DIAG] Step {measured_step} | chosen source: {source} = {loss}")
+            # Dump every candidate so we can compare
+            diag_parts = []
+            for key in ('reduced_train_loss', 'train_loss', 'loss'):
+                val = cb.get(key)
+                if val is not None:
+                    diag_parts.append(f"cb[{key!r}]={val.item() if torch.is_tensor(val) else val:.6f}")
+            for attr in ('loss_mean', '_loss_mean'):
+                val = getattr(pl_module, attr, None)
+                if val is not None:
+                    diag_parts.append(f"pl.{attr}={val.item() if torch.is_tensor(val) else val:.6f}")
+            if outputs is not None:
+                out_type = type(outputs).__name__
+                if isinstance(outputs, dict):
+                    out_keys = list(outputs.keys())
+                    diag_parts.append(f"outputs=dict(keys={out_keys})")
+                    for k, v in outputs.items():
+                        vv = v.item() if torch.is_tensor(v) else v
+                        diag_parts.append(f"  outputs[{k!r}]={vv}")
+                elif torch.is_tensor(outputs):
+                    diag_parts.append(f"outputs=tensor({outputs.item():.6f})")
+                elif hasattr(outputs, '__dict__'):
+                    diag_parts.append(f"outputs={out_type}(attrs={list(outputs.__dict__.keys())})")
+                    for k, v in outputs.__dict__.items():
+                        vv = v.item() if torch.is_tensor(v) else v
+                        diag_parts.append(f"  outputs.{k}={vv}")
+                else:
+                    diag_parts.append(f"outputs={out_type}({outputs})")
+            # Logged metrics
+            lm = getattr(trainer, 'logged_metrics', {}) or {}
+            if lm:
+                for k, v in lm.items():
+                    vv = v.item() if torch.is_tensor(v) else v
+                    diag_parts.append(f"logged[{k!r}]={vv}")
+            print(f"[LOSS-DIAG]   all: {' | '.join(diag_parts)}")
+
+        return loss
+
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         # Skip recording during warmup steps
         if self.step_start_time is None:
@@ -481,18 +568,9 @@ class BenchmarkCallback(Callback):
         step_time = time.time() - self.step_start_time
         self.step_times.append(step_time)
         
-        if outputs is not None:
-            if isinstance(outputs, dict):
-                loss = outputs.get('loss', None)
-            elif hasattr(outputs, 'loss'):
-                loss = outputs.loss
-            else:
-                loss = None
-                
-            if loss is not None:
-                if torch.is_tensor(loss):
-                    loss = loss.item()
-                self.loss_values.append(float(loss))
+        loss = self._extract_loss(trainer, pl_module, outputs)
+        if loss is not None:
+            self.loss_values.append(float(loss))
         
         if torch.cuda.is_available():
             mem_allocated = torch.cuda.memory_allocated() / 1e9

@@ -349,7 +349,12 @@ def train_model(model_name: str):
     recipe.optim.config.weight_decay = WEIGHT_DECAY
     recipe.optim.config.adam_beta1 = BETA1
     recipe.optim.config.adam_beta2 = BETA2
-    recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS + _WARMUP_ITERS
+    # NeMo's warmup formula uses (warmup_steps+1) as divisor:
+    #   lr = max_lr * (step+1) / (warmup_steps+1)
+    # Standalone Megatron uses warmup_iters directly:
+    #   lr = max_lr * iter / warmup_iters
+    # Subtract 1 so both produce the same LR schedule (divisor = WARMUP_STEPS).
+    recipe.optim.lr_scheduler.warmup_steps = max(WARMUP_STEPS - 1, 0) + _WARMUP_ITERS
     recipe.optim.lr_scheduler.constant_steps = 0
     recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS + _WARMUP_ITERS
     recipe.optim.lr_scheduler.min_lr = 0.0
@@ -395,7 +400,7 @@ def train_model(model_name: str):
         parallel_strategy="minimal_communication",
         framework=f"{platform_prefix}_nemo",
         dataset=DATASET,
-        warmup_steps=max(_WARMUP_ITERS, 1),  # Skip step 0 to align with 1-indexed Megatron logs
+        warmup_steps=_WARMUP_ITERS,  # Record from step 0 to align with AMD log-based extraction (iter 1)
     )
     gc_callback = GCCallback()
     if recipe.trainer.callbacks is None:

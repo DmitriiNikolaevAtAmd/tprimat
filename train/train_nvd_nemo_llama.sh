@@ -62,4 +62,5 @@ echo "Training llama (nemo) on dataset: ${DATASET}"
 echo "=========================================="
 echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
-python3 -u "$SCRIPT_DIR/train_nemo.py" llama
+LOG_FILE="$TPRIMAT_PATH/output/training_nvd_nemo_llama_${DATASET}.log"
+python3 -u "$SCRIPT_DIR/train_nemo.py" llama 2>&1 | tee "$LOG_FILE"
