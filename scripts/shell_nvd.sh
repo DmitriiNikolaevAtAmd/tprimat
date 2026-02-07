@@ -1,12 +1,11 @@
 #!/bin/bash
-set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
 
-docker build -t primat:nvd -f nvd.Dockerfile .
-
-docker run --gpus all --rm \
+docker run --gpus all -it --rm \
+    --name primat \
     --shm-size=64g \
     --ulimit memlock=-1 \
     --ulimit stack=67108864 \
@@ -15,4 +14,5 @@ docker run --gpus all --rm \
     -w /workspace/code \
     --env-file config.env \
     --env-file secrets.env \
-    primat:nvd bash train_nvd.sh
+    -e CUDA_LAUNCH_BLOCKING=1 \
+    primat:nvd "$@"

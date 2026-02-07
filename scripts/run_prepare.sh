@@ -2,7 +2,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
 
 if command -v nvidia-smi &>/dev/null; then
     IMAGE="primat:nvd"
@@ -17,7 +18,10 @@ fi
 
 docker run --rm \
     $DOCKER_ARGS \
+    --network=host \
     -v "$(pwd)":/workspace/code \
     -v /data:/data \
     -w /workspace/code \
-    "$IMAGE" bash purge.sh "$@"
+    --env-file config.env \
+    --env-file secrets.env \
+    "$IMAGE" bash prepare/data.sh "$@"

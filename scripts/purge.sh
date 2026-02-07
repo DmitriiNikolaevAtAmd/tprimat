@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: ./purge.sh [--with-data]
+# Usage: ./scripts/purge.sh [--with-data]
 
 rm -rf cache __pycache__ torchelastic_* *.out *.err *.zip output
 

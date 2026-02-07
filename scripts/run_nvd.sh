@@ -2,16 +2,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT_DIR"
 
-docker build -t primat:amd -f amd.Dockerfile .
+docker build -t primat:nvd -f nvd.Dockerfile .
 
-docker run --rm \
-    --network=host \
-    --device=/dev/kfd --device=/dev/dri \
-    --group-add video \
-    --cap-add=SYS_PTRACE \
-    --security-opt seccomp=unconfined \
+docker run --gpus all --rm \
     --shm-size=64g \
     --ulimit memlock=-1 \
     --ulimit stack=67108864 \
@@ -20,4 +16,4 @@ docker run --rm \
     -w /workspace/code \
     --env-file config.env \
     --env-file secrets.env \
-    primat:amd bash train_amd.sh
+    primat:nvd bash scripts/train_nvd.sh
