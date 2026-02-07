@@ -179,42 +179,55 @@ def extract_step_times_from_log(log_file: str) -> Tuple[List[float], List[float]
 
 
 def extract_memory_from_log(log_file: str) -> List[float]:
-    """Extract memory values from training log.
+    """Extract per-iteration memory values (in GB) from training log.
     
     Supports multiple formats:
     - Megatron: "mem-alloc-GB: 72.5", "memory (GB) | allocated: 72.5"
-    - ROCm/HIP: "hip mem allocated: 72.5 GB"
+    - Primus/ROCm: "hip mem usage/free/total/usage_ratio: 72.50GiB/..."
+    - Primus debug: "memory (MB) | allocated: 54638.4"
     - Generic: "memory: 72.5 GB", "allocated: 72.5 GB"
     """
     memory_values = []
     
     # Patterns to match various memory log formats (order matters - more specific first)
+    # Each tuple: (pattern, unit) where unit is 'gb', 'gib', or 'mb'
     patterns = [
         # Megatron format: "mem-alloc-GB: 72.5" or "mem-reserved-GB: 72.5"
-        r'mem-alloc-GB[:\s]+([0-9.]+)',
+        (r'mem-alloc-GB[:\s]+([0-9.]+)', 'gb'),
         # Megatron format: "memory (GB) | allocated: 72.5"
-        r'memory\s*\(GB\)\s*\|\s*allocated[:\s]+([0-9.]+)',
+        (r'memory\s*\(GB\)\s*\|\s*allocated[:\s]+([0-9.]+)', 'gb'),
         # Megatron format: "gpu_memory_allocated: 72.5"
-        r'gpu_memory_allocated[:\s]+([0-9.]+)',
-        # HIP/ROCm format: "hip mem allocated: 72.5 GB"
-        r'hip mem (?:usage|allocated)[^:]*:\s*([0-9.]+)\s*GB',
+        (r'gpu_memory_allocated[:\s]+([0-9.]+)', 'gb'),
+        # Primus/ROCm: "hip mem usage/free/total/usage_ratio: 72.50GiB/..."
+        (r'hip mem usage[^:]*:\s*([0-9.]+)\s*GiB', 'gib'),
+        # HIP/ROCm format: "hip mem allocated: 72.5 GB" or "hip mem usage: 72.5 GB"
+        (r'hip mem (?:usage|allocated)[^:]*:\s*([0-9.]+)\s*GB', 'gb'),
+        # Primus debug: "memory (MB) | allocated: 54638.4"
+        (r'memory\s*\(MB\)\s*\|\s*allocated[:\s]+([0-9.]+)', 'mb'),
         # Generic: "allocated: 72.5 GB" or "max allocated: 72.5 GB"
-        r'(?:max\s+)?allocated[:\s]+([0-9.]+)\s*GB',
+        (r'(?:max\s+)?allocated[:\s]+([0-9.]+)\s*GB', 'gb'),
         # Generic: "memory: 72.5 GB" or "memory usage: 72.5 GB"
-        r'memory\s*(?:usage)?[:\s]+([0-9.]+)\s*GB',
+        (r'memory\s*(?:usage)?[:\s]+([0-9.]+)\s*GB', 'gb'),
         # Megatron throughput line with memory: "| mem-alloc-GB: 72.5 |"
-        r'\|\s*mem-alloc-GB[:\s]+([0-9.]+)\s*\|',
+        (r'\|\s*mem-alloc-GB[:\s]+([0-9.]+)\s*\|', 'gb'),
     ]
     
     with open(log_file, 'r') as f:
         for line in f:
-            for pattern in patterns:
+            for pattern, unit in patterns:
                 match = re.search(pattern, line, re.IGNORECASE)
                 if match:
                     try:
-                        memory_gb = float(match.group(1))
+                        raw_val = float(match.group(1))
+                        # Convert to GB
+                        if unit == 'gib':
+                            memory_gb = raw_val * 1.073741824  # GiB -> GB
+                        elif unit == 'mb':
+                            memory_gb = raw_val / 1000.0
+                        else:
+                            memory_gb = raw_val
                         if 0 < memory_gb < 500:  # Reasonable GPU memory range
-                            memory_values.append(memory_gb)
+                            memory_values.append(round(memory_gb, 2))
                             break  # Found a match, move to next line
                     except (ValueError, IndexError):
                         pass

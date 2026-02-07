@@ -113,6 +113,12 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
         return None
     
     print(f"  + Found {len(step_times)} step timing entries")
+    if len(step_times) >= 2:
+        jit_step = step_times[0]
+        steady_steps = step_times[1:]
+        steady_avg = sum(steady_steps) / len(steady_steps)
+        print(f"    Iter 1 (warmup/JIT): {jit_step:.3f}s")
+        print(f"    Iter 2+ (steady):    {steady_avg:.3f}s")
     
     if tokens_per_gpu_values:
         print(f"  + Found {len(tokens_per_gpu_values)} tokens/GPU entries (using Primus native metrics)")
@@ -124,7 +130,12 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     memory_values = extract_memory_from_log(log_file)
     
     if memory_values:
-        print(f"  + Found {len(memory_values)} memory usage entries")
+        print(f"  + Found {len(memory_values)} memory usage entries (from training log)")
+        if len(memory_values) >= 2:
+            warmup_mem = memory_values[0]
+            steady_mem = sum(memory_values[1:]) / len(memory_values[1:])
+            print(f"    Iter 1 (warmup/JIT): {warmup_mem:.2f} GB")
+            print(f"    Steady state (avg):  {steady_mem:.2f} GB")
     
     # Auto-detect GPU info
     gpu_info = detect_gpu_info()
@@ -222,10 +233,13 @@ def extract_metrics_from_log(log_file, num_gpus, global_batch_size, seq_length, 
     
     # Add memory metrics if available (per-step tracking)
     if memory_values:
+        steady_values = memory_values[1:] if len(memory_values) > 1 else memory_values
         results["memory_metrics"] = {
             "peak_memory_allocated_gb": max(memory_values),
-            "avg_memory_allocated_gb": sum(memory_values) / len(memory_values),
+            "avg_memory_allocated_gb": sum(steady_values) / len(steady_values),
             "min_memory_allocated_gb": min(memory_values),
+            "warmup_memory_allocated_gb": memory_values[0],
+            "steady_state_memory_allocated_gb": sum(steady_values) / len(steady_values),
         }
         # Include per-step memory values for detailed analysis
         results["memory_values"] = memory_values
