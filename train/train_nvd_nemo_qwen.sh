@@ -10,6 +10,7 @@ mkdir -p "$TPRIMAT_PATH/output"
 
 export OUTPUT_DIR="${OUTPUT_DIR:-$TPRIMAT_PATH/output}"
 export DATA_DIR
+export SEED=${SEED:-42}
 
 export TP=${TP:-1}
 export PP=${PP:-1}
@@ -21,6 +22,7 @@ export GBS=$((MBS * DP * GA))
 
 echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch: MBS=${MBS} GBS=${GBS} SL=${SL}"
+echo "Seed: ${SEED}"
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=ERROR

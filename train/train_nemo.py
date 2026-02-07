@@ -310,6 +310,7 @@ def train_model(model_name: str):
         )
 
     logger.info(f"Train dataset: {train_dataset_path}")
+    logger.info(f"Using seed={SEED} for data shuffle (matching AMD --seed $SEED)")
     logger.info("Using split=100,0,0 (all data for training, matching AMD/Primus pipeline)")
 
     if VERIFY_DATA:
@@ -340,6 +341,7 @@ def train_model(model_name: str):
         micro_batch_size=MBS,
         global_batch_size=GBS,
         split="100,0,0",
+        seed=SEED,  # Align data shuffle order with AMD (which uses --seed $SEED)
     )
 
     _WARMUP_ITERS = 0

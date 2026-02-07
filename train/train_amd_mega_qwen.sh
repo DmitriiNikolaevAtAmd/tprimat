@@ -25,6 +25,7 @@ LR_DECAY_ITERS=$TRAIN_ITERS
 
 echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch: MBS=${MBS} GBS=${GBS} SL=${SL}"
+echo "Seed: ${SEED}"
 
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
@@ -78,7 +79,7 @@ cd "$PRIMUS_PATH"
 PATCHED_CONFIG="$TPRIMAT_PATH/output/mega_qwen2.5_7B-BF16-pretrain.yaml"
 cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
 
-export PATCHED_CONFIG TP PP GBS MBS SL GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY BETA1 BETA2 DATA_PREFIX TOKENIZER_MODEL
+export PATCHED_CONFIG TP PP GBS MBS SL GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY BETA1 BETA2 DATA_PREFIX TOKENIZER_MODEL SEED
 if python3 -c "import yaml" 2>/dev/null; then
     python3 << 'PYTHON_EOF'
 import os
@@ -115,6 +116,7 @@ config['train_iters'] = train_iters
 config['lr_decay_iters'] = train_iters
 config['lr_warmup_iters'] = warmup_steps
 
+config['seed'] = int(os.environ.get('SEED', '42'))
 config['init_method_std'] = 0.02
 config['adam_beta1'] = beta1
 config['adam_beta2'] = beta2
@@ -205,6 +207,7 @@ bash "$TRAIN_SCRIPT" \
     --tokenizer_type HuggingFaceTokenizer \
     --tokenizer_model "$TOKENIZER_MODEL" \
     --split 100,0,0 \
+    --seed "$SEED" \
     >> "$LOG_FILE" 2>&1
 
 kill $TAIL_PID 2>/dev/null || true
