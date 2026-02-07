@@ -1,55 +1,64 @@
 #!/bin/bash
 set -e
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TPRIMAT_PATH="$(cd "$SCRIPT_DIR/.." && pwd)"
+PRIMUS_PATH="${PRIMUS_PATH:-/workspace/Primus}"
 
 source "$TPRIMAT_PATH/config.env"
 
 mkdir -p "$TPRIMAT_PATH/output"
 
-export DATA_DIR
-export OUTPUT_DIR="${OUTPUT_DIR:-$TPRIMAT_PATH/output}"
-export HF_HOME
+TOKENIZER_PATH="${DATA_DIR}/tokenizers/qwen"
+TOKENIZER_HF="Qwen/Qwen2.5-7B"
 
-NUM_GPUS="${NUM_GPUS:-8}"
+if [ -d "${TOKENIZER_PATH}" ]; then
+    TOKENIZER_MODEL="${TOKENIZER_PATH}"
+    echo "Using local tokenizer: ${TOKENIZER_MODEL}"
+else
+    TOKENIZER_MODEL="${TOKENIZER_HF}"
+    echo "Using HuggingFace tokenizer: ${TOKENIZER_MODEL}"
+fi
 
-export TP=${TP:-1}
-export PP=${PP:-1}
-export DP=${DP:-${NUM_GPUS}}
-export GA=${GA:-8}
-export MBS=${MBS:-1}
-export GBS=$((MBS * DP * GA))
+NUM_GPUS=$((TP * PP * DP))
+GBS=$((MBS * NUM_GPUS * GA))
+LR_DECAY_ITERS=$TRAIN_ITERS
 
-echo "Config: NUM_GPUS=${NUM_GPUS} TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
-echo "Batch:  MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
+echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
+echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 
-# Performance settings
+export RCCL_DEBUG=ERROR
+export NCCL_DEBUG=ERROR
+export GLOO_LOG_LEVEL=ERROR
+export RCCL_MSCCL_ENABLE=0
+export HSA_NO_SCRATCH_RECLAIM=1
+export HSA_ENABLE_SDMA=1
+export HSA_FORCE_FINE_GRAIN_PCIE=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export CUDA_DEVICE_MAX_CONNECTIONS=1
+
 export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
 export HF_HUB_DISABLE_PROGRESS_BARS=1
+export TORCH_CPP_LOG_LEVEL=ERROR
+export TORCH_SHOW_CPP_STACKTRACES=0
 
-# AMD-specific tuning
-export HSA_NO_SCRATCH_RECLAIM=1
-export HSA_ENABLE_SDMA=1
-export HSA_FORCE_FINE_GRAIN_PCIE=1
-export RCCL_DEBUG=ERROR
-export NCCL_DEBUG=ERROR
+python3 -c "import site; open(site.getsitepackages()[0] + '/primus.pth', 'w').write('$PRIMUS_PATH')" 2>/dev/null || true
+export PYTHONPATH="$PRIMUS_PATH:${PYTHONPATH:-}"
 
-# Communication tuning
-export CUDA_DEVICE_MAX_CONNECTIONS=1
-export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
-export TORCH_NCCL_AVOID_RECORD_STREAMS=1
+CONFIG_FILE="examples/megatron/configs/MI300X/qwen2.5_7B-BF16-pretrain.yaml"
 
-cd "$SCRIPT_DIR"
+TRAIN_SCRIPT="./examples/run_pretrain.sh"
+if [ ! -f "$PRIMUS_PATH/$TRAIN_SCRIPT" ]; then
+    TRAIN_SCRIPT="./examples/train.sh"
+fi
 
-pkill -9 -f "torchrun.*train_amd_mega" 2>/dev/null || true
-sleep 1
+if [ ! -f "$PRIMUS_PATH/$TRAIN_SCRIPT" ]; then
+    echo "ERROR: Neither run_pretrain.sh nor train.sh found in $PRIMUS_PATH/examples/"
+    exit 1
+fi
 
 DATASET="${DATASET:-bc}"
-export DATASET
 DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
 
 if [ ! -f "${DATA_PREFIX}.bin" ] || [ ! -f "${DATA_PREFIX}.idx" ]; then
@@ -62,15 +71,97 @@ echo ""
 echo "=========================================="
 echo "Training qwen (mega) on dataset: ${DATASET}"
 echo "=========================================="
-echo "Config: NUM_GPUS=${NUM_GPUS}"
 echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
-MASTER_PORT=$((30000 + RANDOM % 5000))
-echo "Using MASTER_PORT: $MASTER_PORT"
+cd "$PRIMUS_PATH"
 
-# Start memory monitoring in background (samples every 2 seconds)
+PATCHED_CONFIG="$TPRIMAT_PATH/output/mega_qwen2.5_7B-BF16-pretrain.yaml"
+cp "$PRIMUS_PATH/$CONFIG_FILE" "$PATCHED_CONFIG"
+
+export PATCHED_CONFIG TP PP GBS MBS SEQ_LEN GA TRAIN_ITERS WARMUP_STEPS LR WEIGHT_DECAY DATA_PREFIX TOKENIZER_MODEL
+if python3 -c "import yaml" 2>/dev/null; then
+    python3 << 'PYTHON_EOF'
+import os
+import yaml
+
+patched_config = os.environ['PATCHED_CONFIG']
+tp = int(os.environ['TP'])
+pp = int(os.environ['PP'])
+gbs = int(os.environ['GBS'])
+mbs = int(os.environ['MBS'])
+seq_len = int(os.environ['SEQ_LEN'])
+grad_accum = int(os.environ['GA'])
+train_iters = int(os.environ['TRAIN_ITERS'])
+warmup_steps = int(os.environ['WARMUP_STEPS'])
+
+with open(patched_config, 'r') as f:
+    config = yaml.safe_load(f)
+
+config['tensor_model_parallel_size'] = tp
+config['pipeline_model_parallel_size'] = pp
+config['sequence_parallel'] = (tp > 1)
+config['global_batch_size'] = gbs
+config['micro_batch_size'] = mbs
+config['seq_length'] = seq_len
+config['encoder_seq_length'] = seq_len
+config['gradient_accumulation_steps'] = grad_accum
+config['use_distributed_optimizer'] = True
+config['use_flash_attn'] = True
+config['use_fused_rmsnorm'] = True
+config['fp32_residual_connection'] = False
+config['train_iters'] = train_iters
+config['lr_decay_iters'] = train_iters
+config['lr_warmup_iters'] = warmup_steps
+
+config['init_method_std'] = 0.02
+
+if 'modules' in config and 'pre_trainer' in config['modules']:
+    overrides = config['modules']['pre_trainer'].get('overrides', {})
+    overrides['init_method_std'] = 0.02
+    overrides['global_batch_size'] = gbs
+    overrides['micro_batch_size'] = mbs
+    overrides['seq_length'] = seq_len
+    overrides['lr_warmup_iters'] = warmup_steps
+    overrides['train_iters'] = train_iters
+    config['modules']['pre_trainer']['overrides'] = overrides
+
+data_prefix = os.environ['DATA_PREFIX']
+tokenizer_model = os.environ['TOKENIZER_MODEL']
+config['data_path'] = data_prefix
+config['tokenizer_type'] = 'HuggingFaceTokenizer'
+config['tokenizer_model'] = tokenizer_model
+config['split'] = '100,0,0'
+config['eval_iters'] = 0
+config['eval_interval'] = train_iters + 1
+
+config['log_interval'] = 1
+config['log_memory_to_tensorboard'] = True
+config['log_throughput'] = True
+
+config['disable_tensorboard'] = True
+config['disable_wandb'] = True
+config['disable_mlflow'] = True
+config['log_timers_to_tensorboard'] = False
+config['log_learning_rate_to_tensorboard'] = False
+config['log_loss_scale_to_tensorboard'] = False
+
+config['profile'] = False
+config['use_pytorch_profiler'] = False
+config['torch_profiler_with_stack'] = False
+config['torch_profiler_record_shapes'] = False
+config['torch_profiler_use_gzip'] = False
+
+with open(patched_config, 'w') as f:
+    yaml.dump(config, f)
+PYTHON_EOF
+    echo "Patched config written to: $PATCHED_CONFIG"
+else
+    echo "WARNING: pyyaml not available, using unpatched config"
+fi
+
+export EXP="$PATCHED_CONFIG"
+
 MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_qwen_${DATASET}.log"
-: > "$MEMORY_LOG"
 (
     while true; do
         if command -v rocm-smi &>/dev/null; then
@@ -82,19 +173,55 @@ MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_qwen_${DATASET}.log"
     done
 ) &
 MEMORY_PID=$!
-export MEMORY_LOG
 
-if [ "$NUM_GPUS" -gt 1 ]; then
-    torchrun --nproc_per_node="$NUM_GPUS" \
-             --nnodes=1 \
-             --node_rank=0 \
-             --master_addr=localhost \
-             --master_port="$MASTER_PORT" \
-             train_amd_mega.py qwen
-else
-    python3 -u train_amd_mega.py qwen
+LOG_FILE="$TPRIMAT_PATH/output/training_main_mega_qwen_${DATASET}.log"
+: > "$LOG_FILE"
+tail -f "$LOG_FILE" &
+TAIL_PID=$!
+
+bash "$TRAIN_SCRIPT" \
+    --train_iters "$TRAIN_ITERS" \
+    --global_batch_size "$GBS" \
+    --micro_batch_size "$MBS" \
+    --seq_length "$SEQ_LEN" \
+    --tensor_model_parallel_size "$TP" \
+    --pipeline_model_parallel_size "$PP" \
+    --lr "$LR" \
+    --min_lr 0.0 \
+    --lr_warmup_iters "$WARMUP_STEPS" \
+    --lr_decay_style cosine \
+    --lr_decay_iters "$TRAIN_ITERS" \
+    --weight_decay "$WEIGHT_DECAY" \
+    --data_path "$DATA_PREFIX" \
+    --tokenizer_type HuggingFaceTokenizer \
+    --tokenizer_model "$TOKENIZER_MODEL" \
+    --split 100,0,0 \
+    >> "$LOG_FILE" 2>&1
+
+kill $TAIL_PID 2>/dev/null || true
+wait $TAIL_PID 2>/dev/null || true
+
+kill $MEMORY_PID 2>/dev/null || true
+
+cd "$TPRIMAT_PATH"
+
+MEMORY_ARG=""
+if [ -f "$MEMORY_LOG" ]; then
+    MEMORY_ARG="--memory-log $MEMORY_LOG"
 fi
 
-# Stop memory monitoring
-kill $MEMORY_PID 2>/dev/null || true
+python3 evaluate/extract_metrics.py \
+    --log-file "$TPRIMAT_PATH/output/training_main_mega_qwen_${DATASET}.log" \
+    --model-name "qwen" \
+    --dataset "$DATASET" \
+    --output "$TPRIMAT_PATH/output/train_amd_mega_qwen_${DATASET}.json" \
+    --num-gpus "$NUM_GPUS" \
+    --global-batch-size "$GBS" \
+    --micro-batch-size "$MBS" \
+    --tensor-parallel-size "$TP" \
+    --pipeline-parallel-size "$PP" \
+    --sequence-length "$SEQ_LEN" \
+    --parallel-strategy "TP${TP}_PP${PP}_DP${DP}" \
+    $MEMORY_ARG
+
 rm -f "$MEMORY_LOG"
