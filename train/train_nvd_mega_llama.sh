@@ -8,7 +8,6 @@ source "$TPRIMAT_PATH/config.env"
 
 mkdir -p "$TPRIMAT_PATH/output"
 
-NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
 export OUTPUT_DIR="${OUTPUT_DIR:-$TPRIMAT_PATH/output}"
 export DATA_DIR
 
@@ -22,7 +21,7 @@ export GA=${GA:-8}
 export MBS=${MBS:-1}
 export GBS=$((MBS * DP * GA))
 
-echo "Config: NUM_GPUS=${NUM_GPUS} TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
+echo "Config: TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch: MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 
 # Performance settings
@@ -62,17 +61,9 @@ fi
 echo ""
 echo "=========================================="
 echo "Training llama (megatron) on dataset: ${DATASET}"
+echo "Stack: Megatron-Core + TransformerEngine + Lightning"
 echo "=========================================="
 echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
-if [ "$NUM_GPUS" -gt 1 ]; then
-    MASTER_PORT="${MASTER_PORT:-$(python3 -c 'import socket; s=socket.socket(); s.bind(("",0)); print(s.getsockname()[1]); s.close()')}"
-    torchrun --nproc_per_node="$NUM_GPUS" \
-             --nnodes=1 \
-             --node_rank=0 \
-             --master_addr=localhost \
-             --master_port="$MASTER_PORT" \
-             "$SCRIPT_DIR/train_nvd_mega.py" llama
-else
-    python3 -u "$SCRIPT_DIR/train_nvd_mega.py" llama
-fi
+# NeMo/Lightning handles distributed launch internally
+python3 -u "$SCRIPT_DIR/train_nvd_mega.py" llama

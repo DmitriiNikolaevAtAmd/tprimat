@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
+"""
+Megatron benchmark using Megatron-Core + TransformerEngine + PyTorch Lightning.
+
+This script uses the same infrastructure as the NeMo benchmark:
+  - Megatron-Core model definitions (via NeMo recipes)
+  - TransformerEngine fused attention (NVTE_FUSED_ATTN / NVTE_FLASH_ATTN)
+  - Kernel fusions: bias+activation, bias+dropout, masked softmax,
+    persistent LayerNorm, fused RoPE, fused cross-entropy
+  - PyTorch Lightning trainer with MegatronStrategy (ZeRO-1)
+  - PreTrainingDataModule for data loading
+
+This ensures an apples-to-apples memory and throughput comparison
+(both scripts share the identical model + framework overhead).
+"""
 import gc
 import os
 import sys
 from pathlib import Path
-
-# Resolve relative paths before importing transformers (which uses HF_HOME)
-_workspace_root = Path(__file__).parent.parent
-sys.path.insert(0, str(_workspace_root))
-for _env_var in ("HF_HOME", "HF_DATASETS_CACHE"):
-    _val = os.environ.get(_env_var)
-    if _val and not os.path.isabs(_val):
-        os.environ[_env_var] = str(_workspace_root / _val)
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 os.environ['PYTHONUNBUFFERED'] = '1'
 sys.stdout.reconfigure(line_buffering=True)
@@ -20,16 +27,16 @@ import torch
 import random
 import numpy as np
 import logging
-import json
-import time
-from pathlib import Path
-from datetime import datetime
-from contextlib import nullcontext
+from transformers import AutoTokenizer
+from lightning.pytorch.callbacks import Callback
+from nemo.collections import llm
+import nemo_run as run
+from nemo.lightning import MegatronStrategy
+from lib.utils import BenchmarkCallback
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data/tprimat"))
 WORKSPACE_ROOT = Path(__file__).parent.parent
-_output_dir = os.environ.get("OUTPUT_DIR", "output")
-OUTPUT_DIR = Path(_output_dir) if os.path.isabs(_output_dir) else WORKSPACE_ROOT / _output_dir
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(WORKSPACE_ROOT / "output")))
 
 SEED = int(os.environ.get("SEED", 42))
 MBS = int(os.environ.get("MBS", 1))
@@ -43,11 +50,11 @@ PRECISION = os.environ.get("PRECISION", "bf16")
 FP8_HYBRID = os.environ.get("FP8_HYBRID", "false").lower() == "true"
 FP8_PARAM = os.environ.get("FP8_PARAM", "false").lower() == "true"
 WARMUP_STEPS = int(os.environ.get("WARMUP_STEPS", 50))
-TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 500))
-GA = int(os.environ.get("GA", 8))
+TRAIN_ITERS = int(os.environ.get("TRAIN_ITERS", 10))
+GA = int(os.environ.get("GA", 32))
 TP = int(os.environ.get("TP", 1))
 PP = int(os.environ.get("PP", 1))
-DP = int(os.environ.get("DP", 8))
+DP = int(os.environ.get("DP", 4))
 DATASET = os.environ.get("DATASET", "bc")  # bc or c4
 
 logging.basicConfig(
@@ -59,82 +66,121 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Data pipeline
-# ──────────────────────────────────────────────────────────────────────
+class GCCallback(Callback):
+    """Disable Python GC during training to avoid random step-time spikes."""
 
-class _TokenDataset(torch.utils.data.Dataset):
-    """Map-style dataset wrapping IndexedDataset for use with DataLoader.
+    def on_train_start(self, trainer, pl_module):
+        gc.disable()
+        logger.info("GC disabled for training (avoiding step-time spikes)")
 
-    The underlying IndexedDataset is opened lazily (per-process) so the
-    class is safe for ``num_workers > 0`` via fork or spawn.
-    """
-
-    def __init__(self, data_path: str, seq_length: int, pad_id: int = 0):
-        from lib.dataset import IndexedDataset
-        self._ds = IndexedDataset(data_path)
-        self._seq = seq_length
-        self._pad = pad_id
-
-    def __len__(self):
-        return len(self._ds)
-
-    def __getitem__(self, idx):
-        t = self._ds[idx % len(self._ds)]
-        n = len(t)
-        if n >= self._seq:
-            return t[: self._seq]
-        out = torch.full((self._seq,), self._pad, dtype=torch.long)
-        out[:n] = t
-        return out
+    def on_train_end(self, trainer, pl_module):
+        gc.enable()
+        gc.collect()
+        logger.info("GC re-enabled after training")
 
 
-def _cycle(loader):
-    """Yield batches forever, advancing the DistributedSampler epoch."""
-    ep = 0
-    while True:
-        if hasattr(loader, "sampler") and hasattr(loader.sampler, "set_epoch"):
-            loader.sampler.set_epoch(ep)
-        yield from loader
-        ep += 1
+def load_env_file(env_path: str) -> None:
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r") as env_file:
+        for line in env_file:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Helpers
-# ──────────────────────────────────────────────────────────────────────
-
-def set_seed(seed):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-
-
-def train_model(model_name: str, model_config: dict):
-    logger.info(f"=" * 80)
-    logger.info(f"Starting Mega-LM training for {model_name}")
-    logger.info(f"=" * 80)
-
-    rank = int(os.environ.get("RANK", 0))
-    local_rank = int(os.environ.get("LOCAL_RANK", 0))
-    world_size = int(os.environ.get("WORLD_SIZE", 1))
-
-    if world_size > 1:
-        torch.cuda.set_device(local_rank)
-        torch.distributed.init_process_group(
-            backend="nccl",
-            device_id=torch.device(f"cuda:{local_rank}"),
+def ensure_hf_token_for_gated_repo(repo_id: str) -> None:
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+    if hf_token:
+        os.environ.setdefault("HF_TOKEN", hf_token)
+        os.environ.setdefault("HUGGINGFACE_HUB_TOKEN", hf_token)
+        return
+    if repo_id.startswith("meta-llama/"):
+        logger.error(
+            "Missing Hugging Face token for gated repo: %s. "
+            "Set HF_TOKEN (or HUGGINGFACE_HUB_TOKEN) in the environment or in secrets.env.",
+            repo_id,
         )
-        try:
-            torch.distributed.barrier()
-        except Exception:
-            pass
-        logger.info(f"Initialized distributed training: rank={rank}, world_size={world_size}")
-    else:
-        logger.info("Running in single-GPU mode")
+        sys.exit(1)
 
-    set_seed(SEED)
+
+def get_tokenizer_path(model_name: str) -> str:
+    """Get tokenizer path, preferring local if it exists, otherwise HuggingFace."""
+    local_paths = {
+        "llama": str(DATA_DIR / "tokenizers" / "llama"),
+        "qwen": str(DATA_DIR / "tokenizers" / "qwen"),
+    }
+    hf_paths = {
+        "llama": "meta-llama/Llama-3.1-8B",
+        "qwen": "Qwen/Qwen2.5-7B",
+    }
+
+    local_path = local_paths.get(model_name)
+    if local_path and os.path.isdir(local_path):
+        logger.info(f"Using local tokenizer: {local_path}")
+        return local_path
+
+    hf_path = hf_paths.get(model_name)
+    if hf_path:
+        logger.info(f"Using HuggingFace tokenizer: {hf_path}")
+        return hf_path
+
+    raise ValueError(f"Unknown model for tokenizer: {model_name}")
+
+
+def get_model_config(model_name: str):
+    tokenizer_path = get_tokenizer_path(model_name)
+
+    configs = {
+        "llama": {
+            "display_name": "Llama 3.1 8B",
+            "recipe_fn": llm.llama31_8b.pretrain_recipe,
+            "recipe_name": "llama31_8b_pretrain",
+            "tokenizer_path": tokenizer_path,
+        },
+        "qwen": {
+            "display_name": "Qwen 2.5 7B",
+            "recipe_fn": llm.qwen25_7b.pretrain_recipe,
+            "recipe_name": "qwen25_7b_pretrain",
+            "tokenizer_path": tokenizer_path,
+        }
+    }
+
+    if model_name not in configs:
+        logger.error(f"Unknown model: {model_name}. Supported: {list(configs.keys())}")
+        sys.exit(1)
+
+    return configs[model_name]
+
+
+def train_model(model_name: str):
+    load_env_file("secrets.env")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not torch.cuda.is_available():
+        logger.error("CUDA is not available!")
+        sys.exit(1)
+
+    platform_prefix = "nvd"
+    num_gpus = torch.cuda.device_count()
+
+    logger.info(f"CUDA devices available: {num_gpus}")
+
+    config = get_model_config(model_name)
+    ensure_hf_token_for_gated_repo(config["tokenizer_path"])
+
+    logger.info(f"Setting up {config['display_name']} training (Megatron-Core stack)...")
+
+    torch.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
+    os.environ['PYTHONHASHSEED'] = str(SEED)
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
     # ── Performance knobs ──────────────────────────────────────────────
@@ -143,460 +189,198 @@ def train_model(model_name: str, model_config: dict):
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
-    # ── FIX: derive grad_accum from GBS so it matches NeMo ────────────
-    # Previously GA was divided by world_size which collapsed GBS to
-    # MBS*world_size (e.g. 8), while NeMo used the full GBS (e.g. 64).
-    grad_accum = max(1, GBS // (MBS * world_size))
-    global_batch_size = MBS * grad_accum * world_size
-    logger.info(f"GBS={GBS} → grad_accum={grad_accum}, effective GBS={global_batch_size}")
-
-    if torch.cuda.is_available():
-        device_props = torch.cuda.get_device_properties(local_rank)
-        device_name = torch.cuda.get_device_name(local_rank)
-        platform = "nvd"
-        software_stack = "megatron"
-        software_version = torch.version.cuda if hasattr(torch.version, 'cuda') else "unknown"
-        gpu_cores = 16896 if "h100" in device_name.lower() else 6912
-        gpu_info = {
-            "device_count": world_size,
-            "device_name": device_name,
-            "total_memory_gb": device_props.total_memory / 1e9,
-            "gpu_cores": gpu_cores,
-            "pytorch_version": torch.__version__,
-            "software_stack": software_stack,
-            "software_version": software_version,
-        }
-    else:
-        platform = "cpu"
-        gpu_info = {}
-
-    step_times = []
-    loss_values = []
-    learning_rates = []
-    memory_values = []
-
-    try:
-        from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
-
-        logger.info(f"Loading tokenizer: {model_config['hf_model']}")
-        tokenizer = AutoTokenizer.from_pretrained(model_config['hf_model'], trust_remote_code=True)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-        logger.info(f"Initializing model: {model_config['hf_model']} (random weights)")
-        torch_dtype = torch.bfloat16 if PRECISION == "bf16" else torch.float16 if PRECISION == "fp16" else torch.float32
-        config = AutoConfig.from_pretrained(model_config['hf_model'], trust_remote_code=True)
-
-        _device = torch.device(f'cuda:{local_rank}') if world_size > 1 else torch.device('cuda')
-
-        # ── Attention: use sdpa (matched with AMD script for fair
-        #    benchmarking; flash_attention_2 OOMs on Llama-8B without
-        #    ZeRO due to HF wrapper peak-memory overhead).
-        attn_impl_used = "sdpa"
-        try:
-            with torch.device(_device):
-                model = AutoModelForCausalLM.from_config(
-                    config,
-                    torch_dtype=torch_dtype,
-                    attn_implementation="sdpa",
-                )
-            logger.info("Using attention implementation: sdpa")
-        except Exception:
-            try:
-                with torch.device(_device):
-                    model = AutoModelForCausalLM.from_config(
-                        config,
-                        torch_dtype=torch_dtype,
-                        attn_implementation="eager",
-                    )
-                attn_impl_used = "eager"
-                logger.info("sdpa not available, falling back to eager")
-            except Exception as attn_err:
-                logger.warning(f"eager not available ({attn_err}), falling back to default")
-                with torch.device(_device):
-                    model = AutoModelForCausalLM.from_config(config, torch_dtype=torch_dtype)
-                attn_impl_used = "default"
-                logger.info("Using default attention implementation")
-        model.config.use_cache = False
-
-        # NOTE: gradient checkpointing intentionally disabled — with ZeRO-1
-        # sharding, Llama-8B fits in H100 80 GB without recomputation.
-        # Checkpointing halves activation memory but costs ~30-40 % throughput.
-
-        # ── DDP ───────────────────────────────────────────────────────
-        # NOTE: static_graph=True is incompatible with model.no_sync()
-        # used during gradient accumulation (the autograd graph differs
-        # between synced and no-sync micro-steps).
-        is_ddp = False
-        if world_size > 1:
-            from torch.nn.parallel import DistributedDataParallel as DDP
-            model = DDP(
-                model,
-                device_ids=[local_rank],
-                output_device=local_rank,
-                find_unused_parameters=False,
-                gradient_as_bucket_view=True,
-            )
-            logger.info(f"Wrapped model with DDP (bucket_view)")
-            is_ddp = True
-
-        # ── torch.compile disabled for fair benchmarking vs AMD ──────
-        # AMD/ROCm does not use torch.compile, so we disable it here
-        # to keep the comparison apples-to-apples.
-        logger.info("torch.compile disabled for fair benchmarking")
-
-        # ── Data ──────────────────────────────────────────────────────
-        dataset_path = str(DATA_DIR / f"{DATASET}-train")
-        idx_file = dataset_path + ".idx"
-        bin_file = dataset_path + ".bin"
-        if not os.path.exists(idx_file) or not os.path.exists(bin_file):
-            raise FileNotFoundError(
-                f"Dataset not found at {dataset_path}\n"
-                f"  Missing: {idx_file if not os.path.exists(idx_file) else ''} "
-                f"{bin_file if not os.path.exists(bin_file) else ''}\n"
-                f"  Run data preparation: bash prepare/data.sh"
-            )
-
-        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
-        ds = _TokenDataset(dataset_path, SEQ_LEN, pad_id)
-        logger.info(f"Dataset: {dataset_path} ({len(ds)} sequences)")
-
-        sampler = None
-        if world_size > 1:
-            sampler = torch.utils.data.distributed.DistributedSampler(
-                ds, num_replicas=world_size, rank=rank, shuffle=True,
-            )
-        loader = torch.utils.data.DataLoader(
-            ds,
-            batch_size=MBS,
-            sampler=sampler,
-            shuffle=(sampler is None),
-            num_workers=2,
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=2,
-            drop_last=True,
+    logger.info(f"Loading tokenizer for {config['display_name']}...")
+    tokenizer = AutoTokenizer.from_pretrained(
+        config["tokenizer_path"],
+        trust_remote_code=True,
+    )
+    tokenizer_vocab_size = len(tokenizer)
+    base_vocab_size = getattr(tokenizer, "vocab_size", tokenizer_vocab_size)
+    if tokenizer_vocab_size != base_vocab_size:
+        logger.info(
+            "Tokenizer vocab size differs from base: len=%d base=%d",
+            tokenizer_vocab_size,
+            base_vocab_size,
         )
-        data_iter = iter(_cycle(loader))
 
-        batch_size = MBS
-        num_steps = TRAIN_ITERS
+    logger.info(f"Creating {config['display_name']} training recipe (Megatron-Core)...")
+    recipe = config['recipe_fn'](
+        name=config['recipe_name'],
+        dir="/data",
+        num_nodes=1,
+        num_gpus_per_node=num_gpus,
+    )
 
-        # ── Optimizer ──────────────────────────────────────────────────
-        # Llama-8B + full AdamW FP32 states ≈ 64 GB per GPU (params 16 +
-        # opt 32 + grads 16), which OOMs on 80 GB GPUs once activations
-        # are added.  Use ZeroRedundancyOptimizer (ZeRO-1) to shard
-        # optimizer states across DP ranks, reducing per-GPU opt memory
-        # from ~32 GB to ~4 GB (with 8 GPUs).
-        if world_size > 1:
-            from torch.distributed.optim import ZeroRedundancyOptimizer
-            optimizer = ZeroRedundancyOptimizer(
-                model.parameters(),
-                optimizer_class=torch.optim.AdamW,
-                lr=LR, betas=(BETA1, BETA2),
-                eps=1e-8, weight_decay=WEIGHT_DECAY,
-            )
-            logger.info("Using ZeroRedundancyOptimizer (sharded AdamW, ZeRO-1)")
-        else:
-            try:
-                optimizer = torch.optim.AdamW(
-                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
-                    eps=1e-8, weight_decay=WEIGHT_DECAY, fused=True,
-                )
-                logger.info("Using fused AdamW optimizer")
-            except Exception:
-                optimizer = torch.optim.AdamW(
-                    model.parameters(), lr=LR, betas=(BETA1, BETA2),
-                    eps=1e-8, weight_decay=WEIGHT_DECAY,
-                )
-                logger.info("Using standard AdamW optimizer")
+    # Ensure model vocab matches tokenizer to avoid out-of-bounds embedding ids.
+    recipe.model.config.vocab_size = tokenizer_vocab_size
 
-        import math
-        from torch.optim.lr_scheduler import LambdaLR
-        # Custom scheduler matching NeMo's CosineAnnealing warmup formula:
-        #   warmup:  lr = peak * (step + 2) / (warmup_steps + 1)
-        #   decay:   cosine from peak to min_lr
-        _WARMUP_ITERS = 0
-        _total = num_steps + _WARMUP_ITERS
-        _warmup = WARMUP_STEPS + _WARMUP_ITERS
-        def _nemo_cosine_lr(step):
-            if step < _warmup:
-                return (step + 2) / (_warmup + 1)
-            progress = (step - _warmup + 1) / max(1, _total - _warmup)
-            return 0.5 * (1.0 + math.cos(math.pi * progress))
-        scheduler = LambdaLR(optimizer, _nemo_cosine_lr)
+    # ── Strategy with distributed optimizer (ZeRO-1) ─────────────────
+    # use_distributed_optimizer: shards optimizer states across DP ranks (ZeRO-1)
+    # overlap disabled: with DP-only (TP=1, PP=1) and GA=8, the single
+    # allreduce per step has minimal overlap opportunity.  Disabling saves
+    # ~24 GB/GPU and keeps memory comparable across benchmarks.
+    try:
+        from megatron.core.distributed import DistributedDataParallelConfig
+        ddp_config = DistributedDataParallelConfig(
+            grad_reduce_in_fp32=False,
+            overlap_grad_reduce=False,
+            overlap_param_gather=False,
+            use_distributed_optimizer=True,
+        )
+        logger.info("Using DDP config (distributed_optimizer, no overlap)")
+    except ImportError:
+        ddp_config = "megatron"
+        logger.info("Megatron DDP config not available, using default")
 
-        logger.info(f"Configuration:")
-        logger.info(f"  Sequence length: {SEQ_LEN}")
-        logger.info(f"  Micro batch size: {batch_size}")
-        logger.info(f"  Global batch size: {global_batch_size}")
-        logger.info(f"  Gradient accumulation: {grad_accum}")
-        logger.info(f"  Training steps: {num_steps}")
-        logger.info(f"  Learning rate: {LR}")
-        logger.info(f"  LR scheduler: Cosine with {WARMUP_STEPS}+{_WARMUP_ITERS} warmup steps")
-        logger.info(f"  Precision: {PRECISION}")
-        logger.info(f"  FP8 Hybrid: {FP8_HYBRID}")
-        logger.info(f"  FP8 Param: {FP8_PARAM}")
+    recipe.trainer.strategy = MegatronStrategy(
+        tensor_model_parallel_size=TP,
+        pipeline_model_parallel_size=PP,
+        context_parallel_size=1,
+        virtual_pipeline_model_parallel_size=None,
+        sequence_parallel=(TP > 1),  # activates when tensor parallel > 1
+        ddp=ddp_config,
+    )
 
-        # ── FP8 setup (NVIDIA H100+ only) ─────────────────────────────
-        fp8_enabled = False
-        fp8_ctx_fn = nullcontext
-        if FP8_HYBRID:
-            try:
-                import transformer_engine.pytorch as te
-                fp8_recipe = te.recipe.DelayedScaling(
-                    fp8_format=te.recipe.Format.HYBRID,
-                    amax_history_len=4,
-                    amax_compute_algo="most_recent",
-                )
-                fp8_ctx_fn = lambda: te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe)
-                fp8_enabled = True
-                logger.info("FP8 hybrid enabled via TransformerEngine")
-            except ImportError:
-                logger.warning("FP8 requested but transformer_engine not installed — running in BF16")
-            except Exception as fp8_err:
-                logger.warning(f"FP8 init failed ({fp8_err}) — running in BF16")
+    # Dataset paths: separate train and test files
+    dataset_name = DATASET  # "bc" or "c4"
+    train_dataset_path = str(DATA_DIR / f"{dataset_name}-train")
+    test_dataset_path = str(DATA_DIR / f"{dataset_name}-test")
 
-        model.train()
+    # Validate train dataset exists
+    train_idx = train_dataset_path + ".idx"
+    train_bin = train_dataset_path + ".bin"
+    if not os.path.exists(train_idx) or not os.path.exists(train_bin):
+        raise FileNotFoundError(
+            f"Training dataset not found at {train_dataset_path}\n"
+            f"  Missing: {train_idx if not os.path.exists(train_idx) else ''} "
+            f"{train_bin if not os.path.exists(train_bin) else ''}\n"
+            f"  Run data preparation: python prepare/encode_data.py"
+        )
 
-        # ── CUDA warmup (un-timed iterations to pre-compile kernels) ────
-        # Running a few real forward+backward passes forces CUDA to JIT-
-        # compile all kernels, warms the cuDNN autotuner, and allocates
-        # memory pools.  This eliminates the large initial spike visible
-        # in the first ~5 timed steps.
-        logger.info(f"Running {_WARMUP_ITERS} warmup iterations to pre-compile CUDA kernels...")
-        for _w in range(_WARMUP_ITERS):
-            optimizer.zero_grad(set_to_none=True)
-            for micro_step in range(grad_accum):
-                input_ids = next(data_iter).to(_device, non_blocking=True)
-                labels = input_ids
-                sync_ctx = nullcontext()
-                if is_ddp and micro_step < (grad_accum - 1):
-                    sync_ctx = model.no_sync()
-                with sync_ctx, fp8_ctx_fn():
-                    with torch.amp.autocast('cuda', dtype=torch_dtype):
-                        outputs = model(input_ids=input_ids, labels=labels)
-                        loss = outputs.loss / grad_accum
-                    loss.backward()
-                del outputs, loss, input_ids, labels
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
-            optimizer.step()
-            scheduler.step()
-        optimizer.zero_grad(set_to_none=True)
-        torch.cuda.synchronize()
-        # NOTE: do NOT call empty_cache() here — it flushes the CUDA memory
-        # pool that warmup just primed, forcing re-allocation on the first
-        # timed steps and producing a large initial spike.
-        logger.info("CUDA warmup complete, starting timed training...")
+    # Validate test dataset exists
+    test_idx = test_dataset_path + ".idx"
+    test_bin = test_dataset_path + ".bin"
+    if not os.path.exists(test_idx) or not os.path.exists(test_bin):
+        raise FileNotFoundError(
+            f"Test dataset not found at {test_dataset_path}\n"
+            f"  Missing: {test_idx if not os.path.exists(test_idx) else ''} "
+            f"{test_bin if not os.path.exists(test_bin) else ''}\n"
+            f"  Run data preparation: python prepare/encode_data.py"
+        )
 
-        logger.info("Starting training...")
-        training_start = time.time()
+    logger.info(f"Train dataset: {train_dataset_path}")
+    logger.info(f"Test dataset:  {test_dataset_path}")
+    logger.info("Using separate train/test files (validation uses test dataset)")
 
-        # Disable GC during training to avoid random pauses
-        gc.disable()
-        try:
-            for step in range(num_steps):
-                step_start = time.time()
-                optimizer.zero_grad(set_to_none=True)
-
-                step_losses = []
-                for micro_step in range(grad_accum):
-                    input_ids = next(data_iter).to(_device, non_blocking=True)
-                    labels = input_ids  # HF shifts internally; no clone needed
-
-                    # Skip allreduce on intermediate micro-steps
-                    sync_ctx = nullcontext()
-                    if is_ddp and micro_step < (grad_accum - 1):
-                        sync_ctx = model.no_sync()
-
-                    with sync_ctx, fp8_ctx_fn():
-                        with torch.amp.autocast('cuda', dtype=torch_dtype):
-                            outputs = model(input_ids=input_ids, labels=labels)
-                            loss = outputs.loss / grad_accum
-                        loss.backward()
-                    step_losses.append(loss.item() * grad_accum)
-                    # Free activation memory immediately to avoid OOM on next micro-step
-                    del outputs, loss, input_ids, labels
-
-                # Record LR used for THIS step (before scheduler advances)
-                current_lr = optimizer.param_groups[0]['lr']
-
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
-                optimizer.step()
-                scheduler.step()
-
-                step_time = time.time() - step_start
-                avg_loss = sum(step_losses) / len(step_losses)
-                tokens_per_step = batch_size * SEQ_LEN * grad_accum * world_size
-                throughput = tokens_per_step / step_time
-
-                step_times.append(step_time)
-                loss_values.append(avg_loss)
-                learning_rates.append(current_lr)
-
-                # Sample GPU memory every step
-                if torch.cuda.is_available():
-                    allocated = torch.cuda.memory_allocated(_device) / 1e9
-                    memory_values.append(round(allocated, 5))
-
-                if rank == 0:
-                    logger.info(f"Step {step + 1}/{num_steps} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
-
-                if rank == 0 and (step + 1) % 5 == 0:
-                    if torch.cuda.is_available():
-                        reserved = torch.cuda.memory_reserved(_device) / 1e9
-                        logger.info(f"GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
-        finally:
-            gc.enable()
-
-        training_time = time.time() - training_start
-
-        if rank == 0 and len(step_times) > 10:
-            warmup_skip = min(10, len(step_times))
-            step_times_no_warmup = step_times[warmup_skip:]
-            if not step_times_no_warmup:
-                step_times_no_warmup = step_times
-
-            avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
-            steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
-            tokens_per_step = global_batch_size * SEQ_LEN
-            tokens_per_second = tokens_per_step / avg_step_time
-            tokens_per_second_per_gpu = tokens_per_second / world_size if world_size else None
-
-            results = {
-                "platform": platform,
-                "dataset": DATASET,
-                "gpu_info": gpu_info,
-                "timestamp": datetime.now().isoformat(),
-                "training_config": {
-                    "max_steps": num_steps,
-                    "global_batch_size": global_batch_size,
-                    "micro_batch_size": batch_size,
-                    "sequence_length": SEQ_LEN,
-                    "num_gpus": world_size,
-                    "parallel_strategy": "ddp",
-                    "gradient_accumulation_steps": grad_accum,
-                    "attn_implementation": attn_impl_used,
-                    "fp8_hybrid": fp8_enabled,
-                },
-                "performance_metrics": {
-                    "total_steps": len(step_times),
-                    "total_time_seconds": training_time,
-                    "avg_step_time_seconds": avg_step_time,
-                    "min_step_time_seconds": min(step_times_no_warmup),
-                    "max_step_time_seconds": max(step_times_no_warmup),
-                    "steps_per_second": steps_per_second,
-                    "tokens_per_second": tokens_per_second,
-                    "tokens_per_second_per_gpu": tokens_per_second_per_gpu,
-                    "throughput_per_gpu_core": steps_per_second / gpu_info["gpu_cores"] if gpu_info.get("gpu_cores", 0) > 0 else 0,
-                },
-                "step_times": step_times,
-                "loss_values": loss_values,
-                "learning_rates": learning_rates,
-            }
-
-            if memory_values:
-                results["memory_metrics"] = {
-                    "peak_memory_allocated_gb": max(memory_values),
-                    "avg_memory_allocated_gb": round(sum(memory_values) / len(memory_values), 5),
-                    "min_memory_allocated_gb": min(memory_values),
-                }
-                results["memory_values"] = memory_values
-
-            logger.info(f"=" * 80)
-            logger.info(f"Training completed for {model_name}")
-            logger.info(f"Total time: {training_time:.2f}s")
-            logger.info(f"Average step time: {avg_step_time:.3f}s")
-            logger.info(f"Throughput: {tokens_per_second:,.0f} tokens/sec")
-            logger.info(f"Per-GPU Throughput: {tokens_per_second_per_gpu:,.0f} tokens/sec/GPU")
-            logger.info(f"=" * 80)
-
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            output_file = OUTPUT_DIR / f"train_{platform}_mega_{model_name}_{DATASET}.json"
-            from lib.utils import round_floats
-            results_rounded = round_floats(results, precision=5)
-
-            with open(output_file, 'w') as f:
-                json.dump(results_rounded, f, indent=2)
-
-            logger.info(f"Results saved to {output_file}")
-
-    except Exception as e:
-        logger.error(f"Training failed: {e}", exc_info=True)
-        if rank == 0 and len(step_times) > 0:
-            results = {
-                "platform": platform,
-                "gpu_info": gpu_info,
-                "timestamp": datetime.now().isoformat(),
-                "error": str(e),
-                "partial_results": {
-                    "steps_completed": len(step_times),
-                    "step_times": step_times,
-                    "loss_values": loss_values,
-                },
-            }
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            output_file = OUTPUT_DIR / f"train_nvd_mega_{model_name}_{DATASET}.json"
-            with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2)
-        raise
-
-    finally:
-        if world_size > 1:
-            torch.distributed.destroy_process_group()
-
-
-def train_llama():
-    config = {
-        'hf_model': 'meta-llama/Llama-3.1-8B',
-        'grad_accum_steps': GA,
-        'tensor_parallel': TP,
-        'pipeline_parallel': PP,
+    # Use explicit paths dict: train for training, test for both validation and test
+    data_paths = {
+        "train": [train_dataset_path],
+        "validation": [test_dataset_path],
+        "test": [test_dataset_path],
     }
-    train_model('llama', config)
 
+    from nemo.collections.llm.gpt.data.pre_training import PreTrainingDataModule
+    recipe.data = PreTrainingDataModule(
+        paths=data_paths,
+        seq_length=SEQ_LEN,
+        micro_batch_size=MBS,
+        global_batch_size=GBS,
+    )
 
-def train_qwen():
-    config = {
-        'hf_model': 'Qwen/Qwen2.5-7B',
-        'grad_accum_steps': GA,
-        'tensor_parallel': TP,
-        'pipeline_parallel': PP,
-    }
-    train_model('qwen', config)
+    # Extra un-timed warmup iterations so CUDA kernels are pre-compiled
+    # before the BenchmarkCallback starts recording step times.
+    _WARMUP_ITERS = 0
+    recipe.trainer.max_steps = TRAIN_ITERS + _WARMUP_ITERS
+    recipe.optim.config.lr = LR
+    recipe.optim.config.min_lr = 0.0
+    recipe.optim.config.weight_decay = WEIGHT_DECAY
+    recipe.optim.config.adam_beta1 = BETA1
+    recipe.optim.config.adam_beta2 = BETA2
+    # Compensate for _WARMUP_ITERS: NeMo's Lightning trainer advances the
+    # LR scheduler during the un-timed CUDA warmup iterations, so we add
+    # _WARMUP_ITERS to warmup_steps so the *recorded* warmup (after the
+    # un-timed phase) aligns with the expected schedule.
+    recipe.optim.lr_scheduler.warmup_steps = WARMUP_STEPS + _WARMUP_ITERS
+    recipe.optim.lr_scheduler.constant_steps = 0
+    recipe.optim.lr_scheduler.max_steps = TRAIN_ITERS + _WARMUP_ITERS
+    recipe.optim.lr_scheduler.min_lr = 0.0  # Ensure LR decays to zero
+
+    if FP8_HYBRID:
+        recipe.model.config.fp8 = "hybrid"
+    else:
+        recipe.model.config.fp8 = None
+    recipe.model.config.fp8_param = FP8_PARAM
+    # NOTE: activation recompute disabled — Llama-8B / Qwen-7B fit in
+    # H100 80 GB with ZeRO-1 without it, and selective recompute costs
+    # ~30-40 % throughput by re-running forward ops during backward.
+    recipe.model.config.recompute_granularity = None
+    recipe.model.config.recompute_method = None
+
+    # ── Megatron-Core kernel fusions for throughput ────────────────────
+    # These are the same fusions enabled in the NeMo benchmark to ensure
+    # identical model execution paths and a fair memory comparison.
+    recipe.model.config.bias_activation_fusion = True    # fuse bias + SiLU/GeLU
+    recipe.model.config.bias_dropout_fusion = True       # fuse bias + dropout
+    recipe.model.config.masked_softmax_fusion = True     # fuse attention mask + softmax
+    recipe.model.config.persist_layer_norm = True        # persistent LayerNorm kernel
+    recipe.model.config.apply_rope_fusion = True         # fused RoPE kernel
+    recipe.model.config.cross_entropy_loss_fusion = True  # fused cross-entropy kernel
+    recipe.model.config.gradient_accumulation_fusion = False  # requires APEX fused CUDA ext
+
+    recipe.trainer.enable_checkpointing = False
+    recipe.log.ckpt = None
+    recipe.resume = None
+    recipe.log.tensorboard = None
+    recipe.log.wandb = None
+    recipe.trainer.val_check_interval = TRAIN_ITERS + _WARMUP_ITERS + 1  # effectively disable validation
+    recipe.trainer.check_val_every_n_epoch = None
+    recipe.trainer.limit_val_batches = 0
+    recipe.trainer.num_sanity_val_steps = 0
+
+    benchmark_callback = BenchmarkCallback(
+        output_dir=str(OUTPUT_DIR),
+        platform="nvd",
+        model_name=model_name,
+        parallel_strategy="minimal_communication",
+        framework=f"{platform_prefix}_mega",
+        dataset=DATASET,
+        warmup_steps=_WARMUP_ITERS,
+    )
+    gc_callback = GCCallback()
+    if recipe.trainer.callbacks is None:
+        recipe.trainer.callbacks = []
+    recipe.trainer.callbacks.append(benchmark_callback)
+    recipe.trainer.callbacks.append(gc_callback)
+
+    logger.info(f"Configuration:")
+    logger.info(f"  Sequence length: {SEQ_LEN}")
+    logger.info(f"  Micro batch size: {MBS}")
+    logger.info(f"  Global batch size: {GBS}")
+    logger.info(f"  Training steps: {TRAIN_ITERS}")
+    logger.info(f"  Learning rate: {LR}")
+    logger.info(f"  Warmup steps: {WARMUP_STEPS}")
+    logger.info(f"  Precision: {PRECISION}")
+    logger.info(f"  FP8 Hybrid: {FP8_HYBRID}")
+    logger.info(f"  FP8 Param: {FP8_PARAM}")
+    logger.info(f"  TP: {TP}, PP: {PP}, DP: {DP}")
+    logger.info(f"  Stack: Megatron-Core + TransformerEngine + Lightning")
+    logger.info(f"  Fusions: bias_act, bias_drop, masked_softmax, persist_ln, rope, xent")
+
+    logger.info(f"Starting {config['display_name']} training (Megatron-Core stack)...")
+
+    run.run(recipe, direct=True)
+
+    logger.info(f"{config['display_name']} training completed!")
 
 
 def main():
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-    os.environ['PYTHONHASHSEED'] = str(SEED)
-    os.environ['HSA_NO_SCRATCH_RECLAIM'] = '1'
-    os.environ['HSA_ENABLE_SDMA'] = '1'
-    os.environ['HSA_FORCE_FINE_GRAIN_PCIE'] = '1'
-    os.environ.setdefault('RCCL_DEBUG', 'ERROR')
-    os.environ.setdefault('NCCL_DEBUG', 'ERROR')
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    logger.info("Environment configured for GPU training")
-    logger.info(f"Output directory: {OUTPUT_DIR}")
-
     if len(sys.argv) < 2:
-        logger.info("No model specified, training all models")
-        train_llama()
-        train_qwen()
+        logger.info("No model specified, training both llama and qwen")
+        train_model("llama")
+        train_model("qwen")
     else:
-        model = sys.argv[1]
-        logger.info(f"Training model: {model}")
-        if model == "llama":
-            train_llama()
-        elif model == "qwen":
-            train_qwen()
-        else:
-            logger.error(f"Unknown model: {model}")
-            logger.error("\nUsage:")
-            logger.error("  python train_nvd_mega.py              # Train both models")
-            logger.error("  python train_nvd_mega.py llama        # Train only Llama")
-            logger.error("  python train_nvd_mega.py qwen         # Train only Qwen")
-            sys.exit(1)
+        model_name = sys.argv[1].lower()
+        train_model(model_name)
 
 
 if __name__ == "__main__":
