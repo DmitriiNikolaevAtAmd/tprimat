@@ -339,9 +339,15 @@ Examples:
         args.model_name
     )
     
-    # Add memory metrics from rocm-smi/nvidia-smi log (preferred method)
-    if results and args.memory_log:
-        # Get step count to align memory values with iterations
+    # Memory source priority:
+    #   1. Training log (torch.cuda.memory_allocated / hip mem usage) — actual tensor allocations
+    #   2. rocm-smi/nvidia-smi log — total VRAM used (includes caching allocator reserved pool)
+    # Prefer training log for cross-platform consistency: NVIDIA scripts report
+    # memory_allocated, so AMD should too.  rocm-smi VRAM includes reserved-but-
+    # unused memory and inflates numbers by 2-3x.
+    has_training_log_memory = results and results.get("memory_values")
+    if results and args.memory_log and not has_training_log_memory:
+        # Fallback to rocm-smi/nvidia-smi only if training log has no memory data
         num_steps = len(results.get('step_times', []))
         mem_data = parse_memory_log(args.memory_log, num_steps=num_steps)
         if mem_data:
@@ -352,10 +358,12 @@ Examples:
             }
             results["memory_values"] = mem_data['memory_values']
             raw_samples = mem_data.get('raw_samples', len(mem_data['memory_values']))
-            print(f"  + Memory: {raw_samples} samples → {len(mem_data['memory_values'])} values (aligned to steps)")
+            print(f"  + Memory (smi fallback): {raw_samples} samples → {len(mem_data['memory_values'])} values")
             print(f"    Peak: {mem_data['peak_memory_gb']:.2f} GB, Avg: {mem_data['avg_memory_gb']:.2f} GB")
         else:
             print(f"  ! Warning: Could not parse memory log: {args.memory_log}")
+    elif results and args.memory_log and has_training_log_memory:
+        print(f"  + Using training log memory (allocated), skipping smi log (total VRAM)")
     # Legacy: Load from intermediate JSON file
     elif results and args.memory_values_file:
         try:

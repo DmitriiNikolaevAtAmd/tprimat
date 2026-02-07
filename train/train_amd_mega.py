@@ -23,7 +23,8 @@ for env_var in ("HF_HOME", "HF_DATASETS_CACHE"):
         os.environ[env_var] = str(WORKSPACE_ROOT / val)
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
-OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(WORKSPACE_ROOT / "output")))
+_output_dir = os.environ.get("OUTPUT_DIR", "output")
+OUTPUT_DIR = Path(_output_dir) if os.path.isabs(_output_dir) else WORKSPACE_ROOT / _output_dir
 
 SEED = int(os.environ.get("SEED", 42))
 MBS = int(os.environ.get("MBS", 1))
