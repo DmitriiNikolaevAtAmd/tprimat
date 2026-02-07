@@ -173,6 +173,7 @@ def train_model(model_name: str, model_config: dict):
     step_times = []
     loss_values = []
     learning_rates = []
+    memory_values = []
 
     try:
         from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
@@ -414,6 +415,9 @@ def train_model(model_name: str, model_config: dict):
                     # Free activation memory immediately to avoid OOM on next micro-step
                     del outputs, loss, input_ids, labels
 
+                # Record LR used for THIS step (before scheduler advances)
+                current_lr = optimizer.param_groups[0]['lr']
+
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
                 optimizer.step()
                 scheduler.step()
@@ -425,15 +429,18 @@ def train_model(model_name: str, model_config: dict):
 
                 step_times.append(step_time)
                 loss_values.append(avg_loss)
-                current_lr = scheduler.get_last_lr()[0] if scheduler is not None else optimizer.param_groups[0]['lr']
                 learning_rates.append(current_lr)
+
+                # Sample GPU memory every step
+                if torch.cuda.is_available():
+                    allocated = torch.cuda.memory_allocated(_device) / 1e9
+                    memory_values.append(round(allocated, 5))
 
                 if rank == 0:
                     logger.info(f"Step {step + 1}/{num_steps} | Loss: {avg_loss:.4f} | Time: {step_time:.3f}s | Throughput: {throughput:.0f} tokens/s")
 
                 if rank == 0 and (step + 1) % 5 == 0:
                     if torch.cuda.is_available():
-                        allocated = torch.cuda.memory_allocated(_device) / 1e9
                         reserved = torch.cuda.memory_reserved(_device) / 1e9
                         logger.info(f"GPU Memory: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved")
         finally:
@@ -484,6 +491,14 @@ def train_model(model_name: str, model_config: dict):
                 "loss_values": loss_values,
                 "learning_rates": learning_rates,
             }
+
+            if memory_values:
+                results["memory_metrics"] = {
+                    "peak_memory_allocated_gb": max(memory_values),
+                    "avg_memory_allocated_gb": round(sum(memory_values) / len(memory_values), 5),
+                    "min_memory_allocated_gb": min(memory_values),
+                }
+                results["memory_values"] = memory_values
 
             logger.info(f"=" * 80)
             logger.info(f"Training completed for {model_name}")

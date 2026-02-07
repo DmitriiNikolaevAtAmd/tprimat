@@ -333,6 +333,9 @@ def train_model(model_name: str):
                     # Free activation memory immediately to avoid OOM on next micro-step
                     del outputs, loss, input_ids, labels
 
+                # Record LR used for THIS step (before scheduler advances)
+                current_lr = optimizer.param_groups[0]['lr']
+
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, foreach=True)
                 optimizer.step()
                 scheduler.step()
@@ -344,7 +347,6 @@ def train_model(model_name: str):
 
                 step_times.append(step_time)
                 loss_values.append(avg_loss)
-                current_lr = scheduler.get_last_lr()[0]
                 learning_rates.append(current_lr)
 
                 if rank == 0:
@@ -425,6 +427,23 @@ def train_model(model_name: str):
 
     except Exception as e:
         logger.error(f"Training failed: {e}", exc_info=True)
+        if rank == 0 and len(step_times) > 0:
+            results = {
+                "platform": "amd",
+                "gpu_info": gpu_info,
+                "timestamp": datetime.now().isoformat(),
+                "error": str(e),
+                "partial_results": {
+                    "steps_completed": len(step_times),
+                    "step_times": step_times,
+                    "loss_values": loss_values,
+                },
+            }
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            output_file = OUTPUT_DIR / f"train_amd_mega_{model_name}_{dataset_name}.json"
+            with open(output_file, "w") as f:
+                json.dump(results, f, indent=2)
+            logger.info(f"Partial results saved to {output_file}")
         raise
 
     finally:

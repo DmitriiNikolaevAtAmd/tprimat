@@ -11,7 +11,6 @@ export HF_HOME
 
 mkdir -p "$OUTPUT_DIR"
 
-"$SCRIPT_DIR/purge.sh" --keep-data
 "$SCRIPT_DIR/train/train_amd_mega_llama.sh"
 "$SCRIPT_DIR/train/train_amd_mega_qwen.sh"
 "$SCRIPT_DIR/train/train_amd_prim_llama.sh"

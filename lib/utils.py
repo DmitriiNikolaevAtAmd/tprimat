@@ -324,10 +324,17 @@ class BenchmarkCallback(Callback):
         # During warmup steps, skip timing (CUDA kernels are still compiling)
         if self._batch_count <= self.warmup_steps:
             self.step_start_time = None
+            self._step_lr = None
             return
         self.step_start_time = time.time()
         if torch.cuda.is_available():
             torch.cuda.synchronize()
+        # Save LR at the START of the step (before scheduler advances)
+        # so the recorded value matches the LR actually used for this update.
+        try:
+            self._step_lr = trainer.optimizers[0].param_groups[0]['lr']
+        except (IndexError, KeyError, AttributeError):
+            self._step_lr = None
     
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         # Skip recording during warmup steps
@@ -374,12 +381,9 @@ class BenchmarkCallback(Callback):
             else:
                 self.memory_allocated_per_gpu.append([mem_allocated])
         
-        try:
-            lr = trainer.optimizers[0].param_groups[0]['lr'] if trainer.optimizers else None
-            if lr is not None:
-                self.learning_rates.append(float(lr))
-        except (IndexError, KeyError, AttributeError):
-            pass
+        # Use LR saved at batch start (before scheduler advanced)
+        if self._step_lr is not None:
+            self.learning_rates.append(float(self._step_lr))
         
         measured_step = len(self.step_times)
         if trainer.is_global_zero and measured_step > 0 and measured_step % 10 == 0:
@@ -407,9 +411,12 @@ class BenchmarkCallback(Callback):
         total_time = time.time() - self.train_start_time
         
         if len(self.step_times) > 1:
-            # Warmup steps were already excluded during recording,
-            # so step_times contains only steady-state measurements.
-            step_times_no_warmup = self.step_times
+            # Skip first 10 timed steps (CUDA kernel compilation overhead),
+            # matching the Megatron scripts' warmup_skip logic.
+            warmup_skip = min(10, len(self.step_times))
+            step_times_no_warmup = self.step_times[warmup_skip:]
+            if not step_times_no_warmup:
+                step_times_no_warmup = self.step_times
             avg_step_time = sum(step_times_no_warmup) / len(step_times_no_warmup)
             steps_per_second = len(step_times_no_warmup) / sum(step_times_no_warmup)
             

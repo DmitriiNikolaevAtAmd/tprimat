@@ -401,6 +401,15 @@ def train_model(model_name: str):
     # ~30-40 % throughput by re-running forward ops during backward.
     recipe.model.config.recompute_granularity = None
     recipe.model.config.recompute_method = None
+
+    # ── Megatron-Core kernel fusions for throughput ────────────────────
+    recipe.model.config.bias_activation_fusion = True    # fuse bias + SiLU/GeLU
+    recipe.model.config.bias_dropout_fusion = True       # fuse bias + dropout
+    recipe.model.config.masked_softmax_fusion = True     # fuse attention mask + softmax
+    recipe.model.config.persist_layer_norm = True        # persistent LayerNorm kernel
+    recipe.model.config.apply_rope_fusion = True         # fused RoPE kernel
+    recipe.model.config.cross_entropy_loss_fusion = True  # fused cross-entropy kernel
+    recipe.model.config.gradient_accumulation_fusion = True  # fuse grad accum into backward
     
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
