@@ -24,26 +24,24 @@ export GBS=$((MBS * DP * GA))
 echo "Config: NUM_GPUS=${NUM_GPUS} TP=${TP} PP=${PP} DP=${DP} GA=${GA}"
 echo "Batch:  MBS=${MBS} GBS=${GBS} SEQ_LEN=${SEQ_LEN}"
 
+# Performance settings
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
 export HF_HUB_DISABLE_PROGRESS_BARS=1
 
+# AMD-specific tuning
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
 
+# Communication tuning
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1
-
-cd "$SCRIPT_DIR"
-
-pkill -9 -f "torchrun.*train_amd_mega" 2>/dev/null || true
-sleep 1
 
 DATASET="${DATASET:-bc}"
 export DATASET
@@ -57,14 +55,12 @@ fi
 
 echo ""
 echo "=========================================="
-echo "Training qwen (mega) on dataset: ${DATASET}"
+echo "Training qwen (megatron) on dataset: ${DATASET}"
+echo "Stack: Megatron-Core + Lightning"
 echo "=========================================="
-echo "Config: NUM_GPUS=${NUM_GPUS}"
 echo "Dataset: ${DATA_PREFIX} (${DATASET})"
 
-MASTER_PORT=$((30000 + RANDOM % 5000))
-echo "Using MASTER_PORT: $MASTER_PORT"
-
+# Start memory monitoring in background (samples every 2 seconds)
 MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_qwen_${DATASET}.log"
 : > "$MEMORY_LOG"
 (
@@ -80,16 +76,8 @@ MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_qwen_${DATASET}.log"
 MEMORY_PID=$!
 export MEMORY_LOG
 
-if [ "$NUM_GPUS" -gt 1 ]; then
-    torchrun --nproc_per_node="$NUM_GPUS" \
-             --nnodes=1 \
-             --node_rank=0 \
-             --master_addr=localhost \
-             --master_port="$MASTER_PORT" \
-             train_amd_mega.py qwen
-else
-    python3 -u train_amd_mega.py qwen
-fi
+python3 -u "$SCRIPT_DIR/train_amd_mega.py" qwen
 
+# Stop memory monitoring
 kill $MEMORY_PID 2>/dev/null || true
 rm -f "$MEMORY_LOG"
