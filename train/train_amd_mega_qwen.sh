@@ -43,6 +43,11 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 
+cd "$SCRIPT_DIR"
+
+pkill -9 -f "torchrun.*train_amd_mega" 2>/dev/null || true
+sleep 1
+
 DATASET="${DATASET:-bc}"
 export DATASET
 DATA_PREFIX="${DATA_DIR}/${DATASET}-train"
@@ -55,10 +60,13 @@ fi
 
 echo ""
 echo "=========================================="
-echo "Training qwen (megatron) on dataset: ${DATASET}"
-echo "Stack: Megatron-Core + Lightning"
+echo "Training qwen (mega) on dataset: ${DATASET}"
 echo "=========================================="
+echo "Config: NUM_GPUS=${NUM_GPUS}"
 echo "Dataset: ${DATA_PREFIX} (${DATASET})"
+
+MASTER_PORT=$((30000 + RANDOM % 5000))
+echo "Using MASTER_PORT: $MASTER_PORT"
 
 # Start memory monitoring in background (samples every 2 seconds)
 MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_qwen_${DATASET}.log"
@@ -76,7 +84,16 @@ MEMORY_LOG="$TPRIMAT_PATH/output/memory_mega_qwen_${DATASET}.log"
 MEMORY_PID=$!
 export MEMORY_LOG
 
-python3 -u "$SCRIPT_DIR/train_amd_mega.py" qwen
+if [ "$NUM_GPUS" -gt 1 ]; then
+    torchrun --nproc_per_node="$NUM_GPUS" \
+             --nnodes=1 \
+             --node_rank=0 \
+             --master_addr=localhost \
+             --master_port="$MASTER_PORT" \
+             train_amd_mega.py qwen
+else
+    python3 -u train_amd_mega.py qwen
+fi
 
 # Stop memory monitoring
 kill $MEMORY_PID 2>/dev/null || true
