@@ -30,7 +30,7 @@ echo "Seed: ${SEED}"
 export RCCL_DEBUG=ERROR
 export NCCL_DEBUG=ERROR
 export GLOO_LOG_LEVEL=ERROR
-export RCCL_MSCCL_ENABLE=0
+export RCCL_MSCCL_ENABLE=1
 export HSA_NO_SCRATCH_RECLAIM=1
 export HSA_ENABLE_SDMA=1
 export HSA_FORCE_FINE_GRAIN_PCIE=1
@@ -222,6 +222,8 @@ bash "$TRAIN_SCRIPT" \
     --tokenizer_model "$TOKENIZER_MODEL" \
     --split 100,0,0 \
     --seed "$SEED" \
+    --use_flash_attn \
+    --use_fused_rmsnorm \
     >> "$LOG_FILE" 2>&1
 
 kill $TAIL_PID 2>/dev/null || true
