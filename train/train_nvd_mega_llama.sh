@@ -36,6 +36,9 @@ export CUDA_MODULE_LOADING=EAGER
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 
+# NCCL performance tuning — NVLink SHARP for multi-GPU collectives
+export NCCL_NVLS_ENABLE=1
+
 # Maximum performance: enable TransformerEngine fused/flash attention kernels
 export NVTE_FUSED_ATTN=1
 export NVTE_FLASH_ATTN=1

@@ -278,11 +278,11 @@ def train_model(model_name: str):
         from megatron.core.distributed import DistributedDataParallelConfig
         ddp_config = DistributedDataParallelConfig(
             grad_reduce_in_fp32=False,
-            overlap_grad_reduce=False,
-            overlap_param_gather=False,
+            overlap_grad_reduce=True,
+            overlap_param_gather=True,
             use_distributed_optimizer=True,
         )
-        logger.info("Using DDP config (distributed_optimizer, no overlap)")
+        logger.info("Using DDP config (distributed_optimizer, overlap grad_reduce + param_gather)")
     except ImportError:
         ddp_config = "megatron"
         logger.info("Megatron DDP config not available, using default")

@@ -43,6 +43,14 @@ export HIPBLASLT_FORCE_REDUCE_SCATTERING=1
 export GPU_MAX_HW_QUEUES=2
 export ROCM_FORCE_HIGH_PERF=1
 
+# Auto-tune GEMM kernel selection for this GPU (cached after first run)
+export PYTORCH_TUNABLEOP_ENABLED=1
+export PYTORCH_TUNABLEOP_TUNING=1
+export PYTORCH_TUNABLEOP_VERBOSE=0
+
+# Device-side kernel arguments — lower dispatch latency
+export HIP_FORCE_DEV_KERNARG=1
+
 export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
