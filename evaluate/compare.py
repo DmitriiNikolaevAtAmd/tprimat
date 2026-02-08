@@ -23,7 +23,7 @@ import numpy as np
 
 # Color palettes for dynamic assignment
 PLATFORM_COLORS = {
-    'nvidia': ['#3498DB', '#2980B9', '#1F618D', '#5DADE2', '#85C1E9'],
+    'nvidia': ['#27AE60', '#229954', '#1E8449', '#52BE80', '#7DCEA0'],
     'amd': ['#E74C3C', '#C0392B', '#922B21', '#EC7063', '#F1948A'],
     'unknown': ['#9B59B6', '#8E44AD', '#7D3C98', '#AF7AC5', '#D2B4DE'],
 }
