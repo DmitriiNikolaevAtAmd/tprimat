@@ -21,12 +21,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-# Color palettes for dynamic assignment
+# Muted mid-tone color palettes — high contrast, easy on the eyes
 PLATFORM_COLORS = {
-    'nvidia': ['#27AE60', '#229954', '#1E8449', '#52BE80', '#7DCEA0'],
-    'amd': ['#E74C3C', '#C0392B', '#922B21', '#EC7063', '#F1948A'],
-    'unknown': ['#9B59B6', '#8E44AD', '#7D3C98', '#AF7AC5', '#D2B4DE'],
+    'nvidia': ['#4A9B6F', '#3D8B60', '#5EAD7A', '#72B88A', '#2E7D52'],
+    'amd': ['#C15A50', '#A8483F', '#D46B5E', '#B0544A', '#E07E72'],
+    'unknown': ['#8B7AAE', '#7A6A9F', '#9D8CBF', '#6B5B90', '#AE9ED0'],
 }
+
+# Theme constants — warm neutral backdrop, soft chrome
+_BG_COLOR = '#F5F5F2'
+_TITLE_COLOR = '#3E4A52'
+_EDGE_COLOR = '#9E9E9E'
+_GRID_ALPHA = 0.20
+_TABLE_HEADER_COLOR = '#E4E6EA'
+_ANNOTATION_ALT_COLOR = '#6E7780'
 
 FRAMEWORK_DISPLAY = {
     'nemo': 'NeMo',
@@ -164,8 +172,8 @@ def create_comparison_plot(
     else:
         title = 'Benchmark Results'
     
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10), facecolor='white')
-    fig.suptitle(title, fontsize=18, fontweight='bold', y=0.995, color='#2C3E50')
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10), facecolor=_BG_COLOR)
+    fig.suptitle(title, fontsize=18, fontweight='bold', y=0.995, color=_TITLE_COLOR)
     axes = axes.flatten()
     
     # Panel 1: Throughput bar chart
@@ -181,18 +189,19 @@ def create_comparison_plot(
             colors.append(styles[key]['color'])
     
     if values:
-        bars = ax1.bar(range(len(values)), values, color=colors, alpha=0.75, edgecolor='#333', linewidth=1.2)
-        ax1.set_ylabel('Tokens/s/GPU', fontweight='bold', fontsize=11)
-        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
+        bars = ax1.bar(range(len(values)), values, color=colors, alpha=0.82, edgecolor=_EDGE_COLOR, linewidth=0.8)
+        ax1.set_ylabel('Tokens/s/GPU', fontweight='bold', fontsize=11, color=_TITLE_COLOR)
+        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
         ax1.set_xticks(range(len(labels)))
         ax1.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
-        ax1.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
+        ax1.set_facecolor(_BG_COLOR)
+        ax1.grid(axis='y', alpha=_GRID_ALPHA, linestyle='--', linewidth=0.5)
         for bar, val in zip(bars, values):
             ax1.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
                     f'{val:,.0f}', ha='center', va='bottom', fontweight='bold', fontsize=8)
     else:
-        ax1.text(0.5, 0.5, 'Throughput data not available', ha='center', va='center', transform=ax1.transAxes)
-        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12)
+        ax1.text(0.5, 0.5, 'Throughput data not available', ha='center', va='center', transform=ax1.transAxes, color=_ANNOTATION_ALT_COLOR)
+        ax1.set_title('Average Per-GPU Throughput', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
     
     # Panel 2: Memory bar chart — dual bars (allocated vs reserved)
     ax2 = axes[1]
@@ -223,10 +232,10 @@ def create_comparison_plot(
         if has_alloc and has_resv:
             # Dual bars: allocated (solid) + reserved (hatched)
             bars_a = ax2.bar(x - bar_width/2, mem_allocated, bar_width,
-                            color=mem_colors, alpha=0.80, edgecolor='#333', linewidth=1.0,
+                            color=mem_colors, alpha=0.82, edgecolor=_EDGE_COLOR, linewidth=0.8,
                             label='Allocated')
             bars_r = ax2.bar(x + bar_width/2, mem_reserved, bar_width,
-                            color=mem_colors, alpha=0.40, edgecolor='#333', linewidth=1.0,
+                            color=mem_colors, alpha=0.40, edgecolor=_EDGE_COLOR, linewidth=0.8,
                             hatch='///', label='Reserved')
             for bar, val in zip(bars_a, mem_allocated):
                 if val > 0:
@@ -235,31 +244,32 @@ def create_comparison_plot(
             for bar, val in zip(bars_r, mem_reserved):
                 if val > 0:
                     ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
-                            f'{val:.1f}', ha='center', va='bottom', fontsize=7, color='#555')
+                            f'{val:.1f}', ha='center', va='bottom', fontsize=7, color=_ANNOTATION_ALT_COLOR)
             ax2.legend(fontsize=7, loc='upper right')
         elif has_alloc:
             bars = ax2.bar(x, mem_allocated, bar_width * 2,
-                          color=mem_colors, alpha=0.75, edgecolor='#333', linewidth=1.2)
+                          color=mem_colors, alpha=0.82, edgecolor=_EDGE_COLOR, linewidth=0.8)
             for bar, val in zip(bars, mem_allocated):
                 if val > 0:
                     ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
                             f'{val:.1f}', ha='center', va='bottom', fontweight='bold', fontsize=8)
         else:
             bars = ax2.bar(x, mem_reserved, bar_width * 2,
-                          color=mem_colors, alpha=0.50, edgecolor='#333', linewidth=1.2, hatch='///')
+                          color=mem_colors, alpha=0.50, edgecolor=_EDGE_COLOR, linewidth=0.8, hatch='///')
             for bar, val in zip(bars, mem_reserved):
                 if val > 0:
                     ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height(),
                             f'{val:.1f}', ha='center', va='bottom', fontweight='bold', fontsize=8)
         
-        ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11)
-        ax2.set_title('GPU Memory Usage', fontweight='bold', fontsize=12)
+        ax2.set_ylabel('Memory (GB)', fontweight='bold', fontsize=11, color=_TITLE_COLOR)
+        ax2.set_title('GPU Memory Usage', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
         ax2.set_xticks(x)
         ax2.set_xticklabels(mem_labels, rotation=45, ha='right', fontsize=7)
-        ax2.grid(axis='y', alpha=0.2, linestyle='--', linewidth=0.5)
+        ax2.set_facecolor(_BG_COLOR)
+        ax2.grid(axis='y', alpha=_GRID_ALPHA, linestyle='--', linewidth=0.5)
     else:
-        ax2.text(0.5, 0.5, 'Memory data not available', ha='center', va='center', transform=ax2.transAxes, fontsize=10)
-        ax2.set_title('GPU Memory Usage', fontweight='bold', fontsize=12)
+        ax2.text(0.5, 0.5, 'Memory data not available', ha='center', va='center', transform=ax2.transAxes, fontsize=10, color=_ANNOTATION_ALT_COLOR)
+        ax2.set_title('GPU Memory Usage', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
     
     # Panel 3: Loss over time
     ax3 = axes[2]
@@ -269,18 +279,19 @@ def create_comparison_plot(
         if loss:
             s = styles[key]
             ax3.plot(range(len(loss)), loss, marker=s['marker'], linestyle=s['linestyle'],
-                    color=s['color'], label=s['label'], linewidth=1.5, markersize=2, alpha=0.85)
+                    color=s['color'], label=s['label'], linewidth=1.8, markersize=3, alpha=0.80)
             has_data = True
     
     if has_data:
-        ax3.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax3.set_ylabel('Loss', fontweight='bold', fontsize=11)
-        ax3.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
+        ax3.set_xlabel('Step', fontweight='bold', fontsize=10, color=_TITLE_COLOR)
+        ax3.set_ylabel('Loss', fontweight='bold', fontsize=11, color=_TITLE_COLOR)
+        ax3.set_title('Training Loss over Time', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
         ax3.legend(fontsize=7, loc='best')
-        ax3.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+        ax3.set_facecolor(_BG_COLOR)
+        ax3.grid(alpha=_GRID_ALPHA, linestyle='--', linewidth=0.5)
     else:
-        ax3.text(0.5, 0.5, 'Loss data not available', ha='center', va='center', transform=ax3.transAxes)
-        ax3.set_title('Training Loss over Time', fontweight='bold', fontsize=12)
+        ax3.text(0.5, 0.5, 'Loss data not available', ha='center', va='center', transform=ax3.transAxes, color=_ANNOTATION_ALT_COLOR)
+        ax3.set_title('Training Loss over Time', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
     
     # Panel 4: Learning rate over time
     ax4 = axes[3]
@@ -290,19 +301,20 @@ def create_comparison_plot(
         if lr:
             s = styles[key]
             ax4.plot(range(len(lr)), lr, marker=s['marker'], linestyle=s['linestyle'],
-                    color=s['color'], label=s['label'], linewidth=1.5, markersize=2, alpha=0.85)
+                    color=s['color'], label=s['label'], linewidth=1.8, markersize=3, alpha=0.80)
             has_data = True
     
     if has_data:
-        ax4.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax4.set_ylabel('Learning Rate', fontweight='bold', fontsize=11)
-        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=12)
+        ax4.set_xlabel('Step', fontweight='bold', fontsize=10, color=_TITLE_COLOR)
+        ax4.set_ylabel('Learning Rate', fontweight='bold', fontsize=11, color=_TITLE_COLOR)
+        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
         ax4.legend(fontsize=7, loc='best')
-        ax4.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+        ax4.set_facecolor(_BG_COLOR)
+        ax4.grid(alpha=_GRID_ALPHA, linestyle='--', linewidth=0.5)
         ax4.ticklabel_format(axis='y', style='scientific', scilimits=(0, 0))
     else:
-        ax4.text(0.5, 0.5, 'Learning rate data not available', ha='center', va='center', transform=ax4.transAxes)
-        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=12)
+        ax4.text(0.5, 0.5, 'Learning rate data not available', ha='center', va='center', transform=ax4.transAxes, color=_ANNOTATION_ALT_COLOR)
+        ax4.set_title('Learning Rate over Time', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
     
     # Panel 5: Step time over time
     ax5 = axes[4]
@@ -312,25 +324,26 @@ def create_comparison_plot(
         if times:
             s = styles[key]
             ax5.plot(range(len(times)), times, marker=s['marker'], linestyle=s['linestyle'],
-                    color=s['color'], label=s['label'], linewidth=1.5, markersize=2, alpha=0.85)
+                    color=s['color'], label=s['label'], linewidth=1.8, markersize=3, alpha=0.80)
             avg_time = sum(times) / len(times)
-            ax5.axhline(y=avg_time, color=s['color'], linestyle=':', alpha=0.3, linewidth=0.8)
+            ax5.axhline(y=avg_time, color=s['color'], linestyle=':', alpha=0.25, linewidth=0.8)
             has_data = True
     
     if has_data:
-        ax5.set_xlabel('Step', fontweight='bold', fontsize=10)
-        ax5.set_ylabel('Time (secs)', fontweight='bold', fontsize=11)
-        ax5.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
+        ax5.set_xlabel('Step', fontweight='bold', fontsize=10, color=_TITLE_COLOR)
+        ax5.set_ylabel('Time (secs)', fontweight='bold', fontsize=11, color=_TITLE_COLOR)
+        ax5.set_title('Step Duration over Time', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
         ax5.legend(fontsize=7, loc='best')
-        ax5.grid(alpha=0.2, linestyle='--', linewidth=0.5)
+        ax5.set_facecolor(_BG_COLOR)
+        ax5.grid(alpha=_GRID_ALPHA, linestyle='--', linewidth=0.5)
     else:
-        ax5.text(0.5, 0.5, 'Step time data not available', ha='center', va='center', transform=ax5.transAxes)
-        ax5.set_title('Step Duration over Time', fontweight='bold', fontsize=12)
+        ax5.text(0.5, 0.5, 'Step time data not available', ha='center', va='center', transform=ax5.transAxes, color=_ANNOTATION_ALT_COLOR)
+        ax5.set_title('Step Duration over Time', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
     
     # Panel 6: Configuration table
     ax6 = axes[5]
     ax6.axis('off')
-    ax6.set_title('Experiment Configuration', fontweight='bold', fontsize=12)
+    ax6.set_title('Experiment Configuration', fontweight='bold', fontsize=12, color=_TITLE_COLOR)
     
     table_data = []
     for key in ordered_keys:
@@ -358,7 +371,7 @@ def create_comparison_plot(
     if table_data:
         col_labels = ['Config', 'TP', 'PP', 'DP', 'MBS', 'GBS', 'SL']
         table = ax6.table(cellText=table_data, colLabels=col_labels, loc='center',
-                         cellLoc='center', colColours=['#E8E8E8'] * len(col_labels))
+                         cellLoc='center', colColours=[_TABLE_HEADER_COLOR] * len(col_labels))
         table.auto_set_font_size(False)
         table.set_fontsize(8)
         table.scale(1.4, 1.5)
