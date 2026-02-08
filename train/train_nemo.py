@@ -384,7 +384,15 @@ def train_model(model_name: str):
     recipe.model.config.persist_layer_norm = True
     recipe.model.config.apply_rope_fusion = True
     recipe.model.config.cross_entropy_loss_fusion = True
-    recipe.model.config.gradient_accumulation_fusion = True
+    # gradient_accumulation_fusion requires APEX fused_weight_gradient_mlp_cuda
+    # extension (pip install apex --cuda_ext); disable if not available
+    try:
+        import fused_weight_gradient_mlp_cuda  # noqa: F401
+        recipe.model.config.gradient_accumulation_fusion = True
+        logger.info("APEX fused grad-accum kernel available — enabled")
+    except ImportError:
+        recipe.model.config.gradient_accumulation_fusion = False
+        logger.info("APEX fused grad-accum kernel not found — disabled")
 
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None
