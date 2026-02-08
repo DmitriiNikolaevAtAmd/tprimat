@@ -37,6 +37,12 @@ export HSA_FORCE_FINE_GRAIN_PCIE=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 
+# Maximum performance: ROCm-optimized GEMM and HIP kernels
+export TORCH_BLAS_PREFER_HIPBLASLT=1
+export HIPBLASLT_FORCE_REDUCE_SCATTERING=1
+export GPU_MAX_HW_QUEUES=2
+export ROCM_FORCE_HIGH_PERF=1
+
 export PYTHONWARNINGS="ignore::UserWarning,ignore::FutureWarning,ignore::DeprecationWarning"
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_VERBOSITY=error
@@ -109,8 +115,8 @@ config['seq_length'] = seq_len
 config['encoder_seq_length'] = seq_len
 config['gradient_accumulation_steps'] = grad_accum
 config['use_distributed_optimizer'] = True
-config['use_flash_attn'] = False
-config['use_fused_rmsnorm'] = False
+config['use_flash_attn'] = True        # Maximum performance: ROCm Flash Attention
+config['use_fused_rmsnorm'] = True      # Maximum performance: AMD fused RMSNorm kernels
 config['fp32_residual_connection'] = False
 config['train_iters'] = train_iters
 config['lr_decay_iters'] = train_iters

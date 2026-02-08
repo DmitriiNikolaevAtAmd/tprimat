@@ -348,19 +348,20 @@ def train_model(model_name: str):
     recipe.model.config.recompute_method = None
     recipe.model.config.recompute_num_layers = None
 
-    # Unfused attention backend for fair cross-platform comparison with AMD/Primus
-    for var in ("NVTE_FUSED_ATTN", "NVTE_FLASH_ATTN", "NVTE_UNFUSED_ATTN"):
-        os.environ.pop(var, None)
-    recipe.model.config.attention_backend = "unfused"
+    # Maximum performance: use TransformerEngine fused/flash attention
+    os.environ.setdefault("NVTE_FUSED_ATTN", "1")
+    os.environ.setdefault("NVTE_FLASH_ATTN", "1")
+    os.environ.pop("NVTE_UNFUSED_ATTN", None)
+    recipe.model.config.attention_backend = "auto"
 
-    # Fusions disabled for fair cross-platform comparison with AMD/Primus
-    recipe.model.config.bias_activation_fusion = False
-    recipe.model.config.bias_dropout_fusion = False
-    recipe.model.config.masked_softmax_fusion = False
-    recipe.model.config.persist_layer_norm = False
-    recipe.model.config.apply_rope_fusion = False
-    recipe.model.config.cross_entropy_loss_fusion = False
-    recipe.model.config.gradient_accumulation_fusion = False
+    # Maximum performance: enable all CUDA fused kernels
+    recipe.model.config.bias_activation_fusion = True
+    recipe.model.config.bias_dropout_fusion = True
+    recipe.model.config.masked_softmax_fusion = True
+    recipe.model.config.persist_layer_norm = True
+    recipe.model.config.apply_rope_fusion = True
+    recipe.model.config.cross_entropy_loss_fusion = True
+    recipe.model.config.gradient_accumulation_fusion = True
 
     recipe.trainer.enable_checkpointing = False
     recipe.log.ckpt = None

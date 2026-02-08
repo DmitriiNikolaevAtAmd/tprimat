@@ -36,11 +36,18 @@ export CUDA_MODULE_LOADING=EAGER
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_AVOID_RECORD_STREAMS=1
 
-# Unset NVTE attention env vars — attention backend is set in Python config
-unset NVTE_FUSED_ATTN NVTE_FLASH_ATTN NVTE_UNFUSED_ATTN 2>/dev/null || true
+# Maximum performance: enable TransformerEngine fused/flash attention kernels
+export NVTE_FUSED_ATTN=1
+export NVTE_FLASH_ATTN=1
+unset NVTE_UNFUSED_ATTN 2>/dev/null || true
 
-export FP8_HYBRID=${FP8_HYBRID:-false}
+# TransformerEngine FP8 hybrid mode (FP8 GEMMs, BF16 elsewhere)
+export FP8_HYBRID=${FP8_HYBRID:-true}
 export FP8_PARAM=${FP8_PARAM:-false}
+
+# NVIDIA fused-kernel tuning
+export NVTE_FWD_LAYERNORM_SM_MARGIN=0
+export NVTE_BWD_LAYERNORM_SM_MARGIN=0
 
 DATASET="${DATASET:-bc}"
 export DATASET
